@@ -1312,7 +1312,12 @@ function bindEl(id, evt, fn){
 // CHANGE THIS BEFORE THE EVENT. This is a placeholder, not a secret: it ships
 // in plain text to every phone that opens the page, so treat it as a "keep
 // honest people out of the director panel" latch, not real security.
-const ADMIN_PASS = "MKWO-2027";
+// Randomly generated, and deliberately unrelated to the event name, the water
+// or the year: knowing the tournament must not let anyone guess this. It still
+// ships inside the page, so it stops a curious angler, not a determined one -
+// change it between events, and see the read-only policies at the bottom of
+// supabase-setup.sql for locking an event down once it is scored.
+const ADMIN_PASS = "lilac-hazel-15";
 
 // ---- the events this copy of the app knows about ----
 // One entry per tournament. Every angler, catch and donation record is stamped
