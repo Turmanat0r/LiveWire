@@ -570,6 +570,18 @@
     font-family:'Space Mono',monospace;font-size:11px;color:var(--steel);
     max-height:96px;overflow:auto;padding:6px 0;
   }
+  /* Drag handles on the boundary editor. Sized for a fingertip, not a mouse
+     pointer - these get used on a tablet at the ramp. */
+  .lw-handle-wrap{background:none;border:none;}
+  .lw-handle{
+    width:26px;height:26px;border-radius:50%;
+    background:var(--paper);border:2px solid var(--gold-deep);color:var(--gold-deep);
+    font-family:'Inter',system-ui,sans-serif;font-size:11px;font-weight:600;
+    line-height:22px;text-align:center;
+    box-shadow:0 1px 4px rgba(0,0,0,0.35);cursor:grab;
+  }
+  .lw-handle.centre{border-color:var(--deep);color:var(--deep);border-width:3px;line-height:20px;}
+  .lw-handle.radius{border-color:var(--deep);color:var(--deep);background:var(--white);}
 
   .fp{margin-top:8px;border:1px solid var(--line);border-left:3px solid var(--line);background:var(--paper);padding:8px 9px;}
   .fp.level-clear{border-left-color:#5FAE85;}
@@ -1614,8 +1626,33 @@ function evaluateBoundary(lat, lng, boundary){
 function leafletReady(){ return typeof L !== 'undefined' && !!L && typeof L.map === 'function'; }
 
 const BOUNDARY_STYLE = { color:'#24404D', weight:2, fillColor:'#5C6B4F', fillOpacity:0.12 };
-const DRAFT_STYLE    = { color:'#C98A2C', weight:2, dashArray:'5,4', fillColor:'#C98A2C', fillOpacity:0.10 };
+// interactive:false so a tap INSIDE the shape still reaches the map. Without it
+// the polygon swallows the click and you cannot add a point in your own course.
+const DRAFT_STYLE    = { color:'#C98A2C', weight:2, dashArray:'5,4', fillColor:'#C98A2C',
+                         fillOpacity:0.10, interactive:false };
 const METRES_PER_MILE = 1609.344;
+
+// A round, finger-sized handle. A divIcon rather than Leaflet's default pin so
+// there is no marker image to fetch and it matches the rest of the app.
+function handleIcon(label, extraClass){
+  return L.divIcon({
+    className: 'lw-handle-wrap',
+    html: '<div class="lw-handle '+(extraClass||'')+'">'+(label||'')+'</div>',
+    iconSize: [26,26], iconAnchor: [13,13]
+  });
+}
+// Walk `miles` from a point along a compass bearing (radians, 0 = north).
+function offsetLatLng(centre, miles, bearingRad){
+  const dLat = (miles * Math.cos(bearingRad)) / MILES_PER_DEG_LAT;
+  const dLng = (miles * Math.sin(bearingRad)) /
+               (MILES_PER_DEG_LAT * Math.cos(centre.lat * Math.PI/180));
+  return { lat: centre.lat + dLat, lng: centre.lng + dLng };
+}
+function bearingFrom(centre, point){
+  const north = (point.lat - centre.lat) * MILES_PER_DEG_LAT;
+  const east  = (point.lng - centre.lng) * MILES_PER_DEG_LAT * Math.cos(centre.lat * Math.PI/180);
+  return Math.atan2(east, north);
+}
 
 function boundaryCenter(b){
   if(b && b.kind === 'circle' && b.center) return b.center;
@@ -4329,6 +4366,10 @@ bindEl('species-save','click', async ()=>{
 // reaches an angler's phone, until Save.
 let bndDraft = null;
 let bndFitted = false;
+let bndDragging = false;
+// Where the radius handle sits around the circle, in radians from north. Kept
+// so it stays where the director last dragged it instead of snapping back east.
+let bndRadiusBearing = Math.PI / 2;
 
 function ensureBndDraft(){
   if(!bndDraft){
@@ -4352,8 +4393,8 @@ function formatPointLines(pts){
 }
 
 const BND_HELP = {
-  circle:  'Tap the map to drop the launch point, then set how far out the course runs. Typing the numbers does the same thing.',
-  polygon: 'Tap the map to drop each corner, going around the course. Three or more corners make the shape; the last joins back to the first.',
+  circle:  'Tap the map to drop the launch point. Drag + to move the whole circle, or drag ↔ on the edge to grow and shrink it. Typing the numbers does the same thing.',
+  polygon: 'Tap the map to drop each corner, going around the course. Drag any numbered corner to move it. Three or more corners make the shape; the last joins back to the first.',
   none:    'No boundary. Catches still record where they were taken, but nothing is judged in or out.'
 };
 
@@ -4405,18 +4446,88 @@ function renderBoundaryEditor(opts){
       });
     }
     drawBoundary(entry, d, DRAFT_STYLE);
-    entry.pins.clearLayers();
-    const dot = { radius:5, color:'#8F5F16', fillColor:'#FFFFFF', fillOpacity:1, weight:2 };
-    if(d.kind === 'polygon' && Array.isArray(d.points)){
-      d.points.forEach((p,i)=> L.circleMarker([p.lat,p.lng], dot)
-        .bindTooltip(String(i+1), { permanent:false }).addTo(entry.pins));
-    } else if(d.kind === 'circle' && d.center && isFinite(d.center.lat) && isFinite(d.center.lng)){
-      L.circleMarker([d.center.lat, d.center.lng], dot)
-        .bindTooltip('Launch', { permanent:false }).addTo(entry.pins);
-    }
+    // Rebuilding the handles mid-drag would destroy the one under the finger,
+    // and a sync tick can call this at any moment. The shape above still
+    // follows, so the drag stays live.
+    if(!bndDragging) buildBoundaryHandles(entry, d);
     // Frame it once on open, then leave the director's panning alone.
-    if(!bndFitted && boundaryIsUsable(d)){ bndFitted = true; fitToBoundary(entry, d); }
+    if(!bndFitted && !bndDragging && boundaryIsUsable(d)){ bndFitted = true; fitToBoundary(entry, d); }
     refreshMapSize(entry);
+  }
+}
+
+// The draggable bits: a numbered handle per corner of an outline, or a centre
+// and a radius handle for a circle.
+function buildBoundaryHandles(entry, d){
+  entry.pins.clearLayers();
+
+  const startDrag = ()=>{ bndDragging = true; };
+  // Deferred by a tick: rebuilding the handles destroys the very marker whose
+  // dragend is still running, and Leaflet keeps touching its element after the
+  // event fires.
+  const endDrag = ()=>{ bndDragging = false; setTimeout(()=> renderBoundaryEditor(), 0); };
+  // While bndDragging is set this redraws the shape and the coordinate boxes
+  // but leaves the handles alone, so the numbers track the drag in real time.
+  const live = ()=> renderBoundaryEditor();
+
+  if(d.kind === 'polygon' && Array.isArray(d.points)){
+    d.points.forEach((p,i)=>{
+      const m = L.marker([p.lat, p.lng], {
+        draggable:true, icon:handleIcon(String(i+1)), zIndexOffset:1000,
+        keyboard:false, title:'Corner '+(i+1)+' — drag to move'
+      });
+      m.on('dragstart', startDrag);
+      m.on('drag', (e)=>{
+        const ll = e.target.getLatLng();
+        d.points[i] = { lat: Number(ll.lat.toFixed(5)), lng: Number(ll.lng.toFixed(5)) };
+        live();
+      });
+      m.on('dragend', endDrag);
+      m.addTo(entry.pins);
+    });
+    return;
+  }
+
+  if(d.kind === 'circle' && d.center && isFinite(d.center.lat) && isFinite(d.center.lng)){
+    const centre = L.marker([d.center.lat, d.center.lng], {
+      draggable:true, icon:handleIcon('+', 'centre'), zIndexOffset:1000,
+      keyboard:false, title:'Launch point — drag to move the whole circle'
+    });
+    centre.on('dragstart', startDrag);
+    centre.on('drag', (e)=>{
+      const ll = e.target.getLatLng();
+      d.center = { lat: Number(ll.lat.toFixed(5)), lng: Number(ll.lng.toFixed(5)) };
+      // Carry the radius handle along with the circle it belongs to.
+      const hp = offsetLatLng(d.center, d.radiusMiles || 1, bndRadiusBearing);
+      if(entry.radiusHandle) entry.radiusHandle.setLatLng([hp.lat, hp.lng]);
+      live();
+    });
+    centre.on('dragend', endDrag);
+    centre.addTo(entry.pins);
+
+    if(d.radiusMiles > 0){
+      const hp = offsetLatLng(d.center, d.radiusMiles, bndRadiusBearing);
+      const rim = L.marker([hp.lat, hp.lng], {
+        draggable:true, icon:handleIcon('↔', 'radius'), zIndexOffset:1000,
+        keyboard:false, title:'Drag to grow or shrink the circle'
+      });
+      rim.on('dragstart', startDrag);
+      rim.on('drag', (e)=>{
+        const ll = e.target.getLatLng();
+        // Radius is simply how far the handle now sits from the centre, and the
+        // handle keeps whatever bearing it was dragged to rather than snapping
+        // back to due east on the next redraw.
+        const miles = milesBetween(d.center.lat, d.center.lng, ll.lat, ll.lng);
+        d.radiusMiles = Number(Math.max(0.05, miles).toFixed(3));
+        bndRadiusBearing = bearingFrom(d.center, { lat: ll.lat, lng: ll.lng });
+        live();
+      });
+      rim.on('dragend', endDrag);
+      rim.addTo(entry.pins);
+      entry.radiusHandle = rim;
+    } else {
+      entry.radiusHandle = null;
+    }
   }
 }
 
