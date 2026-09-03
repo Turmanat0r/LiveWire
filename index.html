@@ -873,6 +873,7 @@
         <div class="field">
           <label for="checkin-angler">Angler</label>
           <select id="checkin-angler"></select>
+          <p class="hint" id="checkin-angler-note" style="margin-bottom:0;"></p>
         </div>
         <div id="checkin-body"></div>
       </div>
@@ -886,6 +887,7 @@
         <div class="field">
           <label for="sub-angler">Angler</label>
           <select id="sub-angler"></select>
+          <p class="hint" id="sub-angler-note" style="margin-bottom:0;"></p>
         </div>
         <div class="row2">
           <div class="field">
@@ -1024,7 +1026,9 @@
         <div class="field">
           <label for="man-angler">Angler</label>
           <select id="man-angler"></select>
+          <p class="hint" id="man-angler-note" style="margin-bottom:0;"></p>
         </div>
+        <p class="hint" id="man-err" style="color:var(--danger);"></p>
         <div id="man-list"></div>
         <p class="hint">You can edit the length or withdraw a catch while it's still pending review. Once the director approves or rejects a catch, contact the director to make changes.</p>
       </div>
@@ -2620,6 +2624,26 @@ function localPhotoSet(catchId, dataUrl){
 
 // Renders a slot now and fills it in when the photo arrives, so a list of
 // catches paints immediately instead of waiting on every image.
+// ---- rendering untrusted catch fields ----
+// Every record in the store is writable by anyone holding the page's anon key,
+// so a catch's own fields are UNTRUSTED even though the app only ever writes
+// sane values through a <select> and a number box. These render in the
+// DIRECTOR's browser while reviewing, which is the session that matters most,
+// so length and status go through here rather than straight into innerHTML.
+const CATCH_STATUSES = ['pending','approved','rejected'];
+// Only ever emits one of a known set, so it is safe in a class attribute.
+function statusClass(status){
+  return CATCH_STATUSES.indexOf(status) === -1 ? 'pending' : status;
+}
+function statusHtml(status){
+  return '<span class="status '+statusClass(status)+'">'+escapeHtml(status)+'</span>';
+}
+// A length that is not a number renders as a dash instead of as markup.
+function lengthHtml(length){
+  const n = Number(length);
+  return isFinite(n) ? escapeHtml(n.toFixed(2)) + '&quot;' : '&mdash;';
+}
+
 function photoSlotHtml(c){
   return '<div class="photoslot" data-photo-for="'+escapeHtml(c.id)+'"><div class="noimg">&hellip;</div></div>';
 }
@@ -3387,7 +3411,7 @@ async function renderRoster(){
 // An angler picker (rather than just "me") so a partner, or a shared
 // check-in tablet at the ramp, can check any registered angler in or out.
 async function renderCheckin(){
-  await populateAnglerSelect('checkin-angler');
+  await populateAnglerSelect('checkin-angler', 'checkin-angler-note');
   await renderCheckinBody();
 }
 bindEl('checkin-angler','change', renderCheckinBody);
@@ -3431,17 +3455,64 @@ async function renderCheckinBody(){
 }
 
 // ---- submit screen ----
-async function populateAnglerSelect(selectId){
+// The anglers THIS DEVICE is entitled to act for: the registration completed
+// here, plus a teammate created by the same form. A team registers once, on one
+// phone, so the captain's device is the only one holding the partner's record -
+// scoping to "just me" would strand the partner with no way to submit.
+function myAnglerIds(anglers){
+  const mine = getMyAnglerId();
+  if(!mine) return [];
+  const me = anglers.find(a=> a.id === mine);
+  if(!me) return [];
+  const ids = [me.id];
+  if(me.teamId){
+    anglers.forEach(a=>{ if(a.teamId === me.teamId && a.id !== me.id) ids.push(a.id); });
+  }
+  return ids;
+}
+
+// Every angler picker in the app comes through here. It used to list the whole
+// field, which let anyone submit as, check in as, or edit the catches of any
+// other angler - by accident as easily as on purpose.
+//
+// This is a guard against mistakes and idle meddling, NOT a security boundary:
+// the records live behind an anon key that ships in this page, so anything the
+// UI declines can still be done against the API directly. Only row-level
+// policies and a real sign-in can make it a boundary.
+async function populateAnglerSelect(selectId, noteId){
   const anglers = await loadAnglers();
   const sel = document.getElementById(selectId);
+  if(!sel) return anglers;
+  if(anglers.length===0){
+    sel.innerHTML = '<option value="">Register an angler first</option>';
+    if(noteId) setText(noteId, '');
+    return anglers;
+  }
+
+  const mineIds = myAnglerIds(anglers);
+  // A device with no registration on it - a replaced or wiped phone - keeps the
+  // full list, because there is no way to re-claim an entry and being locked
+  // out mid-event is worse than the exposure. The note below says so plainly.
+  const unscoped = adminUnlocked || mineIds.length === 0;
+  const list = unscoped ? anglers : anglers.filter(a=> mineIds.indexOf(a.id) !== -1);
+
   const myId = getMyAnglerId();
-  if(anglers.length===0){ sel.innerHTML = '<option value="">Register an angler first</option>'; return anglers; }
-  sel.innerHTML = anglers.map(a=>'<option value="'+a.id+'"'+(a.id===myId?' selected':'')+'>'+escapeHtml(a.name)+' ('+a.tournamentId+')</option>').join('');
+  sel.innerHTML = list.map(a=>
+    '<option value="'+escapeHtml(a.id)+'"'+(a.id===myId?' selected':'')+'>'+
+    escapeHtml(a.name)+' ('+escapeHtml(a.tournamentId)+')</option>').join('');
+
+  if(noteId){
+    setText(noteId, !unscoped ? ''
+      : (adminUnlocked
+          ? 'Director access is unlocked, so this lists the whole field.'
+          : 'This device has no registration on it, so the whole field is listed. '+
+            'Register on this device, or ask the director, to tie it to your own entry.'));
+  }
   return anglers;
 }
 
 async function renderSubmitScreen(){
-  await populateAnglerSelect('sub-angler');
+  await populateAnglerSelect('sub-angler', 'sub-angler-note');
   renderSpeciesOptions();
   updateGuide();
 }
@@ -3801,7 +3872,7 @@ bindEl('sub-submit','click', async ()=>{
 
 // ---- manage catch ----
 async function renderManageScreen(){
-  await populateAnglerSelect('man-angler');
+  await populateAnglerSelect('man-angler', 'man-angler-note');
   await renderManageList();
 }
 bindEl('man-angler','change', renderManageList);
@@ -3818,21 +3889,41 @@ async function renderManageList(){
     const actions = editable
       ? '<div class="actions"><input type="number" step="0.25" class="edit-len" value="'+c.length+'" data-id="'+c.id+'"><button class="small" data-act="savelen" data-id="'+c.id+'">Save</button><button class="small danger" data-act="withdraw" data-id="'+c.id+'">Withdraw</button></div>'
       : '<div class="hint" style="margin-top:6px;">Locked &mdash; already reviewed by the director.</div>';
-    return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+c.length+'"</span><span class="status '+c.status+'">'+c.status+'</span></div>'+
-      '<div class="name">'+c.species+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
+    return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+lengthHtml(c.length)+'</span>'+statusHtml(c.status)+'</div>'+
+      '<div class="name">'+escapeHtml(c.species)+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
       '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+'</div>'+actions+'</div></div>';
   }).join('');
 
   hydratePhotos(el);
 
+  // The buttons above are only drawn for a pending catch, but that was decided
+  // when the list was PAINTED. The director can approve in between - and the
+  // background repaint that would have removed the buttons is suppressed while
+  // an input has focus, which is exactly when the angler is typing a length. So
+  // the check has to happen again here, against a fresh read.
+  const stillEditable = (catches, id)=>{
+    const idx = catches.findIndex(c=>c.id===id);
+    if(idx === -1){
+      setText('man-err', 'That catch is no longer on the list. Refreshing.');
+      return -1;
+    }
+    if(catches[idx].status !== 'pending'){
+      setText('man-err', 'The director reviewed that catch while this page was open, '+
+        'so it is locked now. Nothing was changed.');
+      return -1;
+    }
+    return idx;
+  };
+
   el.querySelectorAll('[data-act="savelen"]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
+      setText('man-err', '');
       const input = el.querySelector('.edit-len[data-id="'+btn.dataset.id+'"]');
       const newLen = parseFloat(input.value);
       if(!newLen || newLen<=0) return;
       const catches = await loadCatches();
-      const idx = catches.findIndex(c=>c.id===btn.dataset.id);
-      if(idx===-1) return;
+      const idx = stillEditable(catches, btn.dataset.id);
+      if(idx === -1){ renderManageList(); return; }
       catches[idx].length = newLen;
       await saveCatches(catches);
       renderManageList();
@@ -3840,9 +3931,11 @@ async function renderManageList(){
   });
   el.querySelectorAll('[data-act="withdraw"]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
+      setText('man-err', '');
       const catches = await loadCatches();
-      const idx = catches.findIndex(c=>c.id===btn.dataset.id);
-      if(idx===-1) return;
+      const idx = stillEditable(catches, btn.dataset.id);
+      if(idx === -1){ renderManageList(); return; }
+      if(!window.confirm('Withdraw this catch? It is removed along with its photo, and cannot be brought back.')) return;
       catches.splice(idx,1);
       await saveCatches(catches);
       renderManageList();
@@ -3868,7 +3961,7 @@ async function renderLivewellList(){
     const img = photoSlotHtml(c);
     const isBest = c.id===bestApprovedId;
     const badge = isBest ? '<span class="badge">Currently counts</span>' : '';
-    return '<div class="catchcard'+(isBest?' best':'')+'">'+img+'<div class="info"><div class="top"><span class="len">'+c.length+'"</span><span class="status '+c.status+'">'+c.status+'</span></div>'+badge+'</div></div>';
+    return '<div class="catchcard'+(isBest?' best':'')+'">'+img+'<div class="info"><div class="top"><span class="len">'+lengthHtml(c.length)+'</span>'+statusHtml(c.status)+'</div>'+badge+'</div></div>';
   }).join('');
   hydratePhotos(el);
 }
@@ -5203,8 +5296,8 @@ async function renderAdmin(){
   pendEl.innerHTML = pending.length===0 ? '<p class="empty">Nothing pending review.</p>' :
     pending.map(c=>{
       const img = photoSlotHtml(c);
-      return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+c.length+'"</span></div>'+
-        '<div class="name">'+escapeHtml(c.anglerName)+' &middot; '+c.species+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
+      return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+lengthHtml(c.length)+'</span></div>'+
+        '<div class="name">'+escapeHtml(c.anglerName)+' &middot; '+escapeHtml(c.species)+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
         '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+'</div>'+
         firstPassHtml(c, catches, dupCorpus)+
         '<div class="actions"><button class="small" data-act="approve" data-id="'+c.id+'">Approve</button>'+
@@ -5216,9 +5309,9 @@ async function renderAdmin(){
   allEl.innerHTML = all.length===0 ? '<p class="empty">No catches submitted yet.</p>' :
     all.map(c=>{
       const img = photoSlotHtml(c);
-      return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+c.length+'"</span></div>'+
-        '<div class="name">'+escapeHtml(c.anglerName)+' &middot; '+c.species+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
-        '<span class="status '+c.status+'">'+c.status+'</span>'+
+      return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+lengthHtml(c.length)+'</span></div>'+
+        '<div class="name">'+escapeHtml(c.anglerName)+' &middot; '+escapeHtml(c.species)+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
+        statusHtml(c.status)+
         '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+'</div>'+
         firstPassHtml(c, catches, dupCorpus)+
         '<div class="actions"><button class="small" data-act="delete" data-id="'+c.id+'">Delete</button></div></div></div>';

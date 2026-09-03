@@ -56,6 +56,8 @@ globalThis.__t = {
   slugifyEventId, parseDateLines, isValidTimeZone,
   registrationCloseFromDate, registrationCloseToDate, isRegistrationClosed,
   registrationCloseText,
+  myAnglerIds, populateAnglerSelect, statusClass, statusHtml, lengthHtml, escapeHtml,
+  get adminUnlocked(){ return adminUnlocked; }, set adminUnlocked(v){ adminUnlocked = v; },
   loadAwardsBudget, saveAwardsBudget, awardsBudgetMap,
   standingsFor, eventDateRangeText, eventRowCounts, eventDayText,
   getMyAnglerId, setMyAnglerId, onRows, readOutbox
@@ -828,7 +830,104 @@ check('the closing date reads back as the last open day',
   /June 1, 2020/.test(t.registrationCloseText()), true);
 
 // ============================================================
-section('27. the page starts up clean');
+section('27. angler pickers are scoped to the device');
+// Every picker in the app listed the whole field, so anyone could submit as,
+// check in as, or edit the catches of any other angler.
+const ROSTER = [
+  { id:'solo1', eventId:E1, name:'Ann',  division:'solo', role:'solo',    teamId:null, tournamentId:'MKWO-001' },
+  { id:'cap1',  eventId:E1, name:'Bob',  division:'team', role:'captain', teamId:'t1', tournamentId:'MKWO-002' },
+  { id:'par1',  eventId:E1, name:'Cal',  division:'team', role:'partner', teamId:'t1', tournamentId:'MKWO-002P' },
+  { id:'solo2', eventId:E1, name:'Dee',  division:'solo', role:'solo',    teamId:null, tournamentId:'MKWO-003' }
+];
+seed(ROSTER, [], [], {});
+await setEvent(E1);
+t.adminUnlocked = false;
+
+// A solo angler's device may act only for that angler.
+t.setMyAnglerId('solo1');
+check('a solo device owns one entry', t.myAnglerIds(ROSTER), ['solo1']);
+await t.populateAnglerSelect('sub-angler', 'sub-angler-note');
+let opts = elById.get('sub-angler').innerHTML;
+check('the picker offers only that angler', (opts.match(/<option/g) || []).length, 1);
+check('and it is the right one', /MKWO-001/.test(opts), true);
+check('a stranger is not listed', /MKWO-003/.test(opts), false);
+check('no warning note when scoped', elById.get('sub-angler-note').textContent, '');
+
+// A team captain's device holds the partner's record too - it is the only
+// device that does, so it must be able to act for them.
+t.setMyAnglerId('cap1');
+check('a captain owns both team entries', t.myAnglerIds(ROSTER).sort(), ['cap1','par1']);
+await t.populateAnglerSelect('man-angler', 'man-angler-note');
+opts = elById.get('man-angler').innerHTML;
+check('the picker offers both teammates', (opts.match(/<option/g) || []).length, 2);
+check('the captain is there', /MKWO-002\)/.test(opts), true);
+check('so is the partner', /MKWO-002P/.test(opts), true);
+check('and still no stranger', /MKWO-001/.test(opts), false);
+
+// The partner's own phone, if they register on it, sees the same pair.
+t.setMyAnglerId('par1');
+check('the partner sees the same team', t.myAnglerIds(ROSTER).sort(), ['cap1','par1']);
+
+// The director may act for anyone.
+t.setMyAnglerId('solo1');
+t.adminUnlocked = true;
+await t.populateAnglerSelect('checkin-angler', 'checkin-angler-note');
+opts = elById.get('checkin-angler').innerHTML;
+check('with director access the whole field is listed', (opts.match(/<option/g) || []).length, 4);
+check('and the reason is stated',
+  /Director access/.test(elById.get('checkin-angler-note').textContent), true);
+t.adminUnlocked = false;
+
+// A wiped or replaced phone has no registration to scope to. It keeps the full
+// list rather than being locked out mid-event, and says why.
+seed(ROSTER, [], [], {});
+const wiped = boot(new Map());
+wiped.liveCache.config = { activeEventId: E1 };
+wiped.liveCache.anglers = ROSTER;
+wiped.loadedIds.anglers = null;
+check('an unlinked device owns nothing', wiped.myAnglerIds(ROSTER), []);
+await wiped.populateAnglerSelect('sub-angler', 'sub-angler-note');
+check('so it falls back to the whole field',
+  (elById.get('sub-angler').innerHTML.match(/<option/g) || []).length, 4);
+check('and says the device is unlinked',
+  /no registration on it/.test(elById.get('sub-angler-note').textContent), true);
+
+// ============================================================
+section('28. untrusted catch fields are escaped');
+// Records are writable by anyone holding the page's anon key, and these render
+// in the DIRECTOR's browser - the session that holds the passcode.
+const XSS = '<img src=x onerror=alert(1)>';
+check('a script payload in status cannot reach the class attribute',
+  t.statusClass(XSS), 'pending');
+check('an unknown status falls back to pending', t.statusClass('haxxed'), 'pending');
+check('real statuses pass through', [t.statusClass('pending'), t.statusClass('approved'), t.statusClass('rejected')],
+  ['pending','approved','rejected']);
+// The word "onerror" surviving as inert TEXT is fine - what must not survive
+// is a real tag. So the test is about angle brackets, not scary substrings:
+// the only markup in the output may be the span this function wrote itself.
+check('the payload creates no element', /<img/.test(t.statusHtml(XSS)), false);
+check('only the intended span is markup',
+  t.statusHtml(XSS).replace(/^<span [^>]*>/, '').replace(/<\/span>$/, '').includes('<'),
+  false);
+check('and the payload is visible as text, escaped',
+  /&lt;img/.test(t.statusHtml(XSS)), true);
+
+check('a script payload in length renders as a dash', t.lengthHtml(XSS), '&mdash;');
+check('a non-numeric length is a dash', t.lengthHtml('twenty'), '&mdash;');
+check('a real length formats', t.lengthHtml(24.5), '24.50&quot;');
+check('a numeric string still formats', t.lengthHtml('24.5'), '24.50&quot;');
+check('Infinity does not render', t.lengthHtml(Infinity), '&mdash;');
+
+check('escapeHtml neutralises a tag', /<script/.test(t.escapeHtml('<script>')), false);
+check('and quotes, for attribute contexts', t.escapeHtml('a"b\'c'), 'a&quot;b&#39;c');
+
+// The species field goes through escapeHtml at every render site now. Again the
+// property is "no angle brackets left", not "no alarming words".
+check('a species payload keeps no angle brackets', t.escapeHtml(XSS).includes('<'), false);
+check('nor a closing one', t.escapeHtml(XSS).includes('>'), false);
+
+// ============================================================
+section('29. the page starts up clean');
 // Let the init IIFE's promise chain settle before judging it.
 await new Promise(r => setTimeout(r, 0));
 check('no startup error banner', startupBanners, []);
