@@ -1,0 +1,3754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LiveWire — Montana Kayak Walleye Open</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&family=Oswald:wght@500;600;700&family=Space+Mono:wght@400;700&display=swap');
+
+  :root{
+    --ink:#16201F;
+    --paper:#F1ECE0;
+    --paper-2:#E7E0CF;
+    --deep:#24404D;
+    --steel:#3D5A66;
+    --gold:#C98A2C;
+    --gold-deep:#8F5F16;
+    --olive:#5C6B4F;
+    --line:#C9C0A9;
+    --danger:#A3372A;
+    --white:#FBF9F3;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:'Inter',system-ui,sans-serif;}
+  #app{max-width:520px;margin:0 auto;padding-bottom:96px;min-height:100vh;background:var(--paper);}
+
+  header.hero{
+    background:var(--deep);
+    color:var(--white);
+    padding:28px 20px 22px;
+    border-bottom:3px solid var(--gold);
+  }
+  header.hero .kicker{font-size:12px;letter-spacing:0.02em;color:#B9CBD1;margin:0 0 4px;}
+  header.hero h1{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:26px;
+    line-height:1.15;
+    margin:0 0 8px;
+  }
+  header.hero .meta{font-size:13px;color:#CFDBDE;line-height:1.5;margin:0;}
+
+  main{padding:18px 18px 8px;}
+
+  .card{
+    background:var(--white);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:16px 16px 18px;
+    margin-bottom:16px;
+  }
+  .card h2{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:18px;
+    margin:0 0 12px;
+    color:var(--deep);
+  }
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:12px;color:var(--steel);margin-bottom:5px;font-weight:500;}
+  .field input[type=text],
+  .field input[type=tel],
+  .field input[type=number],
+  .field select{
+    width:100%;
+    padding:10px 11px;
+    border:1px solid var(--line);
+    border-radius:4px;
+    font-size:15px;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:inherit;
+  }
+  .field input:focus,.field select:focus{outline:2px solid var(--gold);outline-offset:1px;}
+  .row2{display:flex;gap:10px;}
+  .row2 > div{flex:1;}
+
+  .radiogroup{display:flex;gap:8px;}
+  .radiogroup label{
+    flex:1;
+    text-align:center;
+    border:1px solid var(--line);
+    border-radius:4px;
+    padding:9px 6px;
+    font-size:13px;
+    cursor:pointer;
+    background:var(--paper);
+  }
+  .radiogroup input{display:none;}
+  .radiogroup label.active{background:var(--deep);color:var(--white);border-color:var(--deep);}
+
+  button.primary{
+    width:100%;
+    background:var(--gold-deep);
+    color:var(--white);
+    border:none;
+    border-radius:4px;
+    padding:13px;
+    font-size:15px;
+    font-weight:600;
+    font-family:inherit;
+    cursor:pointer;
+    margin-top:4px;
+  }
+  button.primary:active{transform:scale(0.99);}
+  button.primary:disabled{opacity:0.5;}
+  button.secondary{
+    width:100%;
+    background:transparent;
+    color:var(--deep);
+    border:1px solid var(--deep);
+    border-radius:4px;
+    padding:10px;
+    font-size:14px;
+    font-family:inherit;
+    cursor:pointer;
+  }
+  button.small{
+    background:transparent;
+    border:1px solid var(--line);
+    border-radius:4px;
+    padding:6px 10px;
+    font-size:12px;
+    cursor:pointer;
+    color:var(--steel);
+  }
+  button.small.danger{color:var(--danger);border-color:#D9B7B0;}
+  .err{color:var(--danger);font-size:12px;margin-top:4px;}
+  .hint{color:var(--steel);font-size:12px;margin-top:6px;line-height:1.5;}
+
+  .divtabs{display:flex;gap:8px;margin-bottom:14px;}
+  .divtabs button{
+    flex:1;
+    padding:9px;
+    font-size:13px;
+    border:1px solid var(--line);
+    background:var(--paper);
+    border-radius:4px;
+    cursor:pointer;
+    color:var(--ink);
+    font-family:inherit;
+  }
+  .divtabs button.active{background:var(--olive);color:var(--white);border-color:var(--olive);}
+
+  .lbrow{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:10px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .lbrow:last-child{border-bottom:none;}
+  .lbrow .rank{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:17px;
+    color:var(--gold-deep);
+    width:22px;
+    text-align:center;
+  }
+  .lbrow .who{flex:1;min-width:0;}
+  .lbrow .who .name{font-size:14px;font-weight:500;}
+  .lbrow .who .sub{font-size:12px;color:var(--steel);}
+  .lbrow .len{font-family:'Fraunces',serif;font-size:16px;font-weight:600;color:var(--deep);}
+
+  .empty{
+    text-align:center;
+    padding:26px 10px;
+    color:var(--steel);
+    font-size:14px;
+  }
+
+  .catchcard{
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:12px;
+    margin-bottom:10px;
+    display:flex;
+    gap:10px;
+  }
+  .catchcard.best{border-color:var(--gold);background:#FCF6E9;}
+  .catchcard img{width:64px;height:64px;object-fit:cover;border-radius:4px;background:var(--paper-2);flex-shrink:0;}
+  .catchcard .noimg{width:64px;height:64px;border-radius:4px;background:var(--paper-2);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--steel);}
+  .catchcard .info{flex:1;min-width:0;}
+  .catchcard .info .top{display:flex;justify-content:space-between;gap:8px;align-items:center;}
+  .catchcard .info .len{font-weight:600;font-family:'Fraunces',serif;font-size:16px;}
+  .catchcard .info .name{font-size:13px;color:var(--steel);}
+  .catchcard .info .status{font-size:11px;margin-top:4px;display:inline-block;padding:2px 7px;border-radius:3px;}
+  .badge{font-size:11px;display:inline-block;padding:2px 7px;border-radius:3px;background:#F3E4C4;color:var(--gold-deep);}
+  .catchcard .info .badge{margin-top:4px;margin-left:6px;}
+  .status.pending{background:#F3E4C4;color:var(--gold-deep);}
+  .status.approved{background:#DDE6D5;color:var(--olive);}
+  .status.rejected{background:#F1D6D0;color:var(--danger);}
+  .actions{display:flex;gap:6px;margin-top:6px;}
+  .catchcard .edit-len{width:70px;padding:6px 8px;font-size:13px;border:1px solid var(--line);border-radius:4px;background:var(--paper);}
+
+  nav.tabbar{
+    position:fixed;
+    bottom:14px;left:0;right:0;
+    max-width:480px;
+    margin:0 auto;
+    background:var(--deep);
+    display:flex;
+    gap:2px;
+    border-radius:20px;
+    padding:6px;
+    box-shadow:0 8px 24px rgba(0,0,0,0.28), 0 2px 6px rgba(0,0,0,0.15);
+  }
+  nav.tabbar button{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:3px;
+    background:none;
+    border:none;
+    border-radius:14px;
+    color:#8CA3AA;
+    font-size:10.5px;
+    font-weight:500;
+    font-family:inherit;
+    padding:9px 4px 8px;
+    cursor:pointer;
+    transition:background-color .18s ease, color .18s ease;
+  }
+  nav.tabbar button.active{
+    color:var(--white);
+    font-weight:600;
+    background:rgba(255,255,255,0.12);
+  }
+  nav.tabbar button .ico{display:block;width:20px;height:20px;}
+  nav.tabbar button .ico svg{width:100%;height:100%;display:block;}
+  nav.tabbar button .ico svg{stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+
+  .screen{display:none;}
+  .screen.active{display:block;}
+
+  .lockrow{display:flex;gap:8px;}
+  .lockrow input{
+    flex:1;
+    padding:10px 11px;
+    border:1px solid var(--line);
+    border-radius:4px;
+    font-size:15px;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:inherit;
+  }
+  .lockrow input:focus{outline:2px solid var(--gold);outline-offset:1px;}
+
+  .divider{border:none;border-top:1px solid var(--line);margin:14px 0;}
+
+  .backlink{
+    display:inline-block;
+    color:var(--steel);
+    font-size:13px;
+    margin-bottom:12px;
+    cursor:pointer;
+    text-decoration:none;
+  }
+
+  .profilecard{
+    background:var(--deep);
+    color:var(--white);
+    border-radius:6px;
+    padding:16px;
+    margin-bottom:16px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+  .profilecard .avatar{
+    width:46px;height:46px;border-radius:50%;
+    background:var(--gold);color:var(--deep);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Fraunces',serif;font-weight:600;font-size:16px;
+    flex-shrink:0;
+  }
+  .profilecard .name{font-size:16px;font-weight:600;}
+  .profilecard .sub{font-size:12px;color:#CFDBDE;margin-top:2px;}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .tile{
+    background:var(--white);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:16px 10px;
+    text-align:center;
+    cursor:pointer;
+  }
+  .tile .ticon{font-size:24px;display:block;margin-bottom:8px;}
+  .tile .tlabel{font-size:13px;font-weight:500;}
+  .tile .tsub{font-size:11px;color:var(--steel);margin-top:2px;}
+
+  .checkrow{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:14px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .checkrow:last-child{border-bottom:none;}
+  .checkrow .day{font-size:14px;font-weight:500;}
+  .checkrow .status-text{font-size:12px;color:var(--steel);margin-top:2px;}
+  .checkbtn{
+    padding:9px 14px;
+    border-radius:4px;
+    border:none;
+    font-size:13px;
+    font-weight:600;
+    font-family:inherit;
+    cursor:pointer;
+  }
+  .checkbtn.in{background:var(--olive);color:var(--white);}
+  .checkbtn.out{background:var(--deep);color:var(--white);}
+  .checkbtn.done{background:var(--paper-2);color:var(--steel);}
+
+  #app, #app *{transition:background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;}
+
+  #app[data-theme="home"]{
+    --deep:#07090A;--gold:#E03725;--gold-deep:#A52216;--paper:#07090A;
+    --paper-2:#181C1F;--line:#30363A;--steel:#A5ADB1;--white:#F4F1E9;
+    height:100svh;min-height:100svh;overflow-y:auto;padding-bottom:70px;
+    background:linear-gradient(155deg,rgba(224,55,37,.08),transparent 34%),var(--deep);
+    color:var(--white);
+  }
+  #app[data-theme="home"] main{padding:0 12px 6px;}
+  #app[data-theme="home"] header.hero{display:none;}
+  #app[data-theme="home"] #screen-home{height:100%;}
+
+  .home-topbar{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:9px 2px 8px;border-bottom:1px solid var(--line);
+  }
+  .home-brand{display:flex;align-items:center;gap:9px;min-width:0;}
+  .home-monogram{
+    display:grid;place-items:center;width:35px;height:35px;flex-shrink:0;
+    background:var(--gold);color:var(--white);font-family:'Oswald',sans-serif;
+    font-weight:700;letter-spacing:.03em;
+    clip-path:polygon(0 0,86% 0,100% 28%,100% 100%,14% 100%,0 72%);
+  }
+  .home-brand-copy{display:flex;flex-direction:column;min-width:0;}
+  .home-brand-copy strong{
+    font-family:'Oswald',sans-serif;font-size:17px;line-height:1.05;
+    letter-spacing:.04em;text-transform:uppercase;
+  }
+  .home-brand-copy small{
+    margin-top:2px;color:var(--steel);font-family:'Space Mono',monospace;
+    font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+  }
+  .home-signal{
+    display:grid;place-items:center;width:38px;height:38px;flex-shrink:0;
+    border:1px solid var(--line);background:#111416;color:var(--gold);
+  }
+  .home-signal svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+
+  .home-event{
+    position:relative;isolation:isolate;overflow:hidden;margin-top:8px;padding:11px 13px 12px;
+    border:1px solid var(--line);border-left:5px solid var(--gold);
+    background:repeating-linear-gradient(135deg,transparent 0 12px,rgba(255,255,255,.025) 12px 13px),linear-gradient(140deg,#1C2428 0%,#101416 60%,#090B0C 100%);
+    clip-path:polygon(0 0,95% 0,100% 8%,100% 100%,0 100%);
+  }
+  .home-event::after{
+    content:'';position:absolute;z-index:-2;right:-42px;bottom:-74px;width:180px;height:180px;
+    border:1px solid rgba(224,55,37,.34);border-radius:50%;
+    box-shadow:0 0 0 20px rgba(224,55,37,.045),0 0 0 42px rgba(224,55,37,.025);
+  }
+  .home-event-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;}
+  .home-live{
+    display:inline-flex;align-items:center;gap:6px;padding:4px 7px;
+    border:1px solid rgba(224,55,37,.65);background:rgba(224,55,37,.12);
+    font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.04em;text-transform:uppercase;
+  }
+  .home-live-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(224,55,37,.14);}
+  .home-live.closed{border-color:var(--line);background:rgba(255,255,255,.04);}
+  .home-live.closed .home-live-dot{background:var(--steel);box-shadow:none;}
+  .home-event-date{color:var(--steel);font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;}
+  .home-fishmark{position:absolute;z-index:-1;top:26px;right:-21px;width:154px;height:96px;color:rgba(244,241,233,.075);transform:rotate(-8deg);}
+  .home-fishmark path,.home-fishmark line{stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+  .home-kicker{margin:0 0 3px;color:var(--steel);font-family:'Space Mono',monospace;font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;}
+  .home-event h1{
+    max-width:300px;margin:0;color:var(--white);font-family:'Oswald',sans-serif;
+    font-size:25px;line-height:1.03;letter-spacing:.025em;text-transform:uppercase;
+  }
+  .home-location{display:flex;align-items:center;gap:5px;margin:6px 0 8px;color:var(--steel);font-size:10.5px;}
+  .home-location svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+  .home-register{
+    width:100%;height:38px;border:0;background:var(--gold);color:var(--white);
+    font-family:'Oswald',sans-serif;font-size:13px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;cursor:pointer;
+    clip-path:polygon(0 0,97% 0,100% 28%,100% 100%,3% 100%,0 72%);
+  }
+
+  .home-profilecard{
+    display:flex;align-items:center;gap:9px;min-height:50px;margin-top:7px;padding:7px 9px;
+    border:1px solid var(--line);background:#111416;
+  }
+  .home-avatar{
+    display:grid;place-items:center;width:36px;height:36px;flex-shrink:0;
+    background:#26363D;border-bottom:3px solid #D5A33A;color:var(--white);
+    font-family:'Oswald',sans-serif;font-weight:600;
+  }
+  .home-profile-copy{display:flex;flex:1;min-width:0;flex-direction:column;}
+  .home-profile-label{color:var(--gold);font-family:'Space Mono',monospace;font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;}
+  .home-profile-name{overflow:hidden;color:var(--white);font-family:'Oswald',sans-serif;font-size:14px;font-weight:600;letter-spacing:.03em;text-overflow:ellipsis;text-transform:uppercase;white-space:nowrap;}
+  .home-profile-sub{overflow:hidden;color:var(--steel);font-family:'Space Mono',monospace;font-size:9px;text-overflow:ellipsis;white-space:nowrap;}
+
+  .event-countdown{
+    display:grid;grid-template-columns:auto 1fr 1fr;align-items:stretch;gap:0;
+    min-height:55px;margin-top:6px;border:1px solid var(--line);border-left:5px solid var(--gold);
+    background:#111416;color:var(--white);
+  }
+  .event-countdown[hidden]{display:none;}
+  .countdown-status{
+    display:flex;align-items:center;justify-content:center;flex-direction:column;
+    min-width:62px;padding:5px 7px;background:rgba(224,55,37,.12);text-align:center;
+  }
+  .countdown-status strong{font-family:'Oswald',sans-serif;font-size:12px;letter-spacing:.06em;text-transform:uppercase;}
+  .countdown-status span{color:var(--gold);font-family:'Space Mono',monospace;font-size:8px;letter-spacing:.08em;text-transform:uppercase;}
+  .countdown-block{
+    display:flex;align-items:center;justify-content:center;flex-direction:column;
+    padding:5px 6px;border-left:1px solid var(--line);text-align:center;
+  }
+  .countdown-label{color:var(--steel);font-family:'Space Mono',monospace;font-size:8px;letter-spacing:.08em;text-transform:uppercase;}
+  .countdown-value{margin-top:1px;font-family:'Oswald',sans-serif;font-size:17px;font-weight:700;letter-spacing:.05em;}
+  .countdown-time{color:var(--gold);font-family:'Space Mono',monospace;font-size:8px;letter-spacing:.06em;}
+  .event-countdown.phase-checkin{border-left-color:#D5A33A;}
+  .event-countdown.phase-checkin .countdown-status{background:rgba(213,163,58,.10);}
+  .event-countdown.phase-complete{border-left-color:#5FAE85;}
+  .event-countdown.phase-complete .countdown-status{background:rgba(95,174,133,.10);}
+
+  .home-sectionhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 2px 6px;}
+  .home-sectionhead h2{margin:0;color:var(--white);font-family:'Oswald',sans-serif;font-size:14px;letter-spacing:.05em;text-transform:uppercase;}
+  .home-sectionhead span{color:var(--gold);font-family:'Space Mono',monospace;font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;}
+  .home-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;}
+  .home-tile{
+    position:relative;display:flex;align-items:flex-start;flex-direction:column;justify-content:space-between;
+    min-height:78px;padding:9px 10px;border:1px solid var(--line);background:#181C1F;
+    color:var(--white);cursor:pointer;text-align:left;
+  }
+  .home-tile::after{content:'';position:absolute;right:0;bottom:0;width:22px;height:3px;background:#26363D;}
+  .home-tile.accent-red::after{background:var(--gold);}
+  .home-tile.accent-gold::after{background:#D5A33A;}
+  .home-tile:active{transform:translateY(1px);border-color:var(--gold);}
+  .home-tile-icon{width:18px;height:18px;color:var(--white);}
+  .home-tile-icon svg{width:100%;height:100%;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+  .home-tile-copy{display:flex;flex-direction:column;min-width:0;}
+  .home-tile-label{color:var(--white);font-family:'Oswald',sans-serif;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;}
+  .home-tile-sub{color:var(--steel);font-family:'Space Mono',monospace;font-size:8.5px;}
+  .home-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:7px;}
+  .home-info-tile{
+    display:flex;align-items:center;gap:8px;min-height:78px;padding:9px 10px;
+    border:1px solid var(--line);background:#111416;color:var(--white);cursor:pointer;text-align:left;
+  }
+  .home-info-tile:active{transform:translateY(1px);border-color:var(--gold);}
+  .home-info-tile svg{width:17px;height:17px;flex-shrink:0;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+  .home-info-copy{display:flex;flex-direction:column;min-width:0;}
+  .home-info-copy strong{font-family:'Oswald',sans-serif;font-size:11px;letter-spacing:.04em;text-transform:uppercase;}
+  .home-info-copy span{color:var(--steel);font-family:'Space Mono',monospace;font-size:8px;text-transform:uppercase;}
+
+  #app[data-theme="home"] nav.tabbar{
+    bottom:max(7px,env(safe-area-inset-bottom));max-width:496px;border:1px solid var(--line);
+    border-radius:0;padding:4px;background:#0B0D0E;box-shadow:0 8px 24px rgba(0,0,0,.38);
+  }
+  #app[data-theme="home"] nav.tabbar button{min-height:48px;padding:4px;border-top:2px solid transparent;border-radius:0;color:var(--steel);}
+  #app[data-theme="home"] nav.tabbar button.active{border-top-color:var(--gold);background:transparent;color:var(--white);}
+
+  .director-tools{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;}
+  .director-tool{
+    display:flex;align-items:flex-start;justify-content:space-between;flex-direction:column;
+    min-height:104px;padding:13px;border:2px solid var(--deep);border-left:5px solid var(--gold);
+    background:var(--white);color:var(--deep);cursor:pointer;text-align:left;
+  }
+  .director-tool.active{background:var(--deep);color:var(--white);border-color:var(--deep);border-left-color:var(--gold);}
+  .director-tool svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+  .director-tool-copy{display:flex;flex-direction:column;gap:2px;}
+  .director-tool strong{font-family:'Oswald',sans-serif;font-size:14px;letter-spacing:.04em;text-transform:uppercase;}
+  .director-tool span{font-size:11px;color:var(--steel);}
+  .director-tool.active span{color:#D2D0CA;}
+  /* justify-content:space-between from .director-tool stacks icon-over-copy in
+     the two-up tiles, but in the wide row it shoved the label to the far right,
+     away from its own icon - hence the gap below never showing. */
+  .director-tool.wide{grid-column:1 / -1;flex-direction:row;align-items:center;justify-content:flex-start;gap:12px;min-height:64px;}
+  .director-tool.wide svg{flex-shrink:0;}
+
+  .contestant-filters{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;}
+  .contestant-filters button{
+    flex:1;min-width:64px;padding:7px 6px;font-size:12px;font-family:inherit;
+    border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:4px;cursor:pointer;
+  }
+  .contestant-filters button.active{background:var(--deep);color:var(--white);border-color:var(--deep);}
+
+  .crow{border:1px solid var(--line);border-left:3px solid var(--line);background:var(--paper);margin-bottom:8px;}
+  .crow.dq{border-left-color:var(--danger);background:#F7EFEC;}
+  .crow.leader{border-left-color:var(--gold);}
+  .crow-head{display:flex;align-items:center;gap:10px;padding:10px;cursor:pointer;}
+  .crow-rank{
+    flex-shrink:0;width:26px;text-align:center;font-family:'Fraunces',serif;
+    font-weight:600;font-size:15px;color:var(--gold-deep);
+  }
+  .crow-id{flex:1;min-width:0;}
+  .crow-name{font-size:14px;font-weight:600;}
+  .crow-name .dqtag{
+    margin-left:6px;font-size:9px;font-weight:700;letter-spacing:.06em;
+    background:#F1D6D0;color:var(--danger);padding:2px 5px;border-radius:3px;vertical-align:middle;
+  }
+  .crow-sub{font-size:11px;color:var(--steel);margin-top:2px;}
+  .crow-best{text-align:right;flex-shrink:0;}
+  .crow-best strong{display:block;font-family:'Fraunces',serif;font-size:15px;color:var(--deep);}
+  .crow-best span{font-size:10px;color:var(--steel);text-transform:uppercase;}
+  .crow-body{padding:0 10px 10px;border-top:1px solid var(--line);}
+  .cstats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0;}
+  .cstat{padding:7px 4px;border:1px solid var(--line);background:var(--white);text-align:center;}
+  .cstat strong{display:block;font-family:'Fraunces',serif;font-size:15px;color:var(--deep);}
+  .cstat span{font-size:9px;color:var(--steel);text-transform:uppercase;letter-spacing:.03em;}
+  .cfish{display:flex;justify-content:space-between;gap:8px;font-size:11px;padding:5px 0;border-bottom:1px solid var(--line);}
+  .cfish:last-child{border-bottom:0;}
+  .cfish .st{color:var(--steel);}
+  .cdq{margin-top:10px;padding:10px;border:1px solid var(--danger);background:#F9EEEB;}
+  .cdq-warn{font-size:11px;color:var(--danger);font-weight:600;line-height:1.45;margin-bottom:8px;}
+  .cdq input[type=text]{
+    width:100%;padding:8px;font-size:12px;font-family:inherit;margin-bottom:8px;
+    border:1px solid var(--line);border-radius:4px;background:var(--white);color:var(--ink);
+  }
+  .cdq-actions{display:flex;gap:6px;}
+  .cdq-actions button{flex:1;}
+  .crow-note{font-size:11px;color:var(--danger);margin-top:6px;line-height:1.4;}
+  .gps-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;}
+  .gps-stat{padding:10px;border:1px solid var(--line);background:var(--paper-2);text-align:center;}
+  .gps-stat strong{display:block;font-family:'Fraunces',serif;font-size:18px;color:var(--deep);}
+  .gps-stat span{font-size:10px;color:var(--steel);text-transform:uppercase;}
+  .gps-row{padding:9px 0;border-bottom:1px solid var(--line);}
+  .gps-row:last-child{border-bottom:0;}
+  .gps-row-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;}
+  .gps-row-name{font-size:13px;font-weight:600;}
+  .gps-row-meta{font-size:11px;color:var(--steel);}
+
+  .fp{margin-top:8px;border:1px solid var(--line);border-left:3px solid var(--line);background:var(--paper);padding:8px 9px;}
+  .fp.level-clear{border-left-color:#5FAE85;}
+  .fp.level-review{border-left-color:#D5A33A;}
+  .fp.level-flag{border-left-color:var(--danger);}
+  .fp-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .fp-title{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--steel);font-weight:600;}
+  .fp-verdict{font-size:10px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;padding:2px 6px;border-radius:3px;}
+  .fp-verdict.level-clear{background:#DDE6D5;color:#3D6A50;}
+  .fp-verdict.level-review{background:#F3E4C4;color:var(--gold-deep);}
+  .fp-verdict.level-flag{background:#F1D6D0;color:var(--danger);}
+  .fp-item{display:flex;gap:6px;margin-top:6px;font-size:11px;line-height:1.4;}
+  .fp-dot{flex-shrink:0;width:6px;height:6px;border-radius:50%;margin-top:4px;}
+  .fp-dot.level-review{background:#D5A33A;}
+  .fp-dot.level-flag{background:var(--danger);}
+  .fp-dot.level-info{background:var(--steel);}
+  .fp-item strong{font-weight:600;}
+  .fp-item span{color:var(--steel);}
+  .fp-ai{margin-top:8px;padding-top:7px;border-top:1px dashed var(--line);}
+  .fp-ai-note{font-size:11px;color:var(--steel);line-height:1.4;}
+
+  @media (max-height:700px){
+    .home-topbar{padding-top:6px;padding-bottom:6px;}
+    .home-event{margin-top:6px;padding-top:8px;padding-bottom:9px;}
+    .home-event-top{margin-bottom:5px;}
+    .home-event h1{font-size:22px;}
+    .home-profilecard{min-height:46px;margin-top:5px;padding-top:5px;padding-bottom:5px;}
+    .home-sectionhead{margin-top:7px;}
+    .home-tile{min-height:69px;padding-top:7px;padding-bottom:7px;}
+    .home-info-tile{min-height:69px;padding-top:7px;padding-bottom:7px;}
+  }
+  @media (max-height:620px){
+    .home-brand-copy small,.home-kicker{display:none;}
+    .home-monogram{width:31px;height:31px;}
+    .home-signal{width:33px;height:33px;}
+    .home-event{padding-top:6px;padding-bottom:7px;}
+    .home-event-top{margin-bottom:3px;}
+    .home-event h1{font-size:20px;}
+    .home-location{margin-top:4px;margin-bottom:5px;}
+    .home-register{height:33px;}
+    .home-profilecard{min-height:42px;}
+    .home-avatar{width:32px;height:32px;}
+    .event-countdown{min-height:47px;margin-top:4px;}
+    .countdown-value{font-size:15px;}
+    .home-sectionhead{margin-top:5px;margin-bottom:4px;}
+    .home-tile{min-height:58px;}
+    .home-info-tile{min-height:58px;padding-top:5px;padding-bottom:5px;}
+  }
+  #app[data-theme="checkin"]{--deep:#8C3B12;--gold:#F2A93B;--gold-deep:#B5651D;--paper:#FBF1E4;--paper-2:#F3DFC2;--line:#E3C69C;--steel:#9C6B3D;}
+  #app[data-theme="submit"]{--deep:#1E4C4F;--gold:#4FBAB8;--gold-deep:#2D7E7D;--paper:#EAF3F1;--paper-2:#D8E9E6;--line:#B9D6D1;--steel:#3F7472;}
+  #app[data-theme="manage"]{--deep:#3A3F44;--gold:#9C9284;--gold-deep:#6E6558;--paper:#EFEEEA;--paper-2:#DFDCD3;--line:#C8C4B8;--steel:#6C6A64;}
+  #app[data-theme="livewell"]{--deep:#123B34;--gold:#5FAE85;--gold-deep:#357657;--paper:#E9F2EA;--paper-2:#D5E7D9;--line:#B6D3BF;--steel:#3D6A50;}
+  #app[data-theme="gps"]{--deep:#183C43;--gold:#64B6B1;--gold-deep:#337B78;--paper:#EAF3F2;--paper-2:#D8E8E6;--line:#B9D3D0;--steel:#426E6B;}
+  #app[data-theme="payouts"]{--deep:#2B2116;--gold:#D4AF37;--gold-deep:#A3811F;--paper:#F7F0DC;--paper-2:#EEE1BC;--line:#DCC98C;--steel:#8A7440;}
+  #app[data-theme="leaderboard"]{--deep:#2B2116;--gold:#D4AF37;--gold-deep:#A3811F;--paper:#F7F0DC;--paper-2:#EEE1BC;--line:#DCC98C;--steel:#8A7440;}
+  #app[data-theme="bigfish"]{--deep:#3B1F2B;--gold:#C1672B;--gold-deep:#914D1F;--paper:#F6EBE5;--paper-2:#EAD3C6;--line:#D8B49E;--steel:#8A5B41;}
+  #app[data-theme="admin"]{--deep:#232323;--gold:#B0ADA6;--gold-deep:#7D7A73;--paper:#EDEDEA;--paper-2:#DCDAD4;--line:#C4C1B8;--steel:#6B6963;}
+
+  #app[data-theme="register"]{--deep:#0E0D0B;--gold:#C9982E;--gold-deep:#A67E24;--paper:#FEFEFE;--paper-2:#F4F2ED;--line:#0E0D0B;--steel:#55524C;}
+  #app[data-theme="register"] header.hero{background:var(--paper);color:var(--deep);border-bottom:none;padding:0 0 22px;}
+  #app[data-theme="register"] header.hero .kicker{font-family:'Space Mono',monospace;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);}
+  #app[data-theme="register"] header.hero .meta{color:var(--steel);}
+  #app[data-theme="register"] header.hero h1{font-family:'Oswald',sans-serif;font-weight:700;text-transform:uppercase;font-size:32px;letter-spacing:.01em;}
+  #app[data-theme="register"] .card{border:2px solid var(--deep);border-radius:0;position:relative;}
+  #app[data-theme="register"] .card h2{font-family:'Oswald',sans-serif;font-weight:600;text-transform:uppercase;letter-spacing:.04em;font-size:16px;}
+  #app[data-theme="register"] .field label{font-family:'Space Mono',monospace;text-transform:uppercase;letter-spacing:.1em;font-size:10.5px;color:var(--steel);}
+  #app[data-theme="register"] .field input,
+  #app[data-theme="register"] .field select{border-radius:0;border-color:var(--deep);background:var(--paper-2);}
+  #app[data-theme="register"] .radiogroup label{border-radius:0;border-color:var(--deep);font-family:'Space Mono',monospace;font-size:12px;}
+  #app[data-theme="register"] .radiogroup label.active{background:var(--deep);}
+  #app[data-theme="register"] button.primary{background:var(--deep);border-radius:0;font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:.04em;font-weight:600;}
+  #app[data-theme="register"] .lbrow{border-bottom-color:var(--deep);}
+  #app[data-theme="register"] .lbrow .name{font-family:'Oswald',sans-serif;font-weight:500;}
+
+  .vf-wrap{position:relative;background:#000;border-radius:6px;overflow:hidden;margin-bottom:10px;}
+  .vf-wrap video{width:100%;display:block;max-height:340px;object-fit:cover;background:#000;}
+  .vf-guide{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;}
+  .vf-controls{display:flex;gap:8px;margin-bottom:12px;}
+  .vf-controls button{flex:1;}
+  .vf-hint{position:absolute;bottom:8px;left:0;right:0;text-align:center;color:#fff;font-size:12px;background:rgba(0,0,0,0.45);padding:4px 8px;margin:0 8px;border-radius:4px;}
+  .vf-auto{
+    position:absolute;top:8px;left:8px;display:inline-flex;align-items:center;gap:6px;
+    padding:5px 9px;border-radius:20px;background:rgba(0,0,0,0.62);
+    color:#fff;font-size:11px;font-weight:600;letter-spacing:.02em;
+  }
+  .vf-auto-dot{width:8px;height:8px;border-radius:50%;background:#D5A33A;transition:background .2s ease;}
+  .vf-auto-dot.ready{background:#5FAE85;}
+  .vf-auto-dot.hold{background:#E03725;}
+  .vf-count{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    pointer-events:none;
+  }
+  .vf-count span{
+    display:grid;place-items:center;width:82px;height:82px;border-radius:50%;
+    border:4px solid #5FAE85;background:rgba(0,0,0,0.45);
+    color:#fff;font-family:'Oswald',sans-serif;font-size:40px;font-weight:700;
+  }
+  .vf-autotoggle{
+    display:flex;align-items:flex-start;gap:8px;margin:-4px 0 12px;
+    font-size:12px;color:var(--steel);line-height:1.4;cursor:pointer;
+  }
+  .vf-autotoggle input{width:auto;flex-shrink:0;margin-top:1px;}
+  .vf-preview{position:relative;margin-bottom:10px;}
+  .vf-preview img{width:100%;border-radius:6px;display:block;}
+  .vf-preview button{position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.55);color:#fff;border:none;border-radius:4px;padding:6px 10px;font-size:12px;cursor:pointer;}
+  .vf-err{font-size:12px;color:var(--danger);margin-bottom:10px;}
+
+  /* Photos load into their slot after the list has painted, so a page of
+     catches appears immediately instead of waiting on every image. */
+  .photoslot{
+    width:64px;height:64px;flex-shrink:0;border-radius:4px;overflow:hidden;
+    background:var(--paper-2);
+  }
+  .photoslot img{width:64px;height:64px;object-fit:cover;display:block;}
+
+  /* color:inherit matters - the home screen is a dark theme and var(--ink)
+     is the light-theme text colour, which would be black on black there. */
+  .syncbanner{
+    margin:0 0 10px;padding:8px 10px;border-radius:4px;
+    font-size:12px;line-height:1.45;
+    border:1px solid var(--line);background:var(--paper-2);color:inherit;
+  }
+  .syncbanner.level-warn{border-color:#D5A33A;background:#F3E4C4;color:#7A5410;}
+  .syncbanner.level-bad{border-color:#A3372A;background:#F1D6D0;color:#A3372A;}
+  #app[data-theme="home"] .syncbanner{margin:8px 0 0;}
+  .home-signal.sync-ok{color:var(--gold);}
+  .home-signal.sync-warn{color:#D5A33A;}
+  .home-signal.sync-bad{color:#E03725;}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div id="app" data-theme="home">
+
+  <main>
+
+    <div id="sync-banner" class="syncbanner" hidden role="status" aria-live="polite"></div>
+
+    <!-- HOME -->
+    <section class="screen active" id="screen-home">
+      <div class="home-topbar">
+        <div class="home-brand">
+          <span class="home-monogram">LW</span>
+          <span class="home-brand-copy">
+            <strong>LiveWire</strong>
+            <small>featuring Fish-I</small>
+          </span>
+        </div>
+        <span class="home-signal" id="sync-signal" aria-label="Tournament signal ready">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.6a10 10 0 0 1 14 0"/><path d="M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1"/></svg>
+        </span>
+      </div>
+
+      <section class="home-event" aria-labelledby="home-event-title">
+        <div class="home-event-top">
+          <span class="home-live" id="home-reg-badge"><span class="home-live-dot"></span><span id="home-reg-text">Registration open</span></span>
+          <span class="home-event-date">Sept 18&ndash;19, 2027</span>
+        </div>
+        <svg class="home-fishmark" viewBox="0 0 260 150" aria-hidden="true">
+          <path d="M28 78c34-42 102-58 158-28 20 11 34 25 48 28-14 4-28 18-48 29-56 30-124 14-158-29Z"/>
+          <path d="M28 78 6 48c3 22 3 38 0 60l22-30Z"/>
+          <path d="M89 43 116 17l20 27 24-18 15 24"/>
+          <path d="M92 110c14-18 33-22 49-10"/>
+          <circle cx="191" cy="65" r="4"/>
+          <path d="M199 91c12 2 23-2 35-13"/>
+          <line x1="69" y1="58" x2="163" y2="86"/>
+        </svg>
+        <p class="home-kicker">Turmanator Trailer &amp; Ironworks presents</p>
+        <h1 id="home-event-title">Montana Kayak<br>Walleye Open</h1>
+        <div class="home-location">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+          <span>Canyon Ferry &middot; Silos to the Ponds</span>
+        </div>
+        <button class="home-register" id="home-register-btn" type="button" data-goto="register">Register now</button>
+      </section>
+
+      <div id="home-profile"></div>
+      <div class="event-countdown" id="event-countdown" hidden aria-live="polite">
+        <div class="countdown-status">
+          <strong id="event-day-label">Day 1</strong>
+          <span id="event-phase-label">Live</span>
+        </div>
+        <div class="countdown-block">
+          <span class="countdown-label">Lines out</span>
+          <strong class="countdown-value" id="lines-out-countdown">00:00:00</strong>
+          <span class="countdown-time">1400</span>
+        </div>
+        <div class="countdown-block">
+          <span class="countdown-label">Final check-in</span>
+          <strong class="countdown-value" id="final-checkin-countdown">00:00:00</strong>
+          <span class="countdown-time">1500</span>
+        </div>
+      </div>
+
+      <div class="home-sectionhead">
+        <h2>More actions</h2>
+        <span>Quick access</span>
+      </div>
+
+      <div class="home-grid">
+        <button class="home-tile accent-red" type="button" data-goto="checkin">
+          <span class="home-tile-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></svg></span>
+          <span class="home-tile-copy"><span class="home-tile-label">Check In / Out</span><span class="home-tile-sub">Both event days</span></span>
+        </button>
+        <button class="home-tile" type="button" data-goto="manage">
+          <span class="home-tile-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5h6"/><path d="M9 3h6v4H9z"/><path d="M7 5H5v16h14V5h-2"/><path d="M8 12h8M8 16h5"/></svg></span>
+          <span class="home-tile-copy"><span class="home-tile-label">Manage Catch</span><span class="home-tile-sub">Edit or withdraw</span></span>
+        </button>
+        <button class="home-tile" type="button" data-goto="livewell">
+          <span class="home-tile-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12c4-5 10-6 15-2l3-3v10l-3-3c-5 4-11 3-15-2Z"/><circle cx="16" cy="11" r=".7" fill="currentColor" stroke="none"/></svg></span>
+          <span class="home-tile-copy"><span class="home-tile-label">CPR Livewell</span><span class="home-tile-sub">Your scoring fish</span></span>
+        </button>
+        <button class="home-tile accent-gold" type="button" data-goto="bigfish">
+          <span class="home-tile-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15 8.5c-.8-.7-1.8-1-3-1-1.7 0-3 .9-3 2.2 0 3.4 6 1.3 6 4.5 0 1.3-1.3 2.3-3.1 2.3-1.3 0-2.5-.4-3.4-1.2M12 5.5v13"/></svg></span>
+          <span class="home-tile-copy"><span class="home-tile-label">Big Fish Pot</span><span class="home-tile-sub">Side-pot standings</span></span>
+        </button>
+      </div>
+
+      <div class="home-info-grid" aria-label="Read-only tournament information">
+        <button class="home-info-tile" type="button" data-goto="gps">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+          <span class="home-info-copy"><strong>GPS Status</strong><span>Read only</span></span>
+        </button>
+        <button class="home-info-tile" type="button" data-goto="payouts">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15 8.5c-.8-.7-1.8-1-3-1-1.7 0-3 .9-3 2.2 0 3.4 6 1.3 6 4.5 0 1.3-1.3 2.3-3.1 2.3-1.3 0-2.5-.4-3.4-1.2M12 5.5v13"/></svg>
+          <span class="home-info-copy"><strong>Payouts</strong><span>Read only</span></span>
+        </button>
+      </div>
+    </section>
+
+    <!-- REGISTER -->
+    <section class="screen" id="screen-register">
+      <a class="backlink" data-goto="home" role="button" tabindex="0">&larr; Home</a>
+      <header class="hero" style="margin:0 0 16px;border-radius:6px;">
+        <p class="kicker">Turmanator Trailer &amp; Ironworks presents</p>
+        <h1>Montana Kayak Walleye Open</h1>
+        <p class="meta">Sept 18&ndash;19, 2027 &middot; Silos to the Ponds, Canyon Ferry &middot; Catch &middot; Photo &middot; Release</p>
+      </header>
+      <div class="card">
+        <h2>Register</h2>
+        <p class="hint" id="reg-closed-notice" style="display:none;background:var(--paper-2);padding:10px;border-radius:4px;">Registration closed on June 1, 2027. Contact the tournament director if you still need to enter.</p>
+        <div class="field">
+          <label for="reg-name">Your name</label>
+          <input type="text" id="reg-name" placeholder="First and last name">
+        </div>
+        <div class="field">
+          <label for="reg-phone">Phone (optional)</label>
+          <input type="tel" id="reg-phone" placeholder="406-555-0100">
+        </div>
+        <div class="field">
+          <label>Division</label>
+          <div class="radiogroup" id="reg-division">
+            <label class="active" data-val="solo"><input type="radio" name="div" checked>Solo &mdash; $30</label>
+            <label data-val="team"><input type="radio" name="div">Team &mdash; $50</label>
+          </div>
+        </div>
+        <div class="field" id="reg-partner-field" style="display:none;">
+          <label for="reg-partner">Partner name</label>
+          <input type="text" id="reg-partner" placeholder="Partner's first and last name">
+        </div>
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:8px;font-weight:400;">
+            <input type="checkbox" id="reg-bigfish" style="width:auto;">
+            Enter Big Fish side pot &mdash; $10/angler ($20 for a team entry), winner take all
+          </label>
+        </div>
+        <div class="err" id="reg-err" style="display:none;"></div>
+        <button class="primary" id="reg-submit">Complete registration</button>
+        <p class="hint">Registration closes June 1, 2027. This confirms your spot on the roster &mdash; entry fees and side pot buy-ins are collected separately by PayPal, per the info in your confirmation email.</p>
+      </div>
+
+      <div class="card" id="reg-roster-card">
+        <h2>Registered anglers</h2>
+        <div id="reg-roster"></div>
+      </div>
+    </section>
+
+    <!-- CHECK IN/OUT -->
+    <section class="screen" id="screen-checkin">
+      <a class="backlink" data-goto="home" role="button" tabindex="0">&larr; Home</a>
+      <div class="card">
+        <h2>Check in / check out</h2>
+        <p class="hint" style="margin-top:0;">Check-in 0700, rules meeting 0715, lines out 1400, final check-in by 1500 both days. Everyone must check out to confirm a safe return to the ramp.</p>
+        <div class="field">
+          <label for="checkin-angler">Angler</label>
+          <select id="checkin-angler"></select>
+        </div>
+        <div id="checkin-body"></div>
+      </div>
+    </section>
+
+    <!-- SUBMIT CATCH -->
+    <section class="screen" id="screen-submit">
+      <a class="backlink" data-goto="home" role="button" tabindex="0">&larr; Home</a>
+      <div class="card">
+        <h2>Submit a catch</h2>
+        <div class="field">
+          <label for="sub-angler">Angler</label>
+          <select id="sub-angler"></select>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="sub-length">Length (inches)</label>
+            <input type="number" id="sub-length" step="0.25" min="0" placeholder="18.5">
+          </div>
+          <div class="field">
+            <label for="sub-species">Species</label>
+            <select id="sub-species">
+              <option value="Walleye">Walleye</option>
+              <option value="Other">Other (not scored)</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label>Photo on bump board</label>
+
+          <div id="vf-wrap" class="vf-wrap" style="display:none;">
+            <video id="vf-video" autoplay playsinline muted></video>
+            <!-- Walleye placement guide. Blue = where the fish goes.
+                 Red hatch = keep hands (and anything else) out of these zones:
+                 the nose at the stop, the tail, and the ruler scale. -->
+            <svg id="vf-guide-walleye" class="vf-guide" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet" style="display:none;">
+              <defs>
+                <pattern id="nohatch" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+                  <rect width="8" height="8" fill="rgba(224,55,37,0.13)"/>
+                  <line x1="0" y1="0" x2="0" y2="8" stroke="rgba(224,55,37,0.75)" stroke-width="2.5"/>
+                </pattern>
+              </defs>
+
+              <!-- board surface + ruler strip -->
+              <rect x="34" y="112" width="336" height="82" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.5" stroke-dasharray="5,4"/>
+              <rect x="34" y="176" width="336" height="18" fill="rgba(255,255,255,0.07)" stroke="rgba(255,255,255,0.45)" stroke-width="1"/>
+              <g stroke="rgba(255,255,255,0.65)" stroke-width="1.5">
+                <line x1="70" y1="176" x2="70" y2="188"/><line x1="106" y1="176" x2="106" y2="184"/>
+                <line x1="142" y1="176" x2="142" y2="188"/><line x1="178" y1="176" x2="178" y2="184"/>
+                <line x1="214" y1="176" x2="214" y2="188"/><line x1="250" y1="176" x2="250" y2="184"/>
+                <line x1="286" y1="176" x2="286" y2="188"/><line x1="322" y1="176" x2="322" y2="184"/>
+              </g>
+
+              <!-- NO-HANDS: nose / zero stop -->
+              <rect x="34" y="112" width="52" height="82" fill="url(#nohatch)" stroke="#E03725" stroke-width="2"/>
+              <!-- NO-HANDS: tail -->
+              <rect x="300" y="112" width="70" height="82" fill="url(#nohatch)" stroke="#E03725" stroke-width="2"/>
+
+              <!-- zero stop / pin -->
+              <line x1="44" y1="104" x2="44" y2="200" stroke="#E03725" stroke-width="4" stroke-linecap="round"/>
+
+              <!-- walleye silhouette, nose against the pin -->
+              <g fill="none" stroke="#4FD2E8" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+                <path d="M46 152 C 74 134, 118 128, 168 130 C 222 132, 268 140, 296 149
+                         L 330 132 L 321 152 L 330 172 L 296 155
+                         C 268 164, 222 172, 168 174 C 118 176, 74 170, 46 152 Z"/>
+                <path d="M150 129 L 166 112 L 205 114 L 208 131"/>
+                <path d="M222 133 L 240 120 L 268 124 L 264 139"/>
+                <path d="M120 160 L 132 174 L 154 170"/>
+                <path d="M86 138 C 92 150, 92 155, 86 166"/>
+              </g>
+              <circle cx="64" cy="147" r="4.5" fill="#4FD2E8"/>
+
+              <!-- HOLD HERE: mid-body, behind the gill plate -->
+              <rect x="100" y="112" width="190" height="82" fill="rgba(95,174,133,0.10)" stroke="#5FAE85" stroke-width="2" stroke-dasharray="7,5"/>
+
+              <g font-family="sans-serif" font-weight="700">
+                <text x="60" y="106" fill="#E03725" font-size="11" text-anchor="middle">NO HANDS</text>
+                <text x="335" y="106" fill="#E03725" font-size="11" text-anchor="middle">NO HANDS</text>
+                <text x="195" y="106" fill="#5FAE85" font-size="11" text-anchor="middle">HOLD HERE</text>
+                <text x="44" y="214" fill="#fff" font-size="10" text-anchor="middle">NOSE TO STOP</text>
+                <text x="335" y="214" fill="#fff" font-size="10" text-anchor="middle">TAIL IN FRAME</text>
+              </g>
+            </svg>
+
+            <svg id="vf-guide-other" class="vf-guide" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet" style="display:none;">
+              <rect x="60" y="70" width="280" height="160" fill="none" stroke="#4FD2E8" stroke-width="3" rx="8"/>
+              <g stroke="#4FD2E8" stroke-width="3" stroke-linecap="round">
+                <path d="M60 96 L60 70 L86 70"/><path d="M314 70 L340 70 L340 96"/>
+                <path d="M340 204 L340 230 L314 230"/><path d="M86 230 L60 230 L60 204"/>
+              </g>
+              <text x="200" y="252" fill="#fff" font-size="13" font-family="sans-serif" text-anchor="middle">frame the whole fish inside the box</text>
+            </svg>
+
+            <!-- live auto-capture readout -->
+            <div class="vf-auto" id="vf-auto" style="display:none;">
+              <span class="vf-auto-dot" id="vf-auto-dot"></span>
+              <span id="vf-auto-text">Starting…</span>
+            </div>
+            <div class="vf-count" id="vf-count" style="display:none;"><span id="vf-count-num">3</span></div>
+
+            <div class="vf-hint" id="vf-hint">Align the fish along the guide, then capture</div>
+          </div>
+
+          <div class="vf-controls" id="vf-controls-idle">
+            <button type="button" class="secondary" id="vf-open">Open camera</button>
+          </div>
+          <div class="vf-controls" id="vf-controls-live" style="display:none;">
+            <button type="button" class="secondary" id="vf-cancel">Cancel</button>
+            <button type="button" class="primary" id="vf-capture">Capture</button>
+          </div>
+          <label class="vf-autotoggle" id="vf-autotoggle" style="display:none;">
+            <input type="checkbox" id="vf-auto-on" checked>
+            Auto-capture when the shot is steady, sharp and well lit
+          </label>
+
+          <div class="vf-preview" id="vf-preview" style="display:none;">
+            <img id="vf-preview-img">
+            <button type="button" id="vf-retake">Retake</button>
+          </div>
+          <div class="vf-err" id="vf-cam-err" style="display:none;"></div>
+
+          <div class="field" style="margin-top:8px;">
+            <label for="sub-photo">Or choose a photo you already took</label>
+            <!-- No capture="environment" here on purpose: that attribute forces
+                 the phone straight into the camera and hides the photo library,
+                 which is the opposite of what this field is for. The in-app
+                 viewfinder above is the "take one now" path. -->
+            <input type="file" id="sub-photo" accept="image/*">
+          </div>
+        </div>
+        <div class="err" id="sub-err" style="display:none;"></div>
+        <button class="primary" id="sub-submit">Submit catch for scoring</button>
+        <p class="hint">Fish must be shown flat on a bump board with a visible measuring scale (e.g. Ketch X-Board, Bubba Bump Board, YakAttack LeaderBoard, or similar) in the photo. Catches are reviewed before they count on the leaderboard.</p>
+      </div>
+    </section>
+
+    <!-- MANAGE CATCH -->
+    <section class="screen" id="screen-manage">
+      <a class="backlink" data-goto="home" role="button" tabindex="0">&larr; Home</a>
+      <div class="card">
+        <h2>Manage your catches</h2>
+        <div class="field">
+          <label for="man-angler">Angler</label>
+          <select id="man-angler"></select>
+        </div>
+        <div id="man-list"></div>
+        <p class="hint">You can edit the length or withdraw a catch while it's still pending review. Once the director approves or rejects a catch, contact the director to make changes.</p>
+      </div>
+    </section>
+
+    <!-- CPR LIVEWELL -->
+    <section class="screen" id="screen-livewell">
+      <a class="backlink" data-goto="home" role="button" tabindex="0">&larr; Home</a>
+      <div class="card">
+        <h2>CPR livewell</h2>
+        <div class="field">
+          <label for="lw-angler">Angler</label>
+          <select id="lw-angler"></select>
+        </div>
+        <p class="hint" style="margin-top:0;">Every approved catch is released on the water, so your livewell is a running tally rather than fish in a tank. Your longest approved walleye is what currently counts toward standings.</p>
+        <div id="lw-list"></div>
+      </div>
+    </section>
+
+    <!-- LEADERBOARD -->
+    <section class="screen" id="screen-leaderboard">
+      <a class="backlink" data-goto="home" role="button" tabindex="0">&larr; Home</a>
+      <div class="card">
+        <h2>Leaderboard</h2>
+        <div class="divtabs">
+          <button class="active" data-div="solo">Solo</button>
+          <button data-div="team">Team</button>
+        </div>
+        <div id="lb-list"></div>
+        <p class="hint" id="lb-tiebreak-note"></p>
+      </div>
+    </section>
+
+    <!-- BIG FISH -->
+    <section class="screen" id="screen-bigfish">
+      <a class="backlink" data-goto="home" role="button" tabindex="0">&larr; Home</a>
+      <div class="card">
+        <h2>Big Fish pot</h2>
+        <p class="hint" style="margin-top:0;">Optional $10/angler side pot. Longest approved walleye across both divisions wins, winner take all.</p>
+        <div id="bf-list"></div>
+      </div>
+    </section>
+
+    <!-- PUBLIC GPS STATUS -->
+    <section class="screen" id="screen-gps">
+      <a class="backlink" data-goto="home" role="button" tabindex="0">&larr; Home</a>
+      <div class="card">
+        <h2>GPS status</h2>
+        <p class="hint" style="margin-top:0;">Read-only course-location summary. Anglers can see the status of their own submitted catches; only the Tournament Director can review or act on flagged entries.</p>
+        <div id="public-gps-summary"></div>
+      </div>
+      <div class="card">
+        <h2>Your catch locations</h2>
+        <div id="public-gps-list"></div>
+      </div>
+    </section>
+
+    <!-- PUBLIC PAYOUTS -->
+    <section class="screen" id="screen-payouts">
+      <a class="backlink" data-goto="home" role="button" tabindex="0">&larr; Home</a>
+      <div class="card">
+        <h2>Tournament payouts</h2>
+        <p class="hint" style="margin-top:0;">Read-only estimate from the current roster, plus any donations the tournament director has logged. Final division pools use a 50/30/20 split. Big Fish is winner take all.</p>
+        <div id="public-payout-body"></div>
+      </div>
+    </section>
+
+    <!-- ADMIN -->
+    <section class="screen" id="screen-admin">
+      <a class="backlink" data-goto="home" role="button" tabindex="0">&larr; Home</a>
+      <div class="card" id="admin-lock-card">
+        <h2>Tournament director sign-in</h2>
+        <div class="lockrow">
+          <input type="password" id="admin-pass" placeholder="Passcode" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <button class="secondary" id="admin-unlock" style="width:auto;padding:10px 16px;">Enter</button>
+        </div>
+        <div class="err" id="admin-err" style="display:none;"></div>
+      </div>
+
+      <div id="admin-panel" style="display:none;">
+        <p class="hint" id="admin-sync-line" style="margin:0 0 12px;"></p>
+        <div class="director-tools">
+          <button class="director-tool" type="button" data-admin-tool="gps">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+            <span class="director-tool-copy"><strong>GPS Check</strong><span id="gps-tool-summary">No catches yet</span></span>
+          </button>
+          <button class="director-tool" type="button" data-admin-tool="payout">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15 8.5c-.8-.7-1.8-1-3-1-1.7 0-3 .9-3 2.2 0 3.4 6 1.3 6 4.5 0 1.3-1.3 2.3-3.1 2.3-1.3 0-2.5-.4-3.4-1.2M12 5.5v13"/></svg>
+            <span class="director-tool-copy"><strong>Payout Calculator</strong><span id="payout-tool-summary">$0.00 current pools</span></span>
+          </button>
+          <button class="director-tool wide" type="button" data-admin-tool="contestants">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19"/><circle cx="10" cy="8" r="3.2"/><path d="M20 19v-1.5a3.5 3.5 0 0 0-2.6-3.4"/><path d="M15.4 5.2a3.2 3.2 0 0 1 0 5.6"/></svg>
+            <span class="director-tool-copy"><strong>Contestants</strong><span id="contestants-tool-summary">No anglers yet</span></span>
+          </button>
+        </div>
+
+        <div class="card" id="admin-tool-contestants" style="display:none;">
+          <h2>Contestants</h2>
+          <p class="hint" style="margin-top:0;">Every registered angler with their live stats and standing. Disqualifying removes an angler from the standings, the Big Fish pot, and payout placements &mdash; their entry fee stays in the pool.</p>
+          <div class="contestant-filters" id="contestant-filters">
+            <button class="active" data-cfilter="all">All</button>
+            <button data-cfilter="solo">Solo</button>
+            <button data-cfilter="team">Team</button>
+            <button data-cfilter="dq">Disqualified</button>
+          </div>
+          <div id="contestants-body"></div>
+        </div>
+        <div class="card" id="admin-tool-gps" style="display:none;">
+          <h2>GPS check</h2>
+          <p class="hint" style="margin-top:0;">Reviews the location saved with every submitted catch. An unavailable or outside-course location is flagged for director review, never automatically rejected.</p>
+          <div id="gps-body"></div>
+        </div>
+        <div class="card" id="admin-tool-payout" style="display:none;">
+          <h2>Payout calculator</h2>
+          <p class="hint" style="margin-top:0;">Auto-calculated from the final roster, plus any donations logged below. Each division uses a 50/30/20 split. The optional $10-per-angler Big Fish pot is winner take all.</p>
+          <div id="payout-body"></div>
+
+          <hr class="divider">
+          <h2 style="margin-bottom:8px;">Planned awards budget</h2>
+          <p class="hint" style="margin-top:0;">What you plan to spend on trophies, plaques, or other hardware &mdash; kept separate from the cash pools above. Not shown to anglers.</p>
+          <div class="field">
+            <label for="awards-budget">Awards budget ($)</label>
+            <input type="number" id="awards-budget" step="0.01" min="0" placeholder="0.00">
+          </div>
+          <div id="awards-budget-summary"></div>
+
+          <hr class="divider">
+          <h2 style="margin-bottom:8px;">Add a donation</h2>
+          <p class="hint" style="margin-top:0;">Log sponsor or spectator donations here to add them to a pool's payout. This only tracks the amount &mdash; collect the actual funds the same way as entry fees.</p>
+          <div class="field">
+            <label for="don-target">Add to</label>
+            <select id="don-target">
+              <option value="general">General tournament fund (no split)</option>
+              <option value="solo">Solo division pool</option>
+              <option value="team">Team division pool</option>
+              <option value="bigfish">Big Fish pot</option>
+            </select>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="don-amount">Amount ($)</label>
+              <input type="number" id="don-amount" step="0.01" min="0" placeholder="25.00">
+            </div>
+            <div class="field">
+              <label for="don-note">From / note (optional)</label>
+              <input type="text" id="don-note" placeholder="Sponsor name">
+            </div>
+          </div>
+          <div class="err" id="don-err" style="display:none;"></div>
+          <button class="secondary" id="don-add">Add donation</button>
+          <div id="don-list" style="margin-top:12px;"></div>
+        </div>
+        <div class="card">
+          <h2>Pending catches</h2>
+          <div id="admin-pending"></div>
+        </div>
+        <div class="card">
+          <h2>All catches</h2>
+          <div id="admin-all"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="tabbar">
+    <button class="active" data-screen="home"><span class="ico"><svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9a1 1 0 0 0 1 1H9a1 1 0 0 0 1-1v-4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v4a1 1 0 0 0 1 1h2.5a1 1 0 0 0 1-1v-9"/></svg></span>Home</button>
+    <button data-screen="submit"><span class="ico"><svg viewBox="0 0 24 24"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.3"/></svg></span>Submit</button>
+    <button data-screen="leaderboard"><span class="ico"><svg viewBox="0 0 24 24"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v6a5 5 0 0 1-10 0V4Z"/><path d="M7 6H4.5A1.5 1.5 0 0 0 3 7.5 3.5 3.5 0 0 0 6.5 11H7"/><path d="M17 6h2.5A1.5 1.5 0 0 1 21 7.5 3.5 3.5 0 0 1 17.5 11H17"/></svg></span>Standings</button>
+    <button data-screen="admin"><span class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.9a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V20a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.98 18.35a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87A1.7 1.7 0 0 0 3.06 12.9H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.65 7.87a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1.03-1.56V2a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V8a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.03Z"/></svg></span>Director</button>
+  </nav>
+
+</div>
+
+<script>
+// If anything throws, say so on screen instead of dying silently. A blank or
+// half-rendered app with a clean console is far worse to diagnose than a
+// visible message, especially on a phone.
+(function(){
+  function report(msg){
+    try{
+      var b = document.getElementById('boot-error');
+      if(!b){
+        b = document.createElement('div');
+        b.id = 'boot-error';
+        b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#A3372A;'
+          + 'color:#fff;font:12px/1.45 system-ui,sans-serif;padding:10px 12px;white-space:pre-wrap;';
+        (document.body || document.documentElement).appendChild(b);
+      }
+      b.textContent = 'LiveWire error \u2014 screenshot this:\n' + msg;
+    }catch(e){}
+  }
+  window.addEventListener('error', function(e){
+    report((e.message||'error') + '\n' + (e.filename||'') + ':' + (e.lineno||'?'));
+  });
+  window.addEventListener('unhandledrejection', function(e){
+    report('Promise: ' + ((e.reason && e.reason.message) || e.reason || 'unknown'));
+  });
+})();
+
+// Bind a listener only if the element is actually there. Previously a single
+// missing element threw at the top level and stopped the ENTIRE script,
+// which left the app unthemed and inert.
+function bindEl(id, evt, fn){
+  var el = document.getElementById(id);
+  if(el) el.addEventListener(evt, fn);
+  return el;
+}
+
+// CHANGE THIS BEFORE THE EVENT. This is a placeholder, not a secret: it ships
+// in plain text to every phone that opens the page, so treat it as a "keep
+// honest people out of the director panel" latch, not real security.
+const ADMIN_PASS = "MKWO-2027";
+const TOURNAMENT_PREFIX = "MKWO";
+// Approximate center of the Silos-to-Ponds course at Canyon Ferry Reservoir.
+// Boundary check is approximate (straight-line radius, not the actual shoreline course)
+// and is meant to flag catches for director review, not to auto-reject them.
+const COURSE_CENTER = { lat: 46.38917, lng: -111.57556 };
+const COURSE_RADIUS_MILES = 4;
+
+// ---- automated first-pass review ----
+// Endpoint on YOUR server that holds the Anthropic API key and calls Claude's
+// vision API. Leave blank and the app stays fully self-contained: the local
+// checks below still run, the Fish-I vision pass is simply reported as unconfigured.
+// NEVER put an API key in this file - it ships to every angler's phone.
+const AI_REVIEW_ENDPOINT = '';
+
+const PRECHECK_MIN_SOURCE_EDGE = 640;   // shortest edge of the original photo, in px
+const PRECHECK_BLUR_THRESHOLD = 40;     // Laplacian variance; lower = softer image
+const PRECHECK_DARK_THRESHOLD = 55;     // mean luminance, 0-255
+const PRECHECK_BRIGHT_THRESHOLD = 225;
+const PRECHECK_DUP_MAX_DISTANCE = 6;    // Hamming distance over a 64-bit dHash
+const WALLEYE_RECORD_INCHES = 36;       // all-tackle world record walleye is ~35"
+
+// Auto-capture gates. These judge PHOTO QUALITY only - steady, sharp, lit.
+// Nothing here can tell whether the fish is on the board correctly.
+const AUTOCAP_SAMPLE_MS = 200;      // how often to sample the live frame
+const AUTOCAP_MOTION_MAX = 3.5;     // mean per-pixel change between samples
+const AUTOCAP_SHARP_MIN = 25;       // Laplacian variance on the live preview
+const AUTOCAP_BRIGHT_MIN = 50;
+const AUTOCAP_BRIGHT_MAX = 235;
+const AUTOCAP_STABLE_SAMPLES = 3;   // consecutive good samples before arming
+const AUTOCAP_COUNTDOWN = 3;        // ticks shown before the shutter fires
+const EVENT_DATES = ['2027-09-18','2027-09-19'];
+const EVENT_TIME_ZONE = 'America/Denver';
+// Registration closes at the end of the day (Mountain time) on this date.
+const REGISTRATION_CLOSE = new Date('2027-06-02T00:00:00-06:00');
+function isRegistrationClosed(){
+  return Date.now() >= REGISTRATION_CLOSE.getTime();
+}
+const LINES_OUT_SECONDS = 14 * 60 * 60;
+const FINAL_CHECKIN_SECONDS = 15 * 60 * 60;
+const EVENT_CLOCK_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  timeZone: EVENT_TIME_ZONE,
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit',
+  hourCycle: 'h23'
+});
+
+function eventTimeParts(now){
+  const values = {};
+  EVENT_CLOCK_FORMATTER.formatToParts(now).forEach(part=>{
+    if(part.type !== 'literal') values[part.type] = part.value;
+  });
+  return {
+    dateKey: values.year+'-'+values.month+'-'+values.day,
+    seconds: Number(values.hour)*3600 + Number(values.minute)*60 + Number(values.second)
+  };
+}
+
+function formatCountdown(totalSeconds){
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(seconds/3600);
+  const m = Math.floor((seconds%3600)/60);
+  const s = seconds%60;
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+
+function updateEventCountdown(now = new Date()){
+  const wrap = document.getElementById('event-countdown');
+  if(!wrap) return;
+  const eventNow = eventTimeParts(now);
+  const dayIndex = EVENT_DATES.indexOf(eventNow.dateKey);
+  if(dayIndex === -1){ wrap.hidden = true; return; }
+
+  wrap.hidden = false;
+  wrap.classList.remove('phase-checkin','phase-complete');
+  document.getElementById('event-day-label').textContent = 'Day '+(dayIndex+1);
+  const phase = document.getElementById('event-phase-label');
+  const linesOut = document.getElementById('lines-out-countdown');
+  const finalCheckin = document.getElementById('final-checkin-countdown');
+
+  if(eventNow.seconds < LINES_OUT_SECONDS){
+    phase.textContent = 'Fishing live';
+    linesOut.textContent = formatCountdown(LINES_OUT_SECONDS-eventNow.seconds);
+    finalCheckin.textContent = formatCountdown(FINAL_CHECKIN_SECONDS-eventNow.seconds);
+  } else if(eventNow.seconds < FINAL_CHECKIN_SECONDS){
+    wrap.classList.add('phase-checkin');
+    phase.textContent = 'Return window';
+    linesOut.textContent = 'CLOSED';
+    finalCheckin.textContent = formatCountdown(FINAL_CHECKIN_SECONDS-eventNow.seconds);
+  } else {
+    wrap.classList.add('phase-complete');
+    phase.textContent = 'Day complete';
+    linesOut.textContent = 'CLOSED';
+    finalCheckin.textContent = 'COMPLETE';
+  }
+}
+
+let eventClockTimer = null;
+function startEventClock(){
+  updateEventCountdown();
+  if(!eventClockTimer) eventClockTimer = setInterval(updateEventCountdown, 1000);
+}
+
+function milesBetween(lat1, lng1, lat2, lng2){
+  const R = 3958.8;
+  const dLat = (lat2-lat1) * Math.PI/180;
+  const dLng = (lng2-lng1) * Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function getCatchLocation(){
+  return new Promise((resolve)=>{
+    if(!navigator.geolocation){ resolve(null); return; }
+    const timer = setTimeout(()=>resolve(null), 6000);
+    navigator.geolocation.getCurrentPosition(
+      (pos)=>{
+        clearTimeout(timer);
+        const lat = pos.coords.latitude, lng = pos.coords.longitude;
+        const distanceMiles = milesBetween(lat, lng, COURSE_CENTER.lat, COURSE_CENTER.lng);
+        resolve({ lat, lng, distanceMiles, withinBounds: distanceMiles <= COURSE_RADIUS_MILES });
+      },
+      ()=>{ clearTimeout(timer); resolve(null); },
+      { enableHighAccuracy: true, timeout: 5500 }
+    );
+  });
+}
+
+function boundaryBadgeHtml(c){
+  if(!c.location){
+    return '<span class="badge" style="background:#E4E1D8;color:#6B6963;">Location unavailable</span>';
+  }
+  if(c.location.withinBounds){
+    return '<span class="badge" style="background:#DDE6D5;color:#3D6A50;">In bounds &middot; '+c.location.distanceMiles.toFixed(1)+' mi from launch</span>';
+  }
+  return '<span class="badge" style="background:#F1D6D0;color:#A3372A;">Outside course boundary &middot; '+c.location.distanceMiles.toFixed(1)+' mi from launch</span>';
+}
+
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+function pad3(n){ return String(n).padStart(3,'0'); }
+
+// ---- shared tournament store ----
+// One store, every device. An angler's phone and the director's tablet read and
+// write the SAME records, so a catch submitted on the water lands in the
+// director's pending list by itself.
+//
+// Three backends, tried in this order:
+//   1. Supabase - fill in the two constants below. This is the one to use for a
+//      real event: anyone with the link can take part, no sign-in, and photos
+//      go into object storage as ordinary image URLs. See supabase-setup.sql
+//      next to this file for the tables, policies and bucket to create.
+//   2. The Claude viewer's shared store - automatic when this page is opened as
+//      a published Artifact. Zero setup, but everyone taking part has to be a
+//      signed-in member of your Anthropic organization, so it suits you and
+//      your crew rather than a public field.
+//   3. This device only - no server configured. The app still works, but
+//      nothing leaves the phone, and the banner says so.
+//
+// Whichever is active, these hold:
+//   - One record per THING (never one record holding a whole array). Writes are
+//     last-writer-wins, so two anglers submitting at the same moment have to
+//     touch two different records or one of them is lost.
+//   - Photos are stored apart from the catch. Leaderboards, standings and
+//     payouts never move an image byte.
+//   - A write that cannot go out is parked in an outbox and retried. Losing
+//     signal on the reservoir must never lose a catch.
+
+// Paste these from your Supabase project: Settings -> API. The anon key is meant
+// to ship in the page - it is public by design, and the table policies decide
+// what it may do. Never paste the SERVICE ROLE key here.
+const SUPABASE_URL = 'https://ecwcjtneypbbqciwgbjw.supabase.co';        // e.g. 'https://abcdefghijkl.supabase.co'
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVjd2NqdG5leXBiYnFjaXdnYmp3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzODQ2ODUsImV4cCI6MjEwMzk2MDY4NX0.Z3WZjdFBRZR2wk2L92xp4iN0kCedcW-XQbNOzEonmVI';   // the long 'anon' / 'public' key
+const SUPABASE_BUCKET = 'catch-photos';
+const SUPABASE_POLL_MS = 5000;  // how often devices pick up each other's writes
+
+const STORAGE_PREFIX = 'mkwo:';
+
+// The ladder every photo is encoded down. The ACTIVE BACKEND sets the byte
+// budget, so the same ladder gives a Supabase event a genuinely readable
+// 1400px board photo while the Artifact store - whose records cap at 256 KiB -
+// lands a few rungs lower. Only a frame that will not compress goes past the
+// bottom of the list.
+const PHOTO_STEPS = [
+  { dim: 1400, q: 0.72 }, { dim: 1100, q: 0.68 }, { dim: 900, q: 0.62 },
+  { dim: 820,  q: 0.56 }, { dim: 760,  q: 0.50 }, { dim: 680, q: 0.44 },
+  { dim: 600,  q: 0.38 }, { dim: 520,  q: 0.32 }
+];
+const PHOTO_BUDGET_DEFAULT = 140000;
+function photoBudget(){ return store && store.photoBudget ? store.photoBudget : PHOTO_BUDGET_DEFAULT; }
+
+function localGet(key){
+  try{ return window.localStorage.getItem(STORAGE_PREFIX + key); }
+  catch(e){ return null; }
+}
+function localSet(key, value){
+  try{ window.localStorage.setItem(STORAGE_PREFIX + key, value); return true; }
+  catch(e){ console.error(e); return false; }
+}
+function localDel(key){
+  try{ window.localStorage.removeItem(STORAGE_PREFIX + key); }catch(e){}
+}
+function deepClone(v){
+  try{ return JSON.parse(JSON.stringify(v)); }catch(e){ return v; }
+}
+
+const SHARED_COLLECTIONS = ['anglers','catches','donations'];
+let store = null;                 // the active backend, or null for device-only
+let syncState = 'connecting';     // connecting | live | offline | local
+let syncDetail = '';
+let storeFull = false;
+const liveCache = { anglers:null, catches:null, donations:null, config:null };
+// Ids as they were when the caller last LOADED. Deleting is scoped to these, so
+// a catch another angler files between one device's load and its save is never
+// mistaken for "the user removed this".
+const loadedIds = { anglers:null, catches:null, donations:null };
+const photoCache = new Map();
+let storeRefreshTimer = null;
+
+// ---- backend: Supabase ----
+// Plain fetch against PostgREST and the storage API - no SDK, so this works from
+// any static host and as a local file. Devices pick up each other's writes by
+// polling; for a tournament, five seconds is indistinguishable from realtime and
+// costs far less complexity than a websocket.
+function supabaseBackend(){
+  const base = SUPABASE_URL.replace(/\/+$/, '');
+  const TABLES = { anglers:'anglers', catches:'catches', donations:'donations', config:'config' };
+  const auth = { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY };
+
+  async function rest(path, init){
+    const opts = Object.assign({}, init);
+    opts.headers = Object.assign({}, auth, (init && init.headers) || {});
+    const res = await fetch(base + path, opts);
+    if(!res.ok){
+      let detail = '';
+      try{ detail = (await res.text()).slice(0, 200); }catch(e){}
+      const err = new Error('Supabase ' + res.status + ' ' + detail);
+      err.status = res.status;
+      throw err;
+    }
+    return res;
+  }
+
+  function publicPhotoUrl(catchId){
+    return base + '/storage/v1/object/public/' + SUPABASE_BUCKET + '/' +
+           encodeURIComponent(catchId) + '.jpg';
+  }
+
+  return {
+    label: 'tournament server',
+    // Object storage, not a JSON record - so the budget is about what a phone
+    // can upload on a weak signal, not about a record size cap.
+    photoBudget: 600000,
+
+    async connect(){
+      // Cheap round-trip that fails loudly if the URL, key or tables are wrong.
+      await rest('/rest/v1/config?select=id&limit=1', { method: 'GET' });
+    },
+
+    async applyOp(op){
+      if(op.kind === 'photo'){
+        const blob = dataUrlToBlob(op.body && op.body.data);
+        if(!blob){ const e = new Error('Unreadable photo data'); e.status = 400; throw e; }
+        await rest('/storage/v1/object/' + SUPABASE_BUCKET + '/' +
+                   encodeURIComponent(op.id) + '.jpg', {
+          method: 'POST',
+          headers: { 'Content-Type': 'image/jpeg', 'x-upsert': 'true' },
+          body: blob
+        });
+        return;
+      }
+      const table = TABLES[op.coll];
+      if(!table){ const e = new Error('Unknown collection ' + op.coll); e.status = 400; throw e; }
+      if(op.kind === 'delete'){
+        await rest('/rest/v1/' + table + '?id=eq.' + encodeURIComponent(op.id), { method: 'DELETE' });
+        return;
+      }
+      await rest('/rest/v1/' + table, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates,return=minimal'
+        },
+        body: JSON.stringify({ id: op.id, data: op.body })
+      });
+    },
+
+    start(onRows){
+      const tick = async ()=>{
+        try{
+          for(const coll of Object.keys(TABLES)){
+            const res = await rest('/rest/v1/' + TABLES[coll] + '?select=id,data', { method: 'GET' });
+            const raw = await res.json();
+            onRows(coll, raw.map(r=> Object.assign({}, r.data, { id: r.id })));
+          }
+          if(syncState !== 'live') setSyncState('live', '');
+          drainOutbox();
+        }catch(e){
+          console.error(e);
+          setSyncState('offline', 'Cannot reach the tournament server right now.');
+        }
+      };
+      tick();
+      setInterval(tick, SUPABASE_POLL_MS);
+    },
+
+    // Deterministic from the catch id, so a queued upload still gets the right
+    // address written onto the catch immediately.
+    photoUrlFor(catchId){ return publicPhotoUrl(catchId); },
+    async getPhoto(catchId){ return publicPhotoUrl(catchId); },
+    async deletePhoto(catchId){
+      try{
+        await rest('/storage/v1/object/' + SUPABASE_BUCKET + '/' +
+                   encodeURIComponent(catchId) + '.jpg', { method: 'DELETE' });
+      }catch(e){ console.error(e); }
+    }
+  };
+}
+
+// ---- backend: the Claude viewer's shared store ----
+function artifactDbBackend(db){
+  return {
+    label: 'shared store',
+    photoBudget: 140000,   // records cap at 256 KiB
+    async connect(){},
+
+    async applyOp(op){
+      if(op.kind === 'photo'){
+        return await db.doc('photos/' + op.id).set({ data: (op.body||{}).data, at: Date.now() });
+      }
+      const ref = db.doc(op.coll + '/' + op.id);
+      if(op.kind === 'delete') return await ref.delete();
+      return await ref.set(op.body || {});
+    },
+
+    start(onRows){
+      SHARED_COLLECTIONS.forEach(coll=>{
+        db.collection(coll).onSnapshot(snap=>{
+          // data() is frozen and reused between deliveries, but this app mutates
+          // rows in place (checkins, dq flags), so each row is cloned out.
+          onRows(coll, snap.docs.map(d=>{
+            const row = deepClone(d.data() || {});
+            row.id = d.id;
+            return row;
+          }));
+        }, handleStoreError);
+      });
+      db.doc('config/tournament').onSnapshot(snap=>{
+        const body = snap.exists ? deepClone(snap.data() || {}) : {};
+        body.id = 'tournament';
+        onRows('config', snap.exists ? [body] : []);
+      }, handleStoreError);
+    },
+
+    photoUrlFor(){ return ''; },   // keyed by catch id, no address to store
+    async getPhoto(catchId){
+      const snap = await db.doc('photos/' + catchId).get();
+      return snap.exists ? ((snap.data() || {}).data || '') : '';
+    },
+    async deletePhoto(catchId){ await db.doc('photos/' + catchId).delete(); }
+  };
+}
+
+async function initStore(){
+  try{
+    if(SUPABASE_URL && SUPABASE_ANON_KEY){
+      const backend = supabaseBackend();
+      store = backend;
+      try{
+        await backend.connect();
+        setSyncState('live', '');
+      }catch(e){
+        console.error(e);
+        // Configured but unreachable. Keep the backend so writes queue and
+        // retry instead of silently dropping to device-only.
+        setSyncState('offline', 'Cannot reach the tournament server right now.');
+      }
+      backend.start(onRows);
+      drainOutbox();
+      return;
+    }
+    if(typeof claude !== 'undefined' && claude && typeof claude.use === 'function'){
+      const db = await claude.use('db');
+      if(db){
+        store = artifactDbBackend(db);
+        setSyncState('live', '');
+        store.start(onRows);
+        drainOutbox();
+        return;
+      }
+    }
+    setSyncState('local', 'No tournament server is set up for this copy.');
+  }catch(e){
+    console.error(e);
+    setSyncState('local', (e && e.message) || 'Could not reach a tournament store.');
+  }
+}
+
+function onRows(coll, rows){
+  if(coll === 'config'){
+    liveCache.config = rows[0] || {};
+    localSet('awardsBudget', String(liveCache.config.awardsBudget || 0));
+  } else {
+    liveCache[coll] = rows;
+    // Metadata only - photos are stored apart, which is the whole point. This
+    // mirror is what paints the screen before the first sync and whenever the
+    // connection drops.
+    localSet(coll, JSON.stringify(rows));
+  }
+  onStoreChanged();
+}
+
+function handleStoreError(err){
+  console.error(err);
+  if(err && err.code === 'quota_exceeded') storeFull = true;
+  setSyncState('offline', (err && err.message) || 'Lost the shared store.');
+}
+
+function setSyncState(state, detail){
+  syncState = state;
+  syncDetail = detail || '';
+  updateSyncUi();
+}
+
+// Re-render whatever is on screen when someone else's write lands, but never
+// while a field is focused - that would wipe a half-typed length or DQ reason.
+function onStoreChanged(){
+  updateSyncUi();
+  if(storeRefreshTimer) clearTimeout(storeRefreshTimer);
+  storeRefreshTimer = setTimeout(()=>{
+    storeRefreshTimer = null;
+    const ae = document.activeElement;
+    if(ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) return;
+    try{ refreshActiveScreen(); }catch(e){ console.error(e); }
+  }, 250);
+}
+
+// ---- outbox ----
+function readOutbox(){
+  try{ return JSON.parse(localGet('outbox') || '[]'); }catch(e){ return []; }
+}
+function writeOutbox(list){ return localSet('outbox', JSON.stringify(list)); }
+function outboxCount(){ return readOutbox().length; }
+function opKey(op){ return op.kind + ':' + op.coll + '/' + op.id; }
+
+function queueOutbox(ops){
+  const q = readOutbox();
+  ops.forEach(op=>{
+    // One pending write per record; a newer edit supersedes an older one.
+    const at = q.findIndex(x=>opKey(x) === opKey(op));
+    if(at === -1) q.push(op); else q[at] = op;
+  });
+  const saved = writeOutbox(q);
+  updateSyncUi();
+  return saved;
+}
+
+let draining = false;
+async function drainOutbox(){
+  if(draining || !store) return;
+  const q = readOutbox();
+  if(q.length === 0) return;
+  draining = true;
+  const left = [];
+  for(const op of q){
+    try{ await store.applyOp(op); }
+    catch(e){
+      console.error(e);
+      if(!permanentError(e)) left.push(op);   // a permanent failure will never drain
+    }
+  }
+  writeOutbox(left);
+  draining = false;
+  // A clean drain means we are talking to the server again. The polling backend
+  // would work this out on its next tick, but the snapshot one has no tick, so
+  // without this it would sit on "offline" forever after one blip.
+  if(left.length === 0 && syncState === 'offline') setSyncState('live', '');
+  updateSyncUi();
+}
+
+// A write worth retrying vs one that never will be. Covers both backends: db
+// error codes, and HTTP status for the REST one.
+function permanentError(e){
+  if(e && (e.code === 'invalid_argument' || e.code === 'quota_exceeded')) return true;
+  if(e && typeof e.status === 'number'){
+    return e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429;
+  }
+  return false;
+}
+
+// Runs a batch, parking whatever fails. Returns true when every op either landed
+// or was safely parked for retry. `lastWriteQueued` tells the caller it is
+// pending rather than committed.
+let lastWriteQueued = false;
+async function runOps(ops){
+  lastWriteQueued = false;
+  if(!store) return queueOutbox(ops);
+  const failed = [];
+  for(const op of ops){
+    try{ await store.applyOp(op); }
+    catch(e){
+      console.error(e);
+      if(e && e.code === 'quota_exceeded') storeFull = true;
+      if(permanentError(e)){
+        updateSyncUi();
+        return false;   // retrying cannot succeed - tell the caller
+      }
+      failed.push(op);
+    }
+  }
+  if(failed.length){
+    const parked = queueOutbox(failed);
+    lastWriteQueued = parked;
+    if(syncState === 'live') setSyncState('offline', 'Cannot reach the tournament server right now.');
+    return parked;   // false only when we could not even park it locally
+  }
+  storeFull = false;
+  updateSyncUi();
+  return true;
+}
+
+// ---- collection adapters ----
+// The rest of the app still thinks in arrays (load -> modify -> save), so these
+// keep that shape and translate it into per-record writes underneath.
+function cachedRows(name){
+  let rows = liveCache[name];
+  if(!rows){
+    try{ rows = JSON.parse(localGet(name) || '[]'); }catch(e){ rows = []; }
+    if(!Array.isArray(rows)) rows = [];
+  }
+  loadedIds[name] = new Set(rows.map(r=>r.id));
+  return deepClone(rows);
+}
+
+function rowBody(row){
+  const body = Object.assign({}, row);
+  delete body.id;
+  delete body.photo;   // photos are stored apart, never inline
+  return body;
+}
+
+async function saveCollection(name, list){
+  const rows = Array.isArray(list) ? list : [];
+  const ids = new Set(rows.map(r=>r.id));
+  const prior = loadedIds[name] || new Set();
+  const removed = [];
+  prior.forEach(id=>{ if(!ids.has(id)) removed.push(id); });
+
+  if(!store){
+    const stripped = rows.map(r=>{ const b = rowBody(r); b.id = r.id; return b; });
+    const ok = localSet(name, JSON.stringify(stripped));
+    if(name === 'catches') removed.forEach(id=> deletePhoto(id));
+    liveCache[name] = stripped;
+    loadedIds[name] = ids;
+    return ok;
+  }
+
+  const prevRows = liveCache[name] || [];
+  const prevSig = new Map(prevRows.map(r=>[r.id, JSON.stringify(rowBody(r))]));
+  const ops = [];
+  rows.forEach(row=>{
+    const sig = JSON.stringify(rowBody(row));
+    if(prevSig.get(row.id) === sig) return;   // untouched, skip the write
+    ops.push({ kind:'set', coll:name, id:row.id, body:rowBody(row) });
+  });
+  removed.forEach(id=> ops.push({ kind:'delete', coll:name, id:id }));
+  // A withdrawn or deleted catch takes its photo with it, wherever it lives.
+  if(name === 'catches') removed.forEach(id=> deletePhoto(id));
+
+  if(ops.length === 0) return true;
+  const result = await runOps(ops);
+
+  // Show our own write immediately instead of waiting to be told about it.
+  // The snapshot backend echoes a write back within milliseconds, but the
+  // polling one can take a whole interval - long enough that registering and
+  // then submitting a catch would find an empty angler list. The next sync
+  // reconciles this against whatever else the field has been doing.
+  liveCache[name] = deepClone(rows).map(r=>{ const b = rowBody(r); b.id = r.id; return b; });
+  loadedIds[name] = ids;
+  localSet(name, JSON.stringify(liveCache[name]));
+  onStoreChanged();
+
+  return result;
+}
+
+async function loadAnglers(){ return cachedRows('anglers'); }
+async function saveAnglers(list){ return await saveCollection('anglers', list); }
+async function loadCatches(){ return cachedRows('catches'); }
+async function saveCatches(list){ return await saveCollection('catches', list); }
+async function loadDonations(){ return cachedRows('donations'); }
+async function saveDonations(list){ return await saveCollection('donations', list); }
+
+async function loadAwardsBudget(){
+  if(liveCache.config) return Number(liveCache.config.awardsBudget) || 0;
+  const raw = localGet('awardsBudget');
+  return raw ? (parseFloat(raw) || 0) : 0;
+}
+async function saveAwardsBudget(amount){
+  const value = Number(amount) || 0;
+  localSet('awardsBudget', String(value));
+  if(!liveCache.config) liveCache.config = {};
+  liveCache.config.awardsBudget = value;
+  if(!store) return true;
+  return await runOps([{ kind:'set', coll:'config', id:'tournament', body:{ awardsBudget: value } }]);
+}
+
+// ---- photos ----
+// Stored apart from the catch record: the leaderboard, standings and payout
+// screens never move an image byte, and one oversized shot can never take the
+// whole catch list down with it.
+
+// Last line of defence on size. capturePhoto() and resizeImage() already encode
+// to budget, but this is the door every photo goes through, so the guarantee
+// belongs here too - an oversized frame is re-encoded rather than rejected.
+function fitPhoto(dataUrl){
+  return new Promise(resolve=>{
+    if(!dataUrl || dataUrl.length <= photoBudget()){ resolve(dataUrl); return; }
+    const img = new Image();
+    img.onload = ()=>{
+      try{ resolve(encodeToBudget(img, img.width, img.height)); }
+      catch(e){ console.error(e); resolve(dataUrl); }
+    };
+    img.onerror = ()=> resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+// Resolves the address to record on the catch ('' when the backend keys photos
+// by catch id), or null if the photo could not be stored at all.
+async function savePhoto(catchId, dataUrl){
+  if(!dataUrl) return '';
+  const fitted = await fitPhoto(dataUrl);
+  photoCache.set(catchId, fitted);
+  if(!store) return localPhotoSet(catchId, fitted) ? '' : null;
+  const ok = await runOps([{ kind:'photo', coll:'photos', id:catchId, body:{ data: fitted } }]);
+  if(!ok) return null;
+  return store.photoUrlFor ? store.photoUrlFor(catchId) : '';
+}
+
+function catchById(id){
+  const rows = liveCache.catches || [];
+  for(let i=0;i<rows.length;i++){ if(rows[i].id === id) return rows[i]; }
+  return null;
+}
+
+// Returns something usable directly as an <img> src: a data: URL from this
+// device, or an https: URL from object storage.
+async function loadPhoto(catchId){
+  if(!catchId) return '';
+  if(photoCache.has(catchId)) return photoCache.get(catchId);
+
+  // Still waiting to upload? The bytes are in the outbox.
+  const pending = readOutbox().find(op=>op.kind === 'photo' && op.id === catchId);
+  if(pending && pending.body && pending.body.data){
+    photoCache.set(catchId, pending.body.data);
+    return pending.body.data;
+  }
+  const local = localGet('photo:' + catchId);
+  if(local){ photoCache.set(catchId, local); return local; }
+
+  const row = catchById(catchId);
+  if(row && row.photoUrl){ photoCache.set(catchId, row.photoUrl); return row.photoUrl; }
+
+  if(store && store.getPhoto){
+    try{
+      const src = await store.getPhoto(catchId);
+      if(src){ photoCache.set(catchId, src); return src; }
+    }catch(e){ console.error(e); }
+  }
+  return '';
+}
+
+function deletePhoto(catchId){
+  photoCache.delete(catchId);
+  localDel('photo:' + catchId);
+  const q = readOutbox().filter(op=>!(op.kind === 'photo' && op.id === catchId));
+  writeOutbox(q);
+  if(store && store.deletePhoto){
+    Promise.resolve(store.deletePhoto(catchId)).catch(e=>console.error(e));
+  }
+}
+
+// Device-only mode. When the device is full, drop photos for catches the
+// director has already ruled on (oldest first) before giving up - a reviewed
+// catch's photo has done its job, an unreviewed one's has not.
+function localPhotoSet(catchId, dataUrl){
+  if(localSet('photo:' + catchId, dataUrl)) return true;
+  let rows = [];
+  try{ rows = JSON.parse(localGet('catches') || '[]'); }catch(e){ rows = []; }
+  const spent = rows
+    .filter(c=>c.id !== catchId && c.status && c.status !== 'pending')
+    .sort((a,b)=>(a.timestamp||0)-(b.timestamp||0));
+  for(const c of spent){
+    if(localGet('photo:' + c.id) === null) continue;
+    localDel('photo:' + c.id);
+    photoCache.delete(c.id);
+    if(localSet('photo:' + catchId, dataUrl)) return true;
+  }
+  return false;
+}
+
+// Renders a slot now and fills it in when the photo arrives, so a list of
+// catches paints immediately instead of waiting on every image.
+function photoSlotHtml(c){
+  return '<div class="photoslot" data-photo-for="'+escapeHtml(c.id)+'"><div class="noimg">&hellip;</div></div>';
+}
+function hydratePhotos(root){
+  const scope = root || document;
+  scope.querySelectorAll('.photoslot[data-photo-for]').forEach(slot=>{
+    if(slot.dataset.photoDone) return;
+    slot.dataset.photoDone = '1';
+    const id = slot.dataset.photoFor;
+    loadPhoto(id).then(url=>{
+      if(!slot.isConnected) return;
+      if(url){
+        const img = document.createElement('img');
+        img.alt = 'Catch photo on the bump board';
+        // An object-storage URL can 404 while an upload is still queued.
+        img.onerror = ()=>{ slot.innerHTML = '<div class="noimg">no photo</div>'; };
+        img.src = url;
+        slot.textContent = '';
+        slot.appendChild(img);
+      } else {
+        slot.innerHTML = '<div class="noimg">no photo</div>';
+      }
+    }).catch(e=>{
+      console.error(e);
+      slot.innerHTML = '<div class="noimg">no photo</div>';
+    });
+  });
+}
+
+// ---- sync indicator ----
+function syncSummary(){
+  const queued = outboxCount();
+  if(storeFull){
+    return { level:'bad', text:'The tournament database is full. Tell the director before submitting anything else.' };
+  }
+  if(queued > 0){
+    return { level:'warn', text:queued+' change'+(queued===1?'':'s')+' waiting to sync. Keep the app open once you have signal.' };
+  }
+  if(syncState === 'live') return { level:'ok', text:'Synced with the '+(store ? store.label : 'tournament store')+'.' };
+  if(syncState === 'connecting') return { level:'warn', text:'Connecting to the tournament store…' };
+  if(syncState === 'offline'){
+    return { level:'warn', text:'Offline. Entries are held on this device and will sync when you have signal.' };
+  }
+  return { level:'warn', text:'Working on this device only — the director will not see these entries. '+syncDetail };
+}
+
+function updateSyncUi(){
+  const s = syncSummary();
+  const signal = document.getElementById('sync-signal');
+  if(signal){
+    signal.classList.remove('sync-ok','sync-warn','sync-bad');
+    signal.classList.add('sync-'+s.level);
+    signal.setAttribute('aria-label', s.text);
+    signal.setAttribute('title', s.text);
+  }
+  const banner = document.getElementById('sync-banner');
+  if(banner){
+    if(s.level === 'ok'){
+      banner.hidden = true;
+    } else {
+      banner.hidden = false;
+      banner.className = 'syncbanner level-'+s.level;
+      banner.textContent = s.text;
+    }
+  }
+  const line = document.getElementById('admin-sync-line');
+  if(line){
+    const counts = ['anglers','catches','donations'].map(n=>(liveCache[n] ? liveCache[n].length : 0));
+    line.textContent = s.text + ' · ' + counts[0] + ' anglers, ' + counts[1] +
+      ' catches, ' + counts[2] + ' donations on record.';
+  }
+}
+
+let memoryStore = {};
+function localVal(key, val){
+  if(val === undefined) return memoryStore[key] || null;
+  memoryStore[key] = val;
+  // Deliberately device-local: this answers "whose phone is this", which is not
+  // shared tournament data.
+  if(key === 'myAnglerId') localSet('myAnglerId', val);
+  return val;
+}
+function getMyAnglerId(){ return localVal('myAnglerId'); }
+async function loadMyAnglerId(){
+  const v = localGet('myAnglerId');
+  if(v) memoryStore.myAnglerId = v;
+}
+
+// Escapes quotes as well as angle brackets. Several of these strings are
+// interpolated into HTML ATTRIBUTES (value="...") further down, where a bare
+// double quote would close the attribute early and turn the rest of the value
+// into markup. textContent/innerHTML alone does not escape quotes.
+function escapeHtml(s){
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function initials(name){
+  const parts = (name||'').trim().split(/\s+/);
+  if(parts.length===0 || !parts[0]) return '?';
+  return (parts[0][0] + (parts[1]?parts[1][0]:'')).toUpperCase();
+}
+
+// Encodes to the LARGEST rung of PHOTO_STEPS that fits the active backend's
+// byte budget, so a photo can never be too big for whatever has to hold it.
+// Takes an <img> or a live <video> frame. On a Supabase event the top rung
+// applies and the director gets a 1400px board photo; on the Artifact store,
+// whose records cap at 256 KiB, it settles a few rungs lower.
+function encodeToBudget(source, naturalW, naturalH){
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const budget = photoBudget();
+  const attempts = PHOTO_STEPS.slice();
+  // The fixed ladder handles any real board photo in a step or two. This tail
+  // guarantees the budget even for a frame that will not compress (dense noise,
+  // heavy texture, a shot of a screen) so a catch can never be rejected for
+  // being unstorable.
+  let dim = PHOTO_STEPS[PHOTO_STEPS.length-1].dim;
+  while(dim > 240){
+    dim = Math.round(dim * 0.8);
+    attempts.push({ dim: dim, q: 0.3 });
+  }
+  let out = '';
+  for(let i=0;i<attempts.length;i++){
+    const step = attempts[i];
+    let w = naturalW, h = naturalH;
+    if(w > h && w > step.dim){ h = h*(step.dim/w); w = step.dim; }
+    else if(h > step.dim){ w = w*(step.dim/h); h = step.dim; }
+    canvas.width = Math.max(1, Math.round(w));
+    canvas.height = Math.max(1, Math.round(h));
+    ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+    out = canvas.toDataURL('image/jpeg', step.q);
+    if(out.length <= budget) return out;
+  }
+  return out;   // floor of the ladder - still stored, still readable
+}
+
+// Resolves { dataUrl, srcWidth, srcHeight } - the source dimensions are the
+// ORIGINAL photo's, captured before downscaling, so the resolution check in the
+// first-pass review judges what the angler actually shot, not our stored copy.
+function resizeImage(file){
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onload = e=>{
+      const img = new Image();
+      img.onload = ()=>{
+        resolve({
+          dataUrl: encodeToBudget(img, img.width, img.height),
+          srcWidth: img.width, srcHeight: img.height
+        });
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// ---- photo analysis (runs entirely in the browser, no network, no API key) ----
+// These are deterministic image measurements, not AI. They are the signals that
+// are genuinely reliable to compute locally; the judgement calls that need a
+// vision model (species, is the nose actually on the pin) go to AI_REVIEW_ENDPOINT.
+
+function greyscaleFrom(img, w, h){
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, w, h);
+  const data = ctx.getImageData(0, 0, w, h).data;
+  const grey = new Float64Array(w*h);
+  for(let i=0;i<w*h;i++){
+    grey[i] = 0.299*data[i*4] + 0.587*data[i*4+1] + 0.114*data[i*4+2];
+  }
+  return grey;
+}
+
+// Difference hash: 9x8 greyscale, compare each pixel to its right neighbour.
+// Two photos of the same fish in the same pose hash within a few bits of each
+// other even after resaving, which is what makes duplicate detection work.
+function dHashOf(img){
+  const w = 9, h = 8;
+  const grey = greyscaleFrom(img, w, h);
+  let bits = '';
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w-1;x++){
+      bits += grey[y*w+x] > grey[y*w+x+1] ? '1' : '0';
+    }
+  }
+  let hex = '';
+  for(let i=0;i<bits.length;i+=4) hex += parseInt(bits.slice(i,i+4),2).toString(16);
+  return hex;
+}
+
+function hammingHex(a, b){
+  if(!a || !b || a.length !== b.length) return 64;
+  let d = 0;
+  for(let i=0;i<a.length;i++){
+    let x = parseInt(a[i],16) ^ parseInt(b[i],16);
+    while(x){ d += x & 1; x >>= 1; }
+  }
+  return d;
+}
+
+function exposureAndSharpness(img){
+  const w = 64, h = 64;
+  const g = greyscaleFrom(img, w, h);
+  let sum = 0;
+  for(let i=0;i<g.length;i++) sum += g[i];
+  const brightness = sum / g.length;
+
+  // Variance of the Laplacian - the standard cheap focus measure.
+  const lap = [];
+  for(let y=1;y<h-1;y++){
+    for(let x=1;x<w-1;x++){
+      lap.push(-4*g[y*w+x] + g[(y-1)*w+x] + g[(y+1)*w+x] + g[y*w+x-1] + g[y*w+x+1]);
+    }
+  }
+  const mean = lap.reduce((s,v)=>s+v, 0) / lap.length;
+  const variance = lap.reduce((s,v)=>s+(v-mean)*(v-mean), 0) / lap.length;
+  return { brightness, sharpness: variance };
+}
+
+function analyzePhoto(dataUrl, srcWidth, srcHeight){
+  return new Promise((resolve)=>{
+    if(!dataUrl){ resolve(null); return; }
+    const img = new Image();
+    img.onload = ()=>{
+      try{
+        const ex = exposureAndSharpness(img);
+        resolve({
+          hash: dHashOf(img),
+          brightness: Math.round(ex.brightness*10)/10,
+          sharpness: Math.round(ex.sharpness*10)/10,
+          srcWidth: srcWidth || img.width,
+          srcHeight: srcHeight || img.height,
+          analyzedAt: Date.now()
+        });
+      }catch(e){ console.error(e); resolve(null); }
+    };
+    img.onerror = ()=> resolve(null);
+    img.src = dataUrl;
+  });
+}
+
+// ---- first-pass verdict ----
+// Combines the local photo measurements, the GPS already stored with the catch,
+// and cross-checks against the rest of the field. Nothing here rejects a catch -
+// it produces flags for the director, who still makes every call.
+function evaluateFirstPass(c, allCatches){
+  const checks = [];
+  const p = c.precheck;
+
+  if(!p){
+    checks.push({ level:'info', label:'Photo not analyzed',
+      detail:'Submitted before automatic checks were enabled.' });
+  } else {
+    const shortEdge = Math.min(p.srcWidth||0, p.srcHeight||0);
+    if(shortEdge && shortEdge < PRECHECK_MIN_SOURCE_EDGE){
+      checks.push({ level:'review', label:'Low-resolution photo',
+        detail: p.srcWidth+'x'+p.srcHeight+' - board graduations may not be readable.' });
+    }
+    if(p.sharpness < PRECHECK_BLUR_THRESHOLD){
+      checks.push({ level:'review', label:'Photo looks soft or out of focus',
+        detail:'Focus measure '+p.sharpness.toFixed(0)+' (below '+PRECHECK_BLUR_THRESHOLD+'). Consider asking for a re-shoot.' });
+    }
+    if(p.brightness < PRECHECK_DARK_THRESHOLD){
+      checks.push({ level:'review', label:'Photo is very dark',
+        detail:'Mean brightness '+p.brightness.toFixed(0)+'/255.' });
+    } else if(p.brightness > PRECHECK_BRIGHT_THRESHOLD){
+      checks.push({ level:'review', label:'Photo is blown out',
+        detail:'Mean brightness '+p.brightness.toFixed(0)+'/255 - detail may be lost to glare.' });
+    }
+  }
+
+  // Duplicate photo detection - the strongest fraud signal available locally.
+  if(p && p.hash){
+    const near = allCatches
+      .filter(o=> o.id!==c.id && o.precheck && o.precheck.hash)
+      .map(o=> ({ other:o, distance: hammingHex(p.hash, o.precheck.hash) }))
+      .filter(x=> x.distance <= PRECHECK_DUP_MAX_DISTANCE)
+      .sort((a,b)=> a.distance-b.distance);
+    if(near.length){
+      const hit = near[0];
+      const sameAngler = hit.other.anglerId === c.anglerId;
+      const when = new Date(hit.other.timestamp).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+      checks.push({
+        level: 'flag',
+        label: sameAngler ? 'Possible duplicate of this angler\'s own entry' : 'Possible duplicate of '+hit.other.anglerName+'\'s entry',
+        detail: 'Near-identical photo ('+hit.distance+'/64 bits differ) to a '+hit.other.length+'" '+hit.other.species+' submitted '+when+'.'
+      });
+    }
+  }
+
+  // Length plausibility.
+  if(c.species==='Walleye' && c.length > WALLEYE_RECORD_INCHES){
+    checks.push({ level:'flag', label:'Length exceeds the world record',
+      detail: c.length+'" is longer than the all-tackle record walleye (about 35"). Re-read the board before approving.' });
+  } else {
+    const field = allCatches
+      .filter(o=> o.id!==c.id && o.species===c.species && o.status==='approved')
+      .map(o=> o.length)
+      .sort((a,b)=> a-b);
+    if(field.length >= 5){
+      const median = field[Math.floor(field.length/2)];
+      if(c.length > median * 1.5){
+        checks.push({ level:'review', label:'Well above the rest of the field',
+          detail: c.length+'" vs a '+median.toFixed(1)+'" median across '+field.length+' approved '+c.species.toLowerCase()+'. Not wrong, just worth a second look.' });
+      }
+    }
+  }
+
+  // Submission timing against the published tournament window.
+  const t = eventTimeParts(new Date(c.timestamp));
+  if(EVENT_DATES.indexOf(t.dateKey) === -1){
+    // Informational only. Off-event-day submissions are normal during testing
+    // and practice, so this notes the date without pushing the card to review.
+    // The fishing-hours check below stays a real flag - that one matters.
+    checks.push({ level:'info', label:'Not an event day',
+      detail:'Logged '+t.dateKey+'; the tournament runs '+EVENT_DATES.join(' and ')+'.' });
+  } else if(t.seconds < 7*3600 || t.seconds > LINES_OUT_SECONDS){
+    checks.push({ level:'flag', label:'Submitted outside fishing hours',
+      detail:'Logged at '+formatCountdown(t.seconds).slice(0,5)+'; lines are 0700 to 1400.' });
+  }
+
+  // GPS - already captured at submit time.
+  if(!c.location){
+    checks.push({ level:'review', label:'No GPS on this submission',
+      detail:'Location was unavailable or denied when the catch was logged.' });
+  } else if(!c.location.withinBounds){
+    checks.push({ level:'flag', label:'Outside the course boundary',
+      detail: c.location.distanceMiles.toFixed(1)+' mi from the launch (limit '+COURSE_RADIUS_MILES+' mi).' });
+  }
+
+  const level = checks.some(x=>x.level==='flag') ? 'flag'
+    : checks.some(x=>x.level==='review') ? 'review' : 'clear';
+  return { level, checks };
+}
+
+// ---- Fish-I vision pass ----
+// Two ways to run it. Hosted on claude.ai the page asks Claude directly, so
+// there is nothing to install and no API key anywhere. Self-hosted, it falls
+// back to AI_REVIEW_ENDPOINT (see ai-review-server.ts).
+let fishISampler = null;      // resolved Claude sampler, or null in this view
+let fishIImagesOk = false;    // whether this view reports photo support
+let fishIStatus = 'starting'; // why it is or isn't ready - shown to the director
+
+function fishIRefresh(){
+  try{ if(adminUnlocked) renderAdmin(); }catch(e){}
+}
+
+async function initFishI(){
+  fishIStatus = 'starting';
+  try{
+    if(typeof claude === 'undefined' || !claude || typeof claude.use !== 'function'){
+      fishIStatus = 'no-runtime';
+      fishIRefresh();
+      return;
+    }
+    const s = await claude.use('sample');
+    if(!s){
+      fishIStatus = 'use-returned-null';
+      fishIRefresh();
+      return;
+    }
+    fishISampler = s;
+    // limits() is only a hint. If it fails or omits images we still offer the
+    // button - an attempted call returns a real error code, which beats
+    // hiding the feature on a guess.
+    try{
+      const limits = await s.limits();
+      fishIImagesOk = !!(limits && limits.images);
+      fishIStatus = fishIImagesOk ? 'ready' : 'ready-no-image-limit';
+    }catch(e){
+      fishIImagesOk = false;
+      fishIStatus = 'ready-limits-failed:' + ((e && e.code) || (e && e.message) || 'unknown');
+    }
+    fishIRefresh();
+  }catch(e){
+    fishIStatus = 'init-error:' + ((e && e.message) || String(e));
+    fishIRefresh();
+  }
+}
+initFishI();
+
+function fishIStatusText(){
+  switch(fishIStatus){
+    case 'starting':            return 'still starting up \u2014 give it a few seconds, then retry.';
+    case 'no-runtime':          return 'this copy of the page is not running inside the Claude viewer.';
+    case 'use-returned-null':   return 'the Claude viewer did not grant the sampling capability to this view.';
+    case 'ready':               return 'ready.';
+    case 'ready-no-image-limit':return 'ready, though this view did not report photo support.';
+    default:                    return fishIStatus;
+  }
+}
+
+// A stored photo is a data: URL on this device and an https: URL once it is in
+// object storage; Fish-I needs bytes either way.
+async function srcToBlob(src){
+  if(!src) return null;
+  if(src.indexOf('data:') === 0) return dataUrlToBlob(src);
+  const res = await fetch(src);
+  if(!res.ok) throw new Error('Could not fetch the catch photo (' + res.status + ')');
+  return await res.blob();
+}
+
+function dataUrlToBlob(dataUrl){
+  const m = /^data:([^;]+);base64,(.*)$/.exec(dataUrl || '');
+  if(!m) return null;
+  const bin = atob(m[2]);
+  const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: m[1] });
+}
+
+function fishIVisionAvailable(){
+  return !!fishISampler || !!AI_REVIEW_ENDPOINT;
+}
+
+const FISHI_PROMPT =
+  'You are reviewing a catch photo for a catch-photo-release kayak walleye tournament ' +
+  'on Canyon Ferry Reservoir, Montana. You are a FIRST PASS for a human tournament ' +
+  'director. You never decide whether a catch counts; you surface what the director ' +
+  'should look at.\n\n' +
+  'Judge only these:\n' +
+  '1. Species. Walleye and sauger look alike. Say which you see, and say plainly when ' +
+  'the photo does not let you tell them apart. Only walleye score in this event.\n' +
+  '2. Whether the photo works as evidence: is a bump board with a readable scale in ' +
+  'frame, is the fish flat along it rather than curled or lifted, is the nose against ' +
+  'the zero stop, is the tail and the scale beneath it fully visible, and is a hand ' +
+  'covering the nose, the tail or the markings.\n' +
+  '3. Integrity concerns: signs of editing, a photo of a screen, or a reused or staged image.\n\n' +
+  'HARD RULE: do NOT estimate, infer or state the length of the fish, and do not say ' +
+  'whether the claimed length looks right. Perspective and lens distortion make that ' +
+  'unreliable and the director reads the board. If framing prevents a fair reading, ' +
+  'put that in concerns instead.\n\n' +
+  'Be conservative. Raise a concern only if a reasonable director would want a second ' +
+  'look; an ordinary well-shot photo returns an empty concerns array.\n\n' +
+  'Reply with only a JSON object of this shape:\n' +
+  '{"species":"walleye","speciesConfidence":0.9,"matchesClaim":true,"boardVisible":true,' +
+  '"fishFlat":true,"noseAtStop":true,"tailInFrame":true,"handBlocking":false,' +
+  '"concerns":["short specific concern"],"notes":"one short sentence"}';
+
+async function requestAiVisionReview(c, photoDataUrl){
+  // Preferred path: ask Claude straight from the page.
+  if(fishISampler){
+    const blob = await srcToBlob(photoDataUrl);
+    if(!blob) throw new Error('No photo is stored with this catch.');
+    // "Other" is a not-scored bucket, not a species, so asking whether the
+    // fish "matches Other" is meaningless unless we say what it means.
+    const claimLine = c.species === 'Walleye'
+      ? 'The angler entered this as a WALLEYE (a scoring species), ' + c.length + ' inches. ' +
+        'Set matchesClaim true only if this really looks like a walleye.'
+      : 'The angler entered this as OTHER, meaning they are declaring it is NOT a walleye ' +
+        'and it will not be scored. Name the species you actually see. Set matchesClaim ' +
+        'true if the fish is indeed something other than a walleye, and false if it does ' +
+        'look like a walleye that was filed as Other.';
+    const prompt = FISHI_PROMPT + '\n\n' + claimLine;
+    return await fishISampler.json(prompt, { images: blob, modelTier: 'complex' });
+  }
+
+  // Self-hosted fallback.
+  if(AI_REVIEW_ENDPOINT){
+    const res = await fetch(AI_REVIEW_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        catchId: c.id, photo: photoDataUrl,
+        claimedSpecies: c.species, claimedLength: c.length
+      })
+    });
+    if(!res.ok) throw new Error('Review service returned '+res.status);
+    return await res.json();
+  }
+
+  throw new Error('Fish-I vision is not available in this view.');
+}
+
+// Branch on the error CODE, never the message.
+function fishIErrorCopy(e){
+  switch(e && e.code){
+    case 'not_granted':        return 'Claude access was declined. Reload the page and allow it to run Fish-I vision.';
+    case 'rate_limited':       return 'Too many checks at once. Wait a moment, then try again.';
+    case 'images_unavailable': return 'This view cannot send photos to Claude.';
+    case 'image_rejected':     return 'Claude could not read this photo. Try a re-shoot.';
+    case 'invalid_json':       return 'Fish-I gave an unreadable answer. Try again.';
+    case 'refused':            return 'Claude declined to review this image. Review it manually.';
+    case 'cancelled':          return 'Check cancelled.';
+    case 'prompt_too_large':   return 'That photo is too large to send.';
+    default:                   return (e && e.message) ? e.message : 'Fish-I vision check failed.';
+  }
+}
+
+// ---- navigation ----
+const screens = ['home','register','checkin','submit','manage','livewell','leaderboard','bigfish','gps','payouts','admin'];
+let currentScreen = 'home';
+
+// Split out of goto() so a write from another device can repaint what is
+// already on screen without navigating anywhere.
+function renderScreen(name){
+  if(name==='home'){
+    renderHome();
+    updateEventCountdown();
+  }
+  if(name==='register') renderRegisterScreen();
+  if(name==='leaderboard') renderLeaderboard();
+  if(name==='submit') renderSubmitScreen();
+  if(name==='manage') renderManageScreen();
+  if(name==='checkin') renderCheckin();
+  if(name==='livewell') renderLivewell();
+  if(name==='bigfish') renderBigFish();
+  if(name==='gps') renderPublicGps();
+  if(name==='payouts') renderPayoutCalculator();
+  if(name==='admin') renderAdmin();
+}
+function refreshActiveScreen(){ renderScreen(currentScreen); }
+
+function goto(name){
+  currentScreen = name;
+  screens.forEach(s=>{
+    document.getElementById('screen-'+s).classList.toggle('active', s===name);
+  });
+  document.querySelectorAll('nav.tabbar button').forEach(b=>b.classList.toggle('active', b.dataset.screen===name));
+  document.getElementById('app').dataset.theme = name;
+  if(name!=='submit') stopCamera();
+  updateSyncUi();
+  renderScreen(name);
+}
+document.addEventListener('click', (e)=>{
+  const el = e.target.closest('[data-goto]');
+  if(el){ goto(el.dataset.goto); }
+});
+// The back links are <a> elements with no href, so the browser gives them no
+// keyboard behaviour of their own. tabindex in the markup makes them focusable;
+// this makes Enter/Space actually navigate.
+document.addEventListener('keydown', (e)=>{
+  if(e.key !== 'Enter' && e.key !== ' ') return;
+  const el = e.target.closest && e.target.closest('a.backlink[data-goto]');
+  if(el){ e.preventDefault(); goto(el.dataset.goto); }
+});
+document.querySelectorAll('nav.tabbar button').forEach(btn=>{
+  btn.addEventListener('click', ()=> goto(btn.dataset.screen));
+});
+
+// ---- home ----
+async function renderHome(){
+  const anglers = await loadAnglers();
+  const myId = getMyAnglerId();
+  const me = anglers.find(a=>a.id===myId);
+  const el = document.getElementById('home-profile');
+  const registerBtn = document.getElementById('home-register-btn');
+  const closed = isRegistrationClosed();
+
+  document.getElementById('home-reg-text').textContent = closed ? 'Registration closed' : 'Registration open';
+  document.getElementById('home-reg-badge').classList.toggle('closed', closed);
+
+  if(me){
+    const teamLabel = me.division==='team' ? ('Team with '+escapeHtml(me.partner)) : 'Solo division';
+    const sub = teamLabel + ' &middot; ID ' + me.tournamentId;
+    el.innerHTML = '<div class="home-profilecard"><div class="home-avatar">'+escapeHtml(initials(me.name))+'</div><div class="home-profile-copy"><span class="home-profile-label">Angler profile</span><span class="home-profile-name">'+escapeHtml(me.name)+'</span><span class="home-profile-sub">'+sub+'</span></div></div>';
+    registerBtn.textContent = 'Registration details';
+  } else {
+    el.innerHTML = '<div class="home-profilecard"><div class="home-avatar">+</div><div class="home-profile-copy"><span class="home-profile-label">Angler profile</span><span class="home-profile-name">Not registered yet</span><span class="home-profile-sub">'+(closed ? 'Registration is closed for this event' : 'Register above to receive your tournament ID')+'</span></div></div>';
+    registerBtn.textContent = closed ? 'View roster' : 'Register now';
+  }
+}
+
+// ---- register screen ----
+function renderRegisterScreen(){
+  renderRoster();   // the roster card is on this screen; keep it current
+  const closed = isRegistrationClosed();
+  document.getElementById('reg-closed-notice').style.display = closed ? 'block' : 'none';
+  ['reg-name','reg-phone','reg-partner','reg-bigfish','reg-submit'].forEach(id=>{
+    document.getElementById(id).disabled = closed;
+  });
+  document.querySelectorAll('#reg-division input[type=radio]').forEach(r=> r.disabled = closed);
+}
+
+document.querySelectorAll('#reg-division input[type=radio]').forEach(input=>{
+  input.addEventListener('change', ()=>{
+    const lab = input.closest('label');
+    document.querySelectorAll('#reg-division label').forEach(l=>l.classList.remove('active'));
+    lab.classList.add('active');
+    document.getElementById('reg-partner-field').style.display = lab.dataset.val==='team' ? 'block':'none';
+  });
+});
+
+bindEl('reg-submit','click', async ()=>{
+  const name = document.getElementById('reg-name').value.trim();
+  const phone = document.getElementById('reg-phone').value.trim();
+  const division = document.querySelector('#reg-division label.active').dataset.val;
+  const partnerName = document.getElementById('reg-partner').value.trim();
+  const bigfish = document.getElementById('reg-bigfish').checked;
+  const errEl = document.getElementById('reg-err');
+
+  if(isRegistrationClosed()){ errEl.textContent = 'Registration is closed for this event.'; errEl.style.display='block'; return; }
+  if(!name){ errEl.textContent = 'Enter your name to register.'; errEl.style.display='block'; return; }
+  if(division==='team' && !partnerName){ errEl.textContent = "Enter your partner's name for a team entry."; errEl.style.display='block'; return; }
+  errEl.style.display='none';
+
+  const anglers = await loadAnglers();
+  // Number registrations (teams count as one entry), not individual anglers.
+  const entryNumber = anglers.filter(a=>a.role!=='partner').length + 1;
+  const tournamentId = TOURNAMENT_PREFIX + '-' + pad3(entryNumber);
+  const freshCheckins = ()=>({ day1:{in:null,out:null}, day2:{in:null,out:null} });
+
+  const captainId = uid();
+  const captain = {
+    id: captainId, name, phone, division, partner: division==='team'?partnerName:'', bigfish,
+    tournamentId, role: division==='team' ? 'captain' : 'solo', teamId: null,
+    registeredAt: Date.now(), checkins: freshCheckins()
+  };
+  anglers.push(captain);
+
+  if(division==='team'){
+    // A team entry gets its own trackable angler record for the partner too,
+    // so they can check in, submit catches, and manage their own entries
+    // independently of the captain who filled out the form.
+    const teamId = uid();
+    captain.teamId = teamId;
+    anglers.push({
+      id: uid(), name: partnerName, phone: '', division: 'team', partner: name, bigfish,
+      tournamentId: tournamentId+'P', role: 'partner', teamId,
+      registeredAt: Date.now(), checkins: freshCheckins()
+    });
+  }
+
+  if(!await saveAnglers(anglers)){
+    errEl.textContent = 'Registration could not be saved on this device. Check your storage and try again, or register with the tournament director.';
+    errEl.style.display='block';
+    return;
+  }
+  localVal('myAnglerId', captainId);
+
+  // Reset the whole form, division included - it used to stay on Team with an
+  // empty partner box, which silently blocked the next entry.
+  document.getElementById('reg-name').value='';
+  document.getElementById('reg-phone').value='';
+  document.getElementById('reg-partner').value='';
+  document.getElementById('reg-bigfish').checked=false;
+  const soloLabel = document.querySelector('#reg-division label[data-val="solo"]');
+  if(soloLabel){
+    document.querySelectorAll('#reg-division label').forEach(l=>l.classList.remove('active'));
+    soloLabel.classList.add('active');
+    const soloRadio = soloLabel.querySelector('input[type=radio]');
+    if(soloRadio) soloRadio.checked = true;
+  }
+  document.getElementById('reg-partner-field').style.display = 'none';
+
+  await renderRoster();
+  goto('home');
+});
+
+async function renderRoster(){
+  const anglers = await loadAnglers();
+  const el = document.getElementById('reg-roster');
+  const entries = anglers.filter(a=>a.role!=='partner');
+  if(entries.length===0){ el.innerHTML = '<p class="empty">No anglers registered yet.</p>'; return; }
+  el.innerHTML = entries.slice().reverse().map(a=>{
+    const displayName = a.division==='team' ? (escapeHtml(a.name)+' & '+escapeHtml(a.partner)) : escapeHtml(a.name);
+    const sub = (a.division==='team' ? 'Team' : 'Solo') + ' &middot; ' + a.tournamentId;
+    return '<div class="lbrow"><div class="who"><div class="name">'+displayName+'</div><div class="sub">'+sub+(a.bigfish?' &middot; Big Fish pot':'')+'</div></div></div>';
+  }).join('');
+}
+
+// ---- check in/out ----
+// An angler picker (rather than just "me") so a partner, or a shared
+// check-in tablet at the ramp, can check any registered angler in or out.
+async function renderCheckin(){
+  await populateAnglerSelect('checkin-angler');
+  await renderCheckinBody();
+}
+bindEl('checkin-angler','change', renderCheckinBody);
+
+async function renderCheckinBody(){
+  const anglerId = document.getElementById('checkin-angler').value;
+  const anglers = await loadAnglers();
+  const me = anglers.find(a=>a.id===anglerId);
+  const el = document.getElementById('checkin-body');
+  if(!me){ el.innerHTML = '<p class="empty">Register an angler first to check in.</p>'; return; }
+
+  el.innerHTML = ['day1','day2'].map((dayKey,i)=>{
+    const rec = me.checkins[dayKey] || {in:null,out:null};
+    const label = 'Day ' + (i+1) + (i===0 ? ' &middot; Sept 18' : ' &middot; Sept 19');
+    let statusText = 'Not checked in';
+    if(rec.in && !rec.out) statusText = 'Checked in at ' + new Date(rec.in).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+    if(rec.in && rec.out) statusText = 'Checked out at ' + new Date(rec.out).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+
+    let btnHtml;
+    if(!rec.in) btnHtml = '<button class="checkbtn in" data-day="'+dayKey+'" data-act="in">Check in</button>';
+    else if(!rec.out) btnHtml = '<button class="checkbtn out" data-day="'+dayKey+'" data-act="out">Check out</button>';
+    else btnHtml = '<button class="checkbtn done" disabled>Complete</button>';
+
+    return '<div class="checkrow"><div><div class="day">'+label+'</div><div class="status-text">'+statusText+'</div></div>'+btnHtml+'</div>';
+  }).join('');
+
+  el.querySelectorAll('[data-act]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const anglers = await loadAnglers();
+      const idx = anglers.findIndex(a=>a.id===anglerId);
+      if(idx===-1) return;
+      const dayKey = btn.dataset.day;
+      if(!anglers[idx].checkins) anglers[idx].checkins = { day1:{in:null,out:null}, day2:{in:null,out:null} };
+      if(btn.dataset.act==='in') anglers[idx].checkins[dayKey].in = Date.now();
+      else anglers[idx].checkins[dayKey].out = Date.now();
+      await saveAnglers(anglers);
+      renderCheckinBody();
+    });
+  });
+}
+
+// ---- submit screen ----
+async function populateAnglerSelect(selectId){
+  const anglers = await loadAnglers();
+  const sel = document.getElementById(selectId);
+  const myId = getMyAnglerId();
+  if(anglers.length===0){ sel.innerHTML = '<option value="">Register an angler first</option>'; return anglers; }
+  sel.innerHTML = anglers.map(a=>'<option value="'+a.id+'"'+(a.id===myId?' selected':'')+'>'+escapeHtml(a.name)+' ('+a.tournamentId+')</option>').join('');
+  return anglers;
+}
+
+async function renderSubmitScreen(){
+  await populateAnglerSelect('sub-angler');
+  updateGuide();
+}
+
+// ---- camera viewfinder ----
+let camStream = null;
+let capturedPhotoData = null;
+let capturedPhotoDims = { width: 0, height: 0 }; // native sensor size, before downscaling
+
+function updateGuide(){
+  const species = document.getElementById('sub-species').value;
+  document.getElementById('vf-guide-walleye').style.display = species==='Walleye' ? 'block' : 'none';
+  document.getElementById('vf-guide-other').style.display = species==='Walleye' ? 'none' : 'block';
+  document.getElementById('vf-hint').textContent = species==='Walleye'
+    ? 'Fish flat on the blue outline, nose to the stop \u2014 keep hands out of the red'
+    : 'Frame the whole fish inside the box';
+}
+bindEl('sub-species','change', updateGuide);
+
+async function startCamera(){
+  const errEl = document.getElementById('vf-cam-err');
+  errEl.style.display='none';
+  try{
+    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    document.getElementById('vf-video').srcObject = camStream;
+    document.getElementById('vf-wrap').style.display='block';
+    document.getElementById('vf-controls-idle').style.display='none';
+    document.getElementById('vf-controls-live').style.display='flex';
+    document.getElementById('vf-autotoggle').style.display='flex';
+    document.getElementById('vf-preview').style.display='none';
+    updateGuide();
+    startAutoCapture();
+  }catch(e){
+    errEl.textContent = 'Camera unavailable or permission denied. Use "Or upload a photo" below instead.';
+    errEl.style.display='block';
+  }
+}
+function stopCamera(){
+  stopAutoCapture();
+  if(camStream){ camStream.getTracks().forEach(t=>t.stop()); camStream=null; }
+  const wrap = document.getElementById('vf-wrap');
+  if(wrap) wrap.style.display='none';
+  const idle = document.getElementById('vf-controls-idle');
+  const live = document.getElementById('vf-controls-live');
+  const toggle = document.getElementById('vf-autotoggle');
+  if(idle) idle.style.display='flex';
+  if(live) live.style.display='none';
+  if(toggle) toggle.style.display='none';
+  // Put an already-captured photo's preview back. Reopening the camera hides
+  // it, so cancelling out used to leave the shot silently attached to the form
+  // with nothing on screen saying so.
+  const preview = document.getElementById('vf-preview');
+  if(preview) preview.style.display = capturedPhotoData ? 'block' : 'none';
+}
+
+// ---- auto-capture ----
+// Samples the live frame a few times a second and fires when the shot is
+// STEADY, SHARP and WELL LIT for long enough. Deliberately scoped: this judges
+// photo quality only. It does not decide whether the fish is placed correctly -
+// the overlay guides that, and Fish-I checks it afterwards.
+let autoTimer = null;
+let autoPrevFrame = null;
+let autoGoodStreak = 0;
+let autoCountdown = 0;
+let autoCountdownTimer = null;
+
+function autoEls(){
+  return {
+    pill: document.getElementById('vf-auto'),
+    dot: document.getElementById('vf-auto-dot'),
+    text: document.getElementById('vf-auto-text'),
+    count: document.getElementById('vf-count'),
+    num: document.getElementById('vf-count-num')
+  };
+}
+
+function startAutoCapture(){
+  stopAutoCapture();
+  autoPrevFrame = null;
+  autoGoodStreak = 0;
+  const els = autoEls();
+  els.pill.style.display = 'inline-flex';
+  els.text.textContent = 'Starting…';
+  autoTimer = setInterval(sampleFrame, AUTOCAP_SAMPLE_MS);
+}
+
+function stopAutoCapture(){
+  if(autoTimer){ clearInterval(autoTimer); autoTimer = null; }
+  cancelCountdown();
+  autoPrevFrame = null;
+  autoGoodStreak = 0;
+  const els = autoEls();
+  if(els.pill) els.pill.style.display = 'none';
+  if(els.count) els.count.style.display = 'none';
+}
+
+function cancelCountdown(){
+  if(autoCountdownTimer){ clearInterval(autoCountdownTimer); autoCountdownTimer = null; }
+  autoCountdown = 0;
+  const els = autoEls();
+  if(els.count) els.count.style.display = 'none';
+}
+
+function sampleFrame(){
+  const video = document.getElementById('vf-video');
+  if(!video || !video.videoWidth) return;
+
+  const w = 64, h = 64;
+  const grey = greyscaleFrom(video, w, h);
+
+  // Motion: mean absolute difference against the previous sample.
+  let motion = 0;
+  if(autoPrevFrame){
+    let diff = 0;
+    for(let i=0;i<grey.length;i++) diff += Math.abs(grey[i] - autoPrevFrame[i]);
+    motion = diff / grey.length;
+  } else {
+    motion = 999; // no baseline yet
+  }
+  autoPrevFrame = grey;
+
+  let brightness = 0;
+  for(let i=0;i<grey.length;i++) brightness += grey[i];
+  brightness /= grey.length;
+
+  const lap = [];
+  for(let y=1;y<h-1;y++){
+    for(let x=1;x<w-1;x++){
+      lap.push(-4*grey[y*w+x] + grey[(y-1)*w+x] + grey[(y+1)*w+x] + grey[y*w+x-1] + grey[y*w+x+1]);
+    }
+  }
+  const lapMean = lap.reduce((a,b)=>a+b,0)/lap.length;
+  const sharpness = lap.reduce((a,v)=>a+(v-lapMean)*(v-lapMean),0)/lap.length;
+
+  // Report the most useful single problem rather than a wall of complaints.
+  let problem = null;
+  if(brightness < AUTOCAP_BRIGHT_MIN) problem = 'Too dark';
+  else if(brightness > AUTOCAP_BRIGHT_MAX) problem = 'Too bright — cut the glare';
+  else if(motion > AUTOCAP_MOTION_MAX) problem = 'Hold steady';
+  else if(sharpness < AUTOCAP_SHARP_MIN) problem = 'Focusing…';
+
+  const els = autoEls();
+  const autoOn = document.getElementById('vf-auto-on').checked;
+
+  if(problem){
+    autoGoodStreak = 0;
+    cancelCountdown();
+    els.dot.className = 'vf-auto-dot hold';
+    els.text.textContent = problem;
+    return;
+  }
+
+  autoGoodStreak++;
+  els.dot.className = 'vf-auto-dot ready';
+
+  if(!autoOn){
+    els.text.textContent = 'Looks good — tap Capture';
+    return;
+  }
+
+  els.text.textContent = 'Looks good';
+  if(autoGoodStreak >= AUTOCAP_STABLE_SAMPLES && !autoCountdownTimer) beginCountdown();
+}
+
+function beginCountdown(){
+  const els = autoEls();
+  autoCountdown = AUTOCAP_COUNTDOWN;
+  els.count.style.display = 'flex';
+  els.num.textContent = autoCountdown;
+  els.text.textContent = 'Capturing…';
+  autoCountdownTimer = setInterval(()=>{
+    autoCountdown--;
+    if(autoCountdown <= 0){
+      cancelCountdown();
+      capturePhoto();
+    } else {
+      els.num.textContent = autoCountdown;
+    }
+  }, 700);
+}
+
+function capturePhoto(){
+  const video = document.getElementById('vf-video');
+  if(!video || !video.videoWidth) return;
+  capturedPhotoDims = { width: video.videoWidth, height: video.videoHeight };
+  capturedPhotoData = encodeToBudget(video, video.videoWidth, video.videoHeight);
+
+  stopAutoCapture();
+  document.getElementById('vf-preview-img').src = capturedPhotoData;
+  document.getElementById('vf-preview').style.display='block';
+  document.getElementById('vf-wrap').style.display='none';
+  document.getElementById('vf-controls-live').style.display='none';
+  document.getElementById('vf-controls-idle').style.display='flex';
+  document.getElementById('vf-autotoggle').style.display='none';
+  if(camStream){ camStream.getTracks().forEach(t=>t.stop()); camStream=null; }
+}
+
+bindEl('vf-open','click', startCamera);
+bindEl('vf-cancel','click', stopCamera);
+bindEl('vf-capture','click', capturePhoto);
+bindEl('vf-auto-on','change', ()=>{
+  autoGoodStreak = 0;
+  cancelCountdown();
+});
+
+bindEl('vf-retake','click', ()=>{
+  capturedPhotoData = null;
+  capturedPhotoDims = { width: 0, height: 0 };
+  document.getElementById('vf-preview').style.display='none';
+  startCamera();
+});
+
+// Picking from the library replaces an in-app capture. Submit prefers
+// capturedPhotoData, so without this the "choose a photo" field did nothing
+// once you had already taken a shot in the viewfinder.
+bindEl('sub-photo','change', (e)=>{
+  if(e.target.files && e.target.files[0]){
+    capturedPhotoData = null;
+    capturedPhotoDims = { width: 0, height: 0 };
+    const preview = document.getElementById('vf-preview');
+    if(preview) preview.style.display = 'none';
+  }
+});
+
+bindEl('sub-submit','click', async ()=>{
+  const errEl = document.getElementById('sub-err');
+  const anglerId = document.getElementById('sub-angler').value;
+  const length = parseFloat(document.getElementById('sub-length').value);
+  const species = document.getElementById('sub-species').value;
+  const fileInput = document.getElementById('sub-photo');
+  const submitBtn = document.getElementById('sub-submit');
+  const fail = (msg)=>{ errEl.textContent = msg; errEl.style.display='block'; };
+
+  if(!anglerId){ fail('Select the angler this catch belongs to.'); return; }
+  if(!length || length<=0){ fail('Enter a valid length in inches.'); return; }
+  if(!capturedPhotoData && !fileInput.files[0]){ fail('Capture or upload a photo on an approved bump board.'); return; }
+  errEl.style.display='none';
+
+  // Everything past here runs behind a disabled button, so it all has to sit
+  // in a try/finally. A throw anywhere in the middle used to leave the button
+  // dead and mislabelled until the angler reloaded the page.
+  submitBtn.disabled = true;
+  try{
+    const anglers = await loadAnglers();
+    const angler = anglers.find(a=>a.id===anglerId);
+    let photoData = capturedPhotoData || '';
+    let srcWidth = capturedPhotoDims.width, srcHeight = capturedPhotoDims.height;
+
+    if(!photoData && fileInput.files[0]){
+      submitBtn.textContent = 'Preparing photo…';
+      try{
+        const resized = await resizeImage(fileInput.files[0]);
+        photoData = resized.dataUrl;
+        srcWidth = resized.srcWidth;
+        srcHeight = resized.srcHeight;
+      }catch(e){
+        console.error(e);
+        // Never save a photoless catch - the photo IS the evidence, and a
+        // swallowed error here used to do exactly that.
+        fail('That photo could not be read. Pick a different file, or use the in-app camera.');
+        return;
+      }
+    }
+    if(!photoData){ fail('No photo is attached. Capture or choose one, then submit.'); return; }
+
+    submitBtn.textContent = 'Checking photo…';
+    const precheck = await analyzePhoto(photoData, srcWidth, srcHeight);
+
+    submitBtn.textContent = 'Checking location…';
+    const location = await getCatchLocation();
+
+    submitBtn.textContent = 'Saving…';
+    const catchId = uid();
+    // The photo goes first and on its own. A catch with no evidence behind it is
+    // worse than no catch, so this gates the rest of the write.
+    const photoRef = await savePhoto(catchId, photoData);
+    if(photoRef === null){
+      fail(storeFull
+        ? 'The tournament database is full. Show this to the director before submitting anything else.'
+        : 'The photo could not be saved. Nothing was submitted — check your signal and try again.');
+      return;
+    }
+    const catches = await loadCatches();
+    catches.push({
+      id: catchId,
+      anglerId,
+      anglerName: angler ? angler.name : 'Unknown',
+      division: angler ? angler.division : 'solo',
+      species,
+      length,
+      hasPhoto: true,
+      photoUrl: photoRef || '',
+      precheck,
+      location,
+      timestamp: Date.now(),
+      status: 'pending'
+    });
+    if(!await saveCatches(catches)){
+      deletePhoto(catchId);   // don't strand an orphan photo document
+      fail(storeFull
+        ? 'The tournament database is full. Show this to the director before submitting anything else.'
+        : 'This catch could not be saved. Nothing was submitted — check your storage and try again.');
+      return;
+    }
+
+    document.getElementById('sub-length').value='';
+    fileInput.value='';
+    capturedPhotoData = null;
+    capturedPhotoDims = { width: 0, height: 0 };
+    document.getElementById('vf-preview').style.display='none';
+    goto('manage');
+  }catch(e){
+    console.error(e);
+    fail('Something went wrong submitting this catch. Try again.');
+  }finally{
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Submit catch for scoring';
+  }
+});
+
+// ---- manage catch ----
+async function renderManageScreen(){
+  await populateAnglerSelect('man-angler');
+  await renderManageList();
+}
+bindEl('man-angler','change', renderManageList);
+
+async function renderManageList(){
+  const anglerId = document.getElementById('man-angler').value;
+  const catches = (await loadCatches()).filter(c=>c.anglerId===anglerId).sort((a,b)=>b.timestamp-a.timestamp);
+  const el = document.getElementById('man-list');
+  if(catches.length===0){ el.innerHTML = '<p class="empty">No catches submitted yet.</p>'; return; }
+
+  el.innerHTML = catches.map(c=>{
+    const img = photoSlotHtml(c);
+    const editable = c.status==='pending';
+    const actions = editable
+      ? '<div class="actions"><input type="number" step="0.25" class="edit-len" value="'+c.length+'" data-id="'+c.id+'"><button class="small" data-act="savelen" data-id="'+c.id+'">Save</button><button class="small danger" data-act="withdraw" data-id="'+c.id+'">Withdraw</button></div>'
+      : '<div class="hint" style="margin-top:6px;">Locked &mdash; already reviewed by the director.</div>';
+    return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+c.length+'"</span><span class="status '+c.status+'">'+c.status+'</span></div>'+
+      '<div class="name">'+c.species+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
+      '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+'</div>'+actions+'</div></div>';
+  }).join('');
+
+  hydratePhotos(el);
+
+  el.querySelectorAll('[data-act="savelen"]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const input = el.querySelector('.edit-len[data-id="'+btn.dataset.id+'"]');
+      const newLen = parseFloat(input.value);
+      if(!newLen || newLen<=0) return;
+      const catches = await loadCatches();
+      const idx = catches.findIndex(c=>c.id===btn.dataset.id);
+      if(idx===-1) return;
+      catches[idx].length = newLen;
+      await saveCatches(catches);
+      renderManageList();
+    });
+  });
+  el.querySelectorAll('[data-act="withdraw"]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const catches = await loadCatches();
+      const idx = catches.findIndex(c=>c.id===btn.dataset.id);
+      if(idx===-1) return;
+      catches.splice(idx,1);
+      await saveCatches(catches);
+      renderManageList();
+    });
+  });
+}
+
+// ---- CPR livewell ----
+async function renderLivewell(){
+  await populateAnglerSelect('lw-angler');
+  await renderLivewellList();
+}
+bindEl('lw-angler','change', renderLivewellList);
+
+async function renderLivewellList(){
+  const anglerId = document.getElementById('lw-angler').value;
+  const catches = (await loadCatches()).filter(c=>c.anglerId===anglerId && c.species==='Walleye').sort((a,b)=>b.length-a.length);
+  const el = document.getElementById('lw-list');
+  if(catches.length===0){ el.innerHTML = '<p class="empty">No walleye submitted yet.</p>'; return; }
+
+  const bestApprovedId = (catches.find(c=>c.status==='approved') || {}).id;
+  el.innerHTML = catches.map(c=>{
+    const img = photoSlotHtml(c);
+    const isBest = c.id===bestApprovedId;
+    const badge = isBest ? '<span class="badge">Currently counts</span>' : '';
+    return '<div class="catchcard'+(isBest?' best':'')+'">'+img+'<div class="info"><div class="top"><span class="len">'+c.length+'"</span><span class="status '+c.status+'">'+c.status+'</span></div>'+badge+'</div></div>';
+  }).join('');
+  hydratePhotos(el);
+}
+
+// ---- leaderboard ----
+let currentDiv = 'solo';
+document.querySelectorAll('.divtabs button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.divtabs button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    currentDiv = btn.dataset.div;
+    renderLeaderboard();
+  });
+});
+
+// Shared ranking used by BOTH the public leaderboard and the director's
+// contestant view, so "current standing" can never drift between the two.
+// Disqualified anglers are excluded here, which removes them everywhere at once.
+function standingsFor(division, catches, anglers){
+  const anglerById = {};
+  anglers.forEach(a=>{ anglerById[a.id] = a; });
+
+  const eligible = catches.filter(c=>{
+    if(c.status!=='approved' || c.species!=='Walleye' || c.division!==division) return false;
+    const a = anglerById[c.anglerId];
+    return !(a && a.disqualified);
+  });
+
+  const groups = {};
+  eligible.forEach(c=>{
+    const angler = anglerById[c.anglerId];
+    // A team ranks as one unit, so either partner's fish lands in the same group.
+    const key = (division==='team' && angler && angler.teamId) ? angler.teamId : c.anglerId;
+    if(!groups[key]) groups[key] = { key, name: c.anglerName, fish: [], anglerIds: [] };
+    groups[key].fish.push(c.length);
+    if(groups[key].anglerIds.indexOf(c.anglerId)===-1) groups[key].anglerIds.push(c.anglerId);
+    if(division==='team' && angler && angler.teamId){
+      const mate = anglers.find(m=>m.teamId===angler.teamId && m.id!==angler.id);
+      groups[key].name = mate ? angler.name+' & '+mate.name : angler.name;
+    }
+  });
+
+  return Object.keys(groups).map(k=>{
+    const g = groups[k];
+    const sorted = g.fish.slice().sort((x,y)=>y-x);
+    return {
+      key: g.key, name: g.name, anglerIds: g.anglerIds,
+      best: sorted[0],
+      top3sum: sorted.slice(0,3).reduce((s,v)=>s+v,0),
+      count: g.fish.length
+    };
+  }).sort((a,b)=> b.best - a.best || b.top3sum - a.top3sum);
+}
+
+// 1-based placing for one angler in their division, or 0 if they aren't ranked.
+function rankOf(angler, catches, anglers){
+  const table = standingsFor(angler.division, catches, anglers);
+  for(let i=0;i<table.length;i++){
+    if(table[i].anglerIds.indexOf(angler.id) !== -1) return i+1;
+  }
+  return 0;
+}
+
+async function renderLeaderboard(){
+  const catches = await loadCatches();
+  const anglers = await loadAnglers();
+  const ranked = standingsFor(currentDiv, catches, anglers);
+
+  const el = document.getElementById('lb-list');
+  if(ranked.length===0){ el.innerHTML = '<p class="empty">No approved catches yet in this division.</p>'; }
+  else{
+    el.innerHTML = ranked.map((a,i)=>
+      '<div class="lbrow"><div class="rank">'+(i+1)+'</div><div class="who"><div class="name">'+escapeHtml(a.name)+'</div><div class="sub">Best 3 combined: '+a.top3sum.toFixed(2)+'"</div></div><div class="len">'+a.best.toFixed(2)+'"</div></div>'
+    ).join('');
+  }
+  document.getElementById('lb-tiebreak-note').textContent = currentDiv==='team'
+    ? 'Ranked by the single longest walleye caught by either teammate. Ties broken by the combined length of the team\'s best 3 fish.'
+    : 'Ranked by single longest walleye. Ties broken by combined length of best 3 fish.';
+}
+
+// ---- big fish ----
+async function renderBigFish(){
+  const anglers = await loadAnglers();
+  const inPot = new Set(anglers.filter(a=>a.bigfish && !a.disqualified).map(a=>a.id));
+  const catches = (await loadCatches()).filter(c=>c.status==='approved' && c.species==='Walleye' && inPot.has(c.anglerId));
+  const el = document.getElementById('bf-list');
+  if(catches.length===0){ el.innerHTML = '<p class="empty">No qualifying catches yet.</p>'; return; }
+  const sorted = catches.slice().sort((a,b)=>b.length-a.length).slice(0,10);
+  el.innerHTML = sorted.map((c,i)=>
+    '<div class="lbrow"><div class="rank">'+(i+1)+'</div><div class="who"><div class="name">'+escapeHtml(c.anglerName)+'</div><div class="sub">'+(c.division==='team'?'Team':'Solo')+' division</div></div><div class="len">'+c.length.toFixed(2)+'"</div></div>'
+  ).join('');
+}
+
+// ---- admin ----
+let adminUnlocked = false;
+let activeAdminTool = 'gps';
+
+function showAdminTool(name){
+  activeAdminTool = name;
+  document.querySelectorAll('[data-admin-tool]').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.adminTool===name);
+  });
+  ['gps','payout','contestants'].forEach(tool=>{
+    document.getElementById('admin-tool-'+tool).style.display = tool===name ? 'block' : 'none';
+  });
+}
+
+document.querySelectorAll('[data-admin-tool]').forEach(btn=>{
+  btn.addEventListener('click', ()=>showAdminTool(btn.dataset.adminTool));
+});
+
+function tryAdminUnlock(){
+  const val = document.getElementById('admin-pass').value;
+  const errEl = document.getElementById('admin-err');
+  // An empty ADMIN_PASS would otherwise let an empty box straight in.
+  if(!ADMIN_PASS){
+    errEl.textContent = 'No director passcode is set in this build. Set ADMIN_PASS before the event.';
+    errEl.style.display='block';
+    return;
+  }
+  if(val === ADMIN_PASS){
+    adminUnlocked = true;
+    errEl.style.display='none';
+    document.getElementById('admin-pass').value = '';
+    document.getElementById('admin-lock-card').style.display='none';
+    document.getElementById('admin-panel').style.display='block';
+    showAdminTool(activeAdminTool);
+    renderAdmin();
+  } else {
+    errEl.textContent = 'Incorrect passcode.';
+    errEl.style.display='block';
+  }
+}
+bindEl('admin-unlock','click', tryAdminUnlock);
+// Phone keyboards show "go" on this field; without this it did nothing.
+bindEl('admin-pass','keydown', (e)=>{ if(e.key === 'Enter') tryAdminUnlock(); });
+
+function renderGpsCheck(catches){
+  const inBounds = catches.filter(c=>c.location && c.location.withinBounds).length;
+  const outside = catches.filter(c=>c.location && !c.location.withinBounds).length;
+  const missing = catches.filter(c=>!c.location).length;
+  const flagged = outside + missing;
+  const summary = document.getElementById('gps-tool-summary');
+  summary.textContent = catches.length===0
+    ? 'No catches yet'
+    : flagged===0 ? 'All '+catches.length+' catches clear' : flagged+' need'+(flagged===1?'s':'')+' review';
+
+  const statHtml = '<div class="gps-summary">'+
+    '<div class="gps-stat"><strong>'+inBounds+'</strong><span>In bounds</span></div>'+
+    '<div class="gps-stat"><strong>'+outside+'</strong><span>Outside</span></div>'+
+    '<div class="gps-stat"><strong>'+missing+'</strong><span>No GPS</span></div>'+
+    '</div>';
+  const review = catches.filter(c=>!c.location || !c.location.withinBounds).sort((a,b)=>b.timestamp-a.timestamp);
+  const rows = review.length===0
+    ? '<p class="empty">'+(catches.length===0?'No catches submitted yet.':'All submitted catches have an in-bounds GPS location.')+'</p>'
+    : review.map(c=>{
+        const submitted = new Date(c.timestamp).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+        return '<div class="gps-row"><div class="gps-row-top"><span class="gps-row-name">'+escapeHtml(c.anglerName)+'</span><span class="gps-row-meta">'+c.length.toFixed(2)+'&quot;</span></div>'+
+          '<div class="gps-row-meta">'+submitted+' &middot; '+escapeHtml(c.status)+'</div><div style="margin-top:5px;">'+boundaryBadgeHtml(c)+'</div></div>';
+      }).join('');
+  document.getElementById('gps-body').innerHTML = statHtml + rows;
+}
+
+async function renderPublicGps(){
+  const catches = await loadCatches();
+  const inBounds = catches.filter(c=>c.location && c.location.withinBounds).length;
+  const outside = catches.filter(c=>c.location && !c.location.withinBounds).length;
+  const missing = catches.filter(c=>!c.location).length;
+  document.getElementById('public-gps-summary').innerHTML =
+    '<div class="gps-summary">'+
+      '<div class="gps-stat"><strong>'+inBounds+'</strong><span>In bounds</span></div>'+
+      '<div class="gps-stat"><strong>'+outside+'</strong><span>Flagged</span></div>'+
+      '<div class="gps-stat"><strong>'+missing+'</strong><span>No GPS</span></div>'+
+    '</div>'+
+    '<p class="hint" style="margin-bottom:0;">'+catches.length+' total catch submission'+(catches.length===1?'':'s')+' checked.</p>';
+
+  const myId = getMyAnglerId();
+  const list = document.getElementById('public-gps-list');
+  if(!myId){
+    list.innerHTML = '<p class="empty">Register on this device to view your individual catch-location checks.</p>';
+    return;
+  }
+  const mine = catches.filter(c=>c.anglerId===myId).sort((a,b)=>b.timestamp-a.timestamp);
+  if(mine.length===0){
+    list.innerHTML = '<p class="empty">You have not submitted any catches yet.</p>';
+    return;
+  }
+  list.innerHTML = mine.map(c=>{
+    const submitted = new Date(c.timestamp).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+    return '<div class="gps-row"><div class="gps-row-top"><span class="gps-row-name">'+escapeHtml(c.species)+'</span><span class="gps-row-meta">'+Number(c.length).toFixed(2)+'&quot;</span></div>'+
+      '<div class="gps-row-meta">'+submitted+' &middot; '+escapeHtml(c.status)+'</div><div style="margin-top:5px;">'+boundaryBadgeHtml(c)+'</div></div>';
+  }).join('');
+}
+
+async function renderPayoutCalculator(){
+  const anglers = await loadAnglers();
+  const donations = await loadDonations();
+  const solo = anglers.filter(a=>a.division==='solo');
+  // Team registrations now carry a real record for each partner (role: 'captain'/'partner'),
+  // so the $50 team entry fee is charged once per team, not once per person.
+  const teamEntries = anglers.filter(a=>a.division==='team' && a.role!=='partner');
+  // Big Fish is $10/angler; both team members have their own record, so this
+  // already counts each real person once with no special-casing needed.
+  const bigfishAnglerCount = anglers.filter(a=>a.bigfish).length;
+
+  function donatedTo(target){
+    return donations.filter(d=>d.target===target).reduce((s,d)=>s+d.amount, 0);
+  }
+  const soloDonated = donatedTo('solo');
+  const teamDonated = donatedTo('team');
+  const bigfishDonated = donatedTo('bigfish');
+  const generalFund = donatedTo('general');
+
+  const soloPool = solo.length * 30 + soloDonated;
+  const teamPool = teamEntries.length * 50 + teamDonated;
+  const bigfishPool = bigfishAnglerCount * 10 + bigfishDonated;
+
+  function splitFor(eligible, pool){
+    if(eligible===0) return [];
+    // Only pay out places the field can actually fill (a 1-entry division
+    // has no 2nd or 3rd place to award).
+    const places = [
+      { place: '1st', amount: pool*0.50 },
+      { place: '2nd', amount: pool*0.30 },
+      { place: '3rd', amount: pool*0.20 }
+    ];
+    return places.slice(0, Math.min(eligible, 3));
+  }
+
+  // `entries` is everyone who paid in (the pool); `eligible` excludes
+  // disqualified anglers, who forfeit their place but not their entry fee.
+  function divisionHtml(name, entries, pool, donated, eligible){
+    const splits = splitFor(eligible, pool);
+    const rows = splits.length===0
+      ? '<p class="hint" style="margin:6px 0 0;">No entries yet.</p>'
+      : splits.map(s=>'<div class="lbrow"><div class="who"><div class="name">'+s.place+'</div></div><div class="len">$'+s.amount.toFixed(2)+'</div></div>').join('');
+    const donatedNote = donated>0 ? ' &middot; +$'+donated.toFixed(2)+' donated' : '';
+    const awarded = splits.reduce((s,x)=>s+x.amount, 0);
+    const unawarded = pool - awarded;
+    const shortfallNote = (eligible>0 && eligible<3 && unawarded>0.004)
+      ? '<p class="hint" style="margin:6px 0 0;">$'+unawarded.toFixed(2)+' of this pool is unawarded &mdash; the field is too small to fill all placements.</p>'
+      : '';
+    const dqNote = (entries>eligible)
+      ? '<p class="hint" style="margin:6px 0 0;">'+(entries-eligible)+' disqualified &mdash; entry fee stays in the pool, place forfeited.</p>'
+      : '';
+    return '<div style="margin-bottom:14px;"><div style="font-weight:600;font-size:13px;margin-bottom:4px;">'+name+' &middot; '+entries+' '+(entries===1?'entry':'entries')+' &middot; $'+pool.toFixed(2)+' pool'+donatedNote+'</div>'+rows+shortfallNote+dqNote+'</div>';
+  }
+
+  // A team entry keeps its placement while EITHER member is still eligible.
+  // standingsFor() only drops the disqualified angler's own catches, so the
+  // team can still rank; counting captains alone dropped teams that can place.
+  const eligibleTeamEntries = teamEntries.filter(entry=>{
+    if(!entry.disqualified) return true;
+    if(!entry.teamId) return false;
+    return anglers.some(a=>a.teamId===entry.teamId && a.id!==entry.id && !a.disqualified);
+  }).length;
+
+  const totalRaised = soloPool+teamPool+bigfishPool+generalFund;
+  const awardsBudget = await loadAwardsBudget();
+  const netAfterAwards = totalRaised - awardsBudget;
+
+  document.getElementById('payout-tool-summary').textContent = '$'+totalRaised.toFixed(2)+' across current pools';
+
+  const budgetInput = document.getElementById('awards-budget');
+  if(budgetInput && document.activeElement !== budgetInput){
+    budgetInput.value = awardsBudget ? awardsBudget.toFixed(2) : '';
+  }
+  const budgetSummaryEl = document.getElementById('awards-budget-summary');
+  if(budgetSummaryEl){
+    budgetSummaryEl.innerHTML =
+      '<div class="lbrow"><div class="who"><div class="name">Total raised</div></div><div class="len">$'+totalRaised.toFixed(2)+'</div></div>'+
+      '<div class="lbrow"><div class="who"><div class="name">Awards budget</div></div><div class="len">&minus;$'+awardsBudget.toFixed(2)+'</div></div>'+
+      '<div class="lbrow"><div class="who"><div class="name" style="font-weight:600;">Net cash for payouts</div></div><div class="len">$'+netAfterAwards.toFixed(2)+'</div></div>';
+  }
+  const generalHtml = generalFund>0
+    ? '<div class="lbrow"><div class="who"><div class="name">General tournament fund</div><div class="sub">Not split &mdash; held for director discretion</div></div><div class="len">$'+generalFund.toFixed(2)+'</div></div><div class="divider"></div>'
+    : '';
+  const payoutHtml =
+    generalHtml +
+    divisionHtml('Solo division', solo.length, soloPool, soloDonated, solo.filter(a=>!a.disqualified).length) +
+    divisionHtml('Team division', teamEntries.length, teamPool, teamDonated, eligibleTeamEntries) +
+    '<div class="divider"></div>' +
+    '<div class="lbrow"><div class="who"><div class="name">Big Fish pot</div><div class="sub">'+bigfishAnglerCount+' angler'+(bigfishAnglerCount===1?'':'s')+' opted in, winner take all'+(bigfishDonated>0?' &middot; +$'+bigfishDonated.toFixed(2)+' donated':'')+'</div></div><div class="len">$'+bigfishPool.toFixed(2)+'</div></div>';
+  document.getElementById('payout-body').innerHTML = payoutHtml;
+  document.getElementById('public-payout-body').innerHTML = payoutHtml;
+
+  renderDonationList(donations);
+}
+
+const DONATION_TARGET_LABEL = { general:'General fund', solo:'Solo pool', team:'Team pool', bigfish:'Big Fish pot' };
+let editingDonationId = null;
+
+function renderDonationList(donations){
+  const el = document.getElementById('don-list');
+  if(!el) return;
+  if(donations.length===0){
+    el.innerHTML = '<p class="hint" style="margin:0;">No donations logged yet.</p>';
+    return;
+  }
+  el.innerHTML = donations.slice().reverse().map(d=>{
+    if(d.id === editingDonationId) return donationEditRowHtml(d);
+    const when = new Date(d.timestamp).toLocaleDateString([], {month:'short', day:'numeric'});
+    const label = DONATION_TARGET_LABEL[d.target] || d.target;
+    const note = d.note ? ' &middot; '+escapeHtml(d.note) : '';
+    return '<div class="lbrow"><div class="who"><div class="name">'+label+note+'</div><div class="sub">'+when+'</div></div><div class="len">$'+d.amount.toFixed(2)+'</div>'+
+      '<button class="small" data-act="edit-donation" data-id="'+d.id+'" style="margin-left:8px;">Edit</button>'+
+      '<button class="small danger" data-act="rm-donation" data-id="'+d.id+'" style="margin-left:6px;">Remove</button></div>';
+  }).join('');
+
+  el.querySelectorAll('[data-act="edit-donation"]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      editingDonationId = btn.dataset.id;
+      renderPayoutCalculator();
+    });
+  });
+  el.querySelectorAll('[data-act="rm-donation"]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(!window.confirm('Remove this donation? This cannot be undone.')) return;
+      const list = await loadDonations();
+      const idx = list.findIndex(d=>d.id===btn.dataset.id);
+      if(idx===-1) return;
+      list.splice(idx,1);
+      await saveDonations(list);
+      if(editingDonationId===btn.dataset.id) editingDonationId = null;
+      renderPayoutCalculator();
+    });
+  });
+  el.querySelectorAll('[data-act="save-donation"]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const row = btn.closest('.lbrow');
+      const target = row.querySelector('[data-field="target"]').value;
+      const amount = parseFloat(row.querySelector('[data-field="amount"]').value);
+      const note = row.querySelector('[data-field="note"]').value.trim();
+      if(!amount || amount<=0){ window.alert('Enter a donation amount greater than $0.'); return; }
+      const list = await loadDonations();
+      const idx = list.findIndex(d=>d.id===btn.dataset.id);
+      if(idx===-1) return;
+      list[idx] = { ...list[idx], target, amount, note };
+      await saveDonations(list);
+      editingDonationId = null;
+      renderPayoutCalculator();
+    });
+  });
+  el.querySelectorAll('[data-act="cancel-edit-donation"]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      editingDonationId = null;
+      renderPayoutCalculator();
+    });
+  });
+}
+
+function donationEditRowHtml(d){
+  const opts = Object.keys(DONATION_TARGET_LABEL).map(key=>
+    '<option value="'+key+'"'+(key===d.target?' selected':'')+'>'+DONATION_TARGET_LABEL[key]+'</option>'
+  ).join('');
+  return '<div class="lbrow" style="flex-wrap:wrap;align-items:flex-start;">'+
+    '<div class="field" style="flex:1 1 100%;margin-bottom:8px;"><select data-field="target" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:4px;background:var(--paper);color:var(--ink);font-family:inherit;">'+opts+'</select></div>'+
+    '<div class="field" style="flex:1;min-width:90px;margin-bottom:8px;"><input type="number" step="0.01" min="0" data-field="amount" value="'+d.amount+'" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:4px;background:var(--paper);color:var(--ink);font-family:inherit;"></div>'+
+    '<div class="field" style="flex:2;min-width:120px;margin-bottom:8px;"><input type="text" data-field="note" value="'+escapeHtml(d.note||'')+'" placeholder="Note" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:4px;background:var(--paper);color:var(--ink);font-family:inherit;"></div>'+
+    '<div style="flex:1 1 100%;display:flex;gap:6px;">'+
+      '<button class="small" data-act="save-donation" data-id="'+d.id+'">Save</button>'+
+      '<button class="small" data-act="cancel-edit-donation" data-id="'+d.id+'">Cancel</button>'+
+    '</div>'+
+  '</div>';
+}
+
+bindEl('awards-budget','change', async (e)=>{
+  const amount = parseFloat(e.target.value);
+  await saveAwardsBudget(amount>0 ? amount : 0);
+  renderPayoutCalculator();
+});
+
+bindEl('don-add','click', async ()=>{
+  const errEl = document.getElementById('don-err');
+  const target = document.getElementById('don-target').value;
+  const amount = parseFloat(document.getElementById('don-amount').value);
+  const note = document.getElementById('don-note').value.trim();
+
+  if(!amount || amount<=0){ errEl.textContent='Enter a donation amount greater than $0.'; errEl.style.display='block'; return; }
+  errEl.style.display='none';
+
+  const donations = await loadDonations();
+  donations.push({ id: uid(), target, amount, note, timestamp: Date.now() });
+  await saveDonations(donations);
+
+  document.getElementById('don-amount').value='';
+  document.getElementById('don-note').value='';
+  renderPayoutCalculator();
+});
+
+async function renderAdmin(){
+  if(!adminUnlocked) return;
+  await renderPayoutCalculator();
+  await renderContestants();
+  const catches = await loadCatches();
+  renderGpsCheck(catches);
+  const pending = catches.filter(c=>c.status==='pending').sort((a,b)=>a.timestamp-b.timestamp);
+  const pendEl = document.getElementById('admin-pending');
+  pendEl.innerHTML = pending.length===0 ? '<p class="empty">Nothing pending review.</p>' :
+    pending.map(c=>{
+      const img = photoSlotHtml(c);
+      return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+c.length+'"</span></div>'+
+        '<div class="name">'+escapeHtml(c.anglerName)+' &middot; '+c.species+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
+        '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+'</div>'+
+        firstPassHtml(c, catches)+
+        '<div class="actions"><button class="small" data-act="approve" data-id="'+c.id+'">Approve</button>'+
+        '<button class="small" data-act="reject" data-id="'+c.id+'">Reject</button></div></div></div>';
+    }).join('');
+
+  const allEl = document.getElementById('admin-all');
+  const all = catches.slice().sort((a,b)=>b.timestamp-a.timestamp);
+  allEl.innerHTML = all.length===0 ? '<p class="empty">No catches submitted yet.</p>' :
+    all.map(c=>{
+      const img = photoSlotHtml(c);
+      return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+c.length+'"</span></div>'+
+        '<div class="name">'+escapeHtml(c.anglerName)+' &middot; '+c.species+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
+        '<span class="status '+c.status+'">'+c.status+'</span>'+
+        '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+'</div>'+
+        firstPassHtml(c, catches)+
+        '<div class="actions"><button class="small" data-act="delete" data-id="'+c.id+'">Delete</button></div></div></div>';
+    }).join('');
+
+  hydratePhotos(pendEl);
+  hydratePhotos(allEl);
+
+  // Scoped to the two catch lists - a bare [data-act] selector would also grab
+  // the donation buttons in the payout tool.
+  document.querySelectorAll('#admin-pending [data-act], #admin-all [data-act]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(btn.dataset.act==='ai-review'){ runAiReview(btn.dataset.id, btn); return; }
+      if(btn.dataset.act==='fishi-retry'){
+        btn.disabled = true; btn.textContent = 'Checking\u2026';
+        initFishI().then(()=>renderAdmin());
+        return;
+      }
+      const catches = await loadCatches();
+      const idx = catches.findIndex(c=>c.id===btn.dataset.id);
+      if(idx===-1) return;
+      if(btn.dataset.act==='approve') catches[idx].status='approved';
+      if(btn.dataset.act==='reject') catches[idx].status='rejected';
+      if(btn.dataset.act==='delete') catches.splice(idx,1);
+      await saveCatches(catches);
+      renderAdmin();
+    });
+  });
+}
+
+// ---- first-pass review UI (director only) ----
+function firstPassHtml(c, allCatches){
+  const verdict = evaluateFirstPass(c, allCatches);
+  const labels = { clear:'Clear', review:'Look closer', flag:'Needs review' };
+
+  const items = verdict.checks.length===0
+    ? '<div class="fp-item"><span class="fp-dot level-info"></span><span>No issues found in the automatic checks.</span></div>'
+    : verdict.checks.map(x=>
+        '<div class="fp-item"><span class="fp-dot level-'+x.level+'"></span>'+
+        '<div><strong>'+escapeHtml(x.label)+'</strong><br><span>'+escapeHtml(x.detail)+'</span></div></div>'
+      ).join('');
+
+  let aiBlock;
+  if(c.aiReview){
+    const r = c.aiReview;
+    if(r.error){
+      aiBlock = '<div class="fp-ai-note">Fish-I vision check failed: '+escapeHtml(r.error)+'</div>'+
+        '<div class="actions" style="margin-top:6px;"><button class="small" data-act="ai-review" data-id="'+c.id+'">Try again</button></div>';
+    } else {
+      const conf = typeof r.speciesConfidence==='number' ? ' ('+Math.round(r.speciesConfidence*100)+'% confidence)' : '';
+      const mismatch = (r.matchesClaim === false)
+        ? '<div class="fp-item"><span class="fp-dot level-flag"></span><span>Does not look like the '+escapeHtml(c.species)+' the angler entered.</span></div>'
+        : '';
+      const framing = [];
+      if(r.boardVisible === false) framing.push('No bump board with a readable scale in frame.');
+      if(r.fishFlat === false)     framing.push('Fish is not lying flat along the board.');
+      if(r.noseAtStop === false)   framing.push('Nose does not appear to be against the zero stop.');
+      if(r.tailInFrame === false)  framing.push('Tail or the scale beneath it is not fully visible.');
+      if(r.handBlocking === true)  framing.push('A hand is covering the nose, tail or the markings.');
+      const framingHtml = framing.map(t=>
+        '<div class="fp-item"><span class="fp-dot level-review"></span><span>'+escapeHtml(t)+'</span></div>').join('');
+      const concerns = (r.concerns && r.concerns.length)
+        ? r.concerns.map(t=>'<div class="fp-item"><span class="fp-dot level-review"></span><span>'+escapeHtml(String(t))+'</span></div>').join('')
+        : '';
+      const allClear = !mismatch && !framingHtml && !concerns
+        ? '<div class="fp-item"><span class="fp-dot level-info"></span><span>No species, framing or integrity concerns raised.</span></div>'
+        : '';
+      aiBlock = '<div class="fp-ai-note"><strong>Fish-I vision:</strong> reads as '+escapeHtml(r.species||'unknown')+conf+
+        (r.notes ? ' &middot; '+escapeHtml(r.notes) : '')+'</div>'+
+        mismatch + framingHtml + concerns + allClear +
+        '<div class="actions" style="margin-top:6px;"><button class="small" data-act="ai-review" data-id="'+c.id+'">Re-run</button></div>';
+    }
+  } else if(fishIVisionAvailable()){
+    aiBlock = '<button class="small" data-act="ai-review" data-id="'+c.id+'">Run Fish-I vision check</button>';
+  } else {
+    aiBlock = '<div class="fp-ai-note">Fish-I vision not ready &mdash; '+escapeHtml(fishIStatusText())+
+      '<br><span style="opacity:.75;">status: '+escapeHtml(fishIStatus)+'</span></div>'+
+      '<div class="actions" style="margin-top:6px;"><button class="small" data-act="fishi-retry" data-id="'+c.id+'">Retry Fish-I</button></div>';
+  }
+
+  return '<div class="fp level-'+verdict.level+'">'+
+    '<div class="fp-head"><span class="fp-title">Fish-I first pass</span>'+
+    '<span class="fp-verdict level-'+verdict.level+'">'+labels[verdict.level]+'</span></div>'+
+    items+
+    '<div class="fp-ai">'+aiBlock+'</div>'+
+  '</div>';
+}
+
+async function runAiReview(catchId, btn){
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  // The default tier thinks before it writes, so this is a 5-60s wait.
+  btn.textContent = 'Fish-I is looking…';
+  const catches = await loadCatches();
+  const idx = catches.findIndex(c=>c.id===catchId);
+  // Catch was deleted from another view mid-check - restore the button
+  // instead of leaving it dead and reading "Fish-I is looking".
+  if(idx===-1){ btn.disabled = false; btn.textContent = originalLabel; return; }
+  try{
+    const photo = await loadPhoto(catchId);
+    if(!photo) throw new Error('No photo is stored with this catch.');
+    const result = await requestAiVisionReview(catches[idx], photo);
+    catches[idx].aiReview = Object.assign({ reviewedAt: Date.now() }, result);
+  }catch(e){
+    console.error(e);
+    catches[idx].aiReview = { error: fishIErrorCopy(e), reviewedAt: Date.now() };
+  }
+  await saveCatches(catches);
+  renderAdmin();
+}
+
+// ---- contestants (director) ----
+let contestantFilter = 'all';
+let expandedContestantId = null;
+let dqConfirmId = null;
+
+document.querySelectorAll('#contestant-filters button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('#contestant-filters button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    contestantFilter = btn.dataset.cfilter;
+    renderContestants();
+  });
+});
+
+async function renderContestants(){
+  const anglers = await loadAnglers();
+  const catches = await loadCatches();
+  const el = document.getElementById('contestants-body');
+  if(!el) return;
+
+  const dqCount = anglers.filter(a=>a.disqualified).length;
+  document.getElementById('contestants-tool-summary').textContent = anglers.length===0
+    ? 'No anglers yet'
+    : anglers.length+' angler'+(anglers.length===1?'':'s')+(dqCount?' \u00b7 '+dqCount+' DQ':'');
+
+  let list = anglers.slice();
+  if(contestantFilter==='solo') list = list.filter(a=>a.division==='solo');
+  else if(contestantFilter==='team') list = list.filter(a=>a.division==='team');
+  else if(contestantFilter==='dq') list = list.filter(a=>a.disqualified);
+
+  if(list.length===0){
+    el.innerHTML = '<p class="empty">'+(anglers.length===0
+      ? 'No anglers registered yet.'
+      : 'No anglers match this filter.')+'</p>';
+    return;
+  }
+
+  // Rank first, then fall back to alphabetical for the unranked.
+  const decorated = list.map(a=>{
+    const mine = catches.filter(c=>c.anglerId===a.id);
+    const approved = mine.filter(c=>c.status==='approved' && c.species==='Walleye');
+    const best = approved.length ? Math.max.apply(null, approved.map(c=>c.length)) : 0;
+    return {
+      angler: a,
+      mine,
+      approved: mine.filter(c=>c.status==='approved').length,
+      pending: mine.filter(c=>c.status==='pending').length,
+      rejected: mine.filter(c=>c.status==='rejected').length,
+      best,
+      rank: a.disqualified ? 0 : rankOf(a, catches, anglers)
+    };
+  }).sort((x,y)=>{
+    if(x.rank && y.rank) return x.rank - y.rank;
+    if(x.rank) return -1;
+    if(y.rank) return 1;
+    return x.angler.name.localeCompare(y.angler.name);
+  });
+
+  el.innerHTML = decorated.map(d=>contestantRowHtml(d, catches)).join('');
+  wireContestantRows();
+}
+
+function contestantRowHtml(d, catches){
+  const a = d.angler;
+  const open = a.id === expandedContestantId;
+  const cls = 'crow' + (a.disqualified ? ' dq' : (d.rank===1 ? ' leader' : ''));
+
+  const teamLabel = a.division==='team'
+    ? 'Team with '+escapeHtml(a.partner || '\u2014')+(a.role==='partner' ? ' (partner)' : '')
+    : 'Solo';
+  const checked = ['day1','day2'].map((k,i)=>{
+    const r = (a.checkins && a.checkins[k]) || {};
+    if(r.in && r.out) return 'D'+(i+1)+' complete';
+    if(r.in) return 'D'+(i+1)+' on water';
+    return 'D'+(i+1)+' not in';
+  }).join(' \u00b7 ');
+
+  const head =
+    '<div class="crow-head" data-act="c-toggle" data-id="'+a.id+'">'+
+      '<div class="crow-rank">'+(a.disqualified ? '\u2014' : (d.rank || '\u2014'))+'</div>'+
+      '<div class="crow-id">'+
+        '<div class="crow-name">'+escapeHtml(a.name)+
+          (a.disqualified ? '<span class="dqtag">DQ</span>' : '')+'</div>'+
+        '<div class="crow-sub">'+a.tournamentId+' \u00b7 '+teamLabel+
+          (a.bigfish ? ' \u00b7 Big Fish' : '')+'</div>'+
+        '<div class="crow-sub">'+checked+'</div>'+
+      '</div>'+
+      '<div class="crow-best">'+
+        '<strong>'+(d.best ? d.best.toFixed(2)+'"' : '\u2014')+'</strong>'+
+        '<span>best</span>'+
+      '</div>'+
+    '</div>';
+
+  if(!open) return '<div class="'+cls+'">'+head+
+    (a.disqualified && a.dqReason ? '<div class="crow-body"><div class="crow-note">Disqualified: '+escapeHtml(a.dqReason)+'</div></div>' : '')+
+    '</div>';
+
+  const stats =
+    '<div class="cstats">'+
+      '<div class="cstat"><strong>'+d.approved+'</strong><span>Approved</span></div>'+
+      '<div class="cstat"><strong>'+d.pending+'</strong><span>Pending</span></div>'+
+      '<div class="cstat"><strong>'+d.rejected+'</strong><span>Rejected</span></div>'+
+      '<div class="cstat"><strong>'+(a.disqualified ? 'DQ' : (d.rank || '\u2014'))+'</strong><span>Standing</span></div>'+
+    '</div>';
+
+  const fish = d.mine.length===0
+    ? '<p class="hint" style="margin:0;">No catches submitted.</p>'
+    : d.mine.slice().sort((x,y)=>y.timestamp-x.timestamp).map(c=>
+        '<div class="cfish"><span>'+escapeHtml(c.species)+' \u00b7 '+Number(c.length).toFixed(2)+'"</span>'+
+        '<span class="st">'+escapeHtml(c.status)+' \u00b7 '+
+        new Date(c.timestamp).toLocaleDateString([], {month:'short',day:'numeric'})+'</span></div>'
+      ).join('');
+
+  let dqArea;
+  if(dqConfirmId === a.id){
+    dqArea =
+      '<div class="cdq">'+
+        '<div class="cdq-warn">Disqualify '+escapeHtml(a.name)+'?<br>'+
+          'This removes them from the standings, the Big Fish pot, and payout placements. '+
+          'Their entry fee stays in the pool. Their catches are kept on record and this can be undone.</div>'+
+        '<input type="text" id="dq-reason" placeholder="Reason (optional, kept on record)">'+
+        '<div class="cdq-actions">'+
+          '<button class="small danger" data-act="c-dq-confirm" data-id="'+a.id+'">Yes, disqualify</button>'+
+          '<button class="small" data-act="c-dq-cancel" data-id="'+a.id+'">Cancel</button>'+
+        '</div>'+
+      '</div>';
+  } else if(a.disqualified){
+    dqArea =
+      '<div class="crow-note">Disqualified'+(a.dqReason ? ': '+escapeHtml(a.dqReason) : '')+
+        (a.dqAt ? ' \u00b7 '+new Date(a.dqAt).toLocaleDateString([], {month:'short',day:'numeric'}) : '')+'</div>'+
+      '<div class="actions" style="margin-top:8px;">'+
+        '<button class="small" data-act="c-reinstate" data-id="'+a.id+'">Reinstate</button>'+
+      '</div>';
+  } else {
+    dqArea =
+      '<div class="actions" style="margin-top:8px;">'+
+        '<button class="small danger" data-act="c-dq" data-id="'+a.id+'">Disqualify</button>'+
+      '</div>';
+  }
+
+  return '<div class="'+cls+'">'+head+'<div class="crow-body">'+stats+fish+dqArea+'</div></div>';
+}
+
+function wireContestantRows(){
+  const el = document.getElementById('contestants-body');
+
+  el.querySelectorAll('[data-act="c-toggle"]').forEach(node=>{
+    node.addEventListener('click', ()=>{
+      const id = node.dataset.id;
+      expandedContestantId = (expandedContestantId === id) ? null : id;
+      dqConfirmId = null;              // never leave a confirm armed across rows
+      renderContestants();
+    });
+  });
+
+  // First click only arms the confirmation - it never disqualifies anyone.
+  el.querySelectorAll('[data-act="c-dq"]').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      dqConfirmId = btn.dataset.id;
+      renderContestants();
+    });
+  });
+  el.querySelectorAll('[data-act="c-dq-cancel"]').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      dqConfirmId = null;
+      renderContestants();
+    });
+  });
+
+  // Second, deliberate click is the one that acts.
+  el.querySelectorAll('[data-act="c-dq-confirm"]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const reasonEl = document.getElementById('dq-reason');
+      const reason = reasonEl ? reasonEl.value.trim() : '';
+      const anglers = await loadAnglers();
+      const idx = anglers.findIndex(a=>a.id===btn.dataset.id);
+      if(idx===-1) return;
+      anglers[idx].disqualified = true;
+      anglers[idx].dqReason = reason;
+      anglers[idx].dqAt = Date.now();
+      await saveAnglers(anglers);
+      dqConfirmId = null;
+      renderAdmin();
+    });
+  });
+
+  el.querySelectorAll('[data-act="c-reinstate"]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      if(!window.confirm('Reinstate this angler? They return to the standings immediately.')) return;
+      const anglers = await loadAnglers();
+      const idx = anglers.findIndex(a=>a.id===btn.dataset.id);
+      if(idx===-1) return;
+      anglers[idx].disqualified = false;
+      anglers[idx].dqReason = '';
+      anglers[idx].dqAt = null;
+      await saveAnglers(anglers);
+      renderAdmin();
+    });
+  });
+}
+
+// ---- init ----
+(async ()=>{
+  try{
+    const app = document.getElementById('app');
+    if(app) app.dataset.theme = 'home';
+    await loadMyAnglerId();
+    updateSyncUi();
+    initStore();          // resolves later; the UI lights up when it does
+    startEventClock();
+    await renderRoster();
+    await renderHome();
+  }catch(e){
+    console.error(e);
+    const b = document.createElement('div');
+    b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#A3372A;color:#fff;'
+      + 'font:12px/1.45 system-ui,sans-serif;padding:10px 12px;white-space:pre-wrap;';
+    b.textContent = 'LiveWire startup error \u2014 screenshot this:\n' + (e && e.message ? e.message : e);
+    document.body.appendChild(b);
+  }
+})();
+</script>
+</body>
+</html>
