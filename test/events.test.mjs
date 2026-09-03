@@ -51,6 +51,7 @@ globalThis.__t = {
   pointInPolygon, distanceToPolygonEdgeMiles, normalizeBoundary, parsePointLines,
   describeBoundary, boundaryCenter, milesBetween, offsetLatLng, bearingFrom,
   SPECIES_PRESETS, SPECIES_CUSTOM, speciesPreset,
+  updateGuide, renderSpeciesOptions, submittedSpecies,
   loadAwardsBudget, saveAwardsBudget, awardsBudgetMap,
   standingsFor, eventDateRangeText, eventRowCounts, eventDayText,
   getMyAnglerId, setMyAnglerId, onRows, readOutbox
@@ -70,21 +71,30 @@ const mem = new Map();
 const localStorage = makeStorage(mem);
 function fakeEl() {
   const el = {
-    style: { cssText: '' }, dataset: {}, value: '', textContent: '', innerHTML: '',
-    disabled: false, hidden: false, checked: false,
+    style: { cssText: '', display: '' }, dataset: {}, value: '', textContent: '', innerHTML: '',
+    disabled: false, hidden: false, checked: false, options: [],
     classList: { add(){}, remove(){}, toggle(){}, contains(){ return false; } },
     addEventListener(){}, removeEventListener(){}, appendChild(){}, focus(){},
     querySelectorAll(){ return []; }, querySelector(){ return null; },
     closest(){ return fakeEl(); }, setAttribute(){}, getAttribute(){ return null; },
-    getContext(){ return null; }
+    getContext(){ return null; }, isConnected: true
   };
   return el;
+}
+// getElementById hands back the SAME object for a given id, so a test can set
+// a value on one element and read what the code did to another. Without this
+// every lookup was a throwaway and nothing about the DOM could be asserted -
+// which is how the camera guide broke without a test noticing.
+const elById = new Map();
+function getEl(id) {
+  if (!elById.has(id)) elById.set(id, fakeEl());
+  return elById.get(id);
 }
 // The app's init catches any startup throw and paints a red banner into the
 // body. Capturing appendChild turns that into a test assertion.
 const startupBanners = [];
 const document = {
-  getElementById: () => fakeEl(),
+  getElementById: getEl,
   querySelectorAll: () => [],
   querySelector: () => null,
   createElement: () => fakeEl(),
@@ -579,7 +589,72 @@ for(const p of allPresets){
 check('every preset round-trips as a saved setting', true, true);
 
 // ============================================================
-section('20. the page starts up clean');
+section('20. the camera guide');
+// The bump-board guide is what tells an angler nose-to-the-stop and hands off
+// the scale. It went missing for every event that did not score walleye,
+// because the whole overlay was keyed on the species rather than just the fish
+// outline inside it. These pin that down.
+const board = () => elById.get('vf-guide-board').style.display;
+const plainBox = () => elById.get('vf-guide-other').style.display;
+const fishOutline = () => elById.get('vf-fish-walleye').style.display;
+const hint = () => elById.get('vf-hint').textContent;
+
+seed([], [], [], {});
+await setEvent(E1);
+
+// A walleye event: the full guide, silhouette included.
+await t.saveEventSettings({ targetSpecies: 'Walleye' });
+t.renderSpeciesOptions();
+check('the dropdown lands on the scoring species', elById.get('sub-species').value, 'Walleye');
+t.updateGuide();
+check('the board guide is shown', board(), 'block');
+check('the plain box is not', plainBox(), 'none');
+check('the walleye outline is shown', fishOutline(), '');
+check('the hint mentions the outline', /blue outline/.test(hint()), true);
+
+// A bass event: the guide must still be there. This is the regression.
+await t.saveEventSettings({ targetSpecies: 'Largemouth Bass' });
+t.renderSpeciesOptions();
+t.updateGuide();
+check('the board guide survives a non-walleye event', board(), 'block');
+check('the walleye outline is dropped', fishOutline(), 'none');
+check('the plain box stays hidden', plainBox(), 'none');
+check('the hint still says nose to the stop', /nose to the stop/.test(hint()), true);
+check('but no longer promises an outline', /blue outline/.test(hint()), false);
+
+// "Other (not scored)" is the one case that gets the plain framing box.
+elById.get('sub-species').value = t.OTHER_SPECIES;
+t.updateGuide();
+check('a not-scored fish gets the plain box', plainBox(), 'block');
+check('and not the board guide', board(), 'none');
+check('the hint just says frame it', /Frame the whole fish/.test(hint()), true);
+
+// startCamera() can reach updateGuide() before the dropdown is built. An empty
+// value used to read as "not the scoring species" and hide the guide.
+elById.get('sub-species').value = '';
+elById.get('sub-species').options = [];
+check('an empty dropdown falls back to the scoring species',
+  t.submittedSpecies(), 'Largemouth Bass');
+t.updateGuide();
+check('and the guide is shown, not hidden', board(), 'block');
+check('with the plain box off', plainBox(), 'none');
+
+// Same again for a walleye event, outline included.
+await t.saveEventSettings({ targetSpecies: 'Walleye' });
+elById.get('sub-species').value = '';
+t.updateGuide();
+check('an empty dropdown still gets the walleye outline', fishOutline(), '');
+
+// A species the angler picked must survive a background repaint.
+await t.saveEventSettings({ targetSpecies: 'Walleye' });
+elById.get('sub-species').value = t.OTHER_SPECIES;
+elById.get('sub-species').options = [{}, {}];
+t.renderSpeciesOptions();
+check('"Other" is not silently switched back to the scoring species',
+  elById.get('sub-species').value, t.OTHER_SPECIES);
+
+// ============================================================
+section('21. the page starts up clean');
 // Let the init IIFE's promise chain settle before judging it.
 await new Promise(r => setTimeout(r, 0));
 check('no startup error banner', startupBanners, []);
