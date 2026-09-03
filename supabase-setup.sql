@@ -25,6 +25,27 @@
 --    Each is an id plus a jsonb blob, so the app's record shapes can change
 --    without a migration. created_at is for your reference; the app never
 --    reads it.
+--
+--    MORE THAN ONE EVENT SHARES THESE TABLES. Every angler, catch and donation
+--    carries  data->>'eventId'  naming the tournament it belongs to, and the
+--    app only ever reads the one that is live. So the queries below all filter
+--    on it - leave the filter off and you are looking at every event at once.
+--
+--    Records written before the app knew about events have NO eventId at all.
+--    Those belong to the first event in the EVENTS list in index.html
+--    ('mkwo-2027'), which is why the queries below match it with
+--    coalesce(data->>'eventId', 'mkwo-2027').
+--
+--    config holds one row, id 'tournament', and it is the only thing the
+--    director's settings live in:
+--      activeEventId  - which event every device is currently running
+--      awardsBudgets  - { "<eventId>": number }
+--      eventSettings  - { "<eventId>": { targetSpecies, recordInches, course } }
+--    where course is either
+--      {"kind":"circle","center":{"lat":..,"lng":..},"radiusMiles":..}
+--      {"kind":"polygon","points":[{"lat":..,"lng":..}, ...]}
+--      {"kind":"none"}
+--    Anything absent falls back to the EVENTS entry compiled into index.html.
 -- ---------------------------------------------------------------------------
 create table if not exists public.anglers (
   id          text primary key,
@@ -154,7 +175,45 @@ where id = 'catch-photos';
 -- ============================================================================
 -- Handy queries for during and after the event.
 -- Highlight one and press Run - the SQL editor runs just the selection.
+--
+-- Set the event once here, then the queries below all follow it. Change the id
+-- to look at a different year. (Postgres has no client variables in this
+-- editor, so the id is written into each query - it is the string in the
+-- coalesce(...) = '...' line.)
 -- ============================================================================
+
+-- Which event is live, and what each one holds:
+--
+-- select coalesce(data->>'eventId', 'mkwo-2027') as event,
+--        count(*) filter (where true) as records
+-- from (
+--   select data from public.anglers
+--   union all select data from public.catches
+--   union all select data from public.donations
+-- ) all_rows
+-- group by 1
+-- order by 1;
+--
+-- select data->>'activeEventId' as live_event,
+--        data->'awardsBudgets'  as budgets,
+--        data->'eventSettings'  as settings
+-- from public.config where id = 'tournament';
+
+-- The species and boundary in force for one event:
+--
+-- select data->'eventSettings'->'mkwo-2027'->>'targetSpecies' as species,
+--        data->'eventSettings'->'mkwo-2027'->'course'         as boundary
+-- from public.config where id = 'tournament';
+
+-- Catches logged outside the course boundary:
+--
+-- select data->>'anglerName' as angler,
+--        data->>'length'     as inches,
+--        round((data->'location'->>'outsideMiles')::numeric, 2) as miles_out
+-- from public.catches
+-- where (data->'location'->>'withinBounds')::boolean is false
+--   and coalesce(data->>'eventId', 'mkwo-2027') = 'mkwo-2027'
+-- order by miles_out desc;
 
 -- Everything still waiting on you:
 --
@@ -164,15 +223,19 @@ where id = 'catch-photos';
 --        to_timestamp((data->>'timestamp')::bigint / 1000) as submitted
 -- from public.catches
 -- where data->>'status' = 'pending'
+--   and coalesce(data->>'eventId', 'mkwo-2027') = 'mkwo-2027'
 -- order by submitted;
 
--- Final standings - longest approved walleye per angler:
+-- Final standings - longest approved fish of the SCORING species per angler.
+-- The species is whatever the director set for the event (Director -> Event);
+-- change the string below to match it, or read it with the query above.
 --
 -- select data->>'anglerName' as angler,
 --        max((data->>'length')::numeric) as best_inches
 -- from public.catches
 -- where data->>'status' = 'approved'
 --   and data->>'species' = 'Walleye'
+--   and coalesce(data->>'eventId', 'mkwo-2027') = 'mkwo-2027'
 -- group by 1
 -- order by 2 desc;
 
@@ -181,6 +244,7 @@ where id = 'catch-photos';
 -- select data->>'name' as angler, data->>'tournamentId' as entry
 -- from public.anglers
 -- where (data->>'bigfish')::boolean is true
+--   and coalesce(data->>'eventId', 'mkwo-2027') = 'mkwo-2027'
 -- order by 2;
 
 -- Lock the tournament read-only once it is over. Run section 2 again to reopen.
@@ -195,7 +259,14 @@ where id = 'catch-photos';
 -- create policy donations_read on public.donations for select to anon, authenticated using (true);
 -- create policy config_read    on public.config    for select to anon, authenticated using (true);
 
--- Wipe all entries for a fresh practice run (keeps the tables and policies):
+-- Wipe ONE event - a practice run, or last year's field once you have exported
+-- it. Every other event is left alone. Change the id in all three lines.
+--
+-- delete from public.catches   where coalesce(data->>'eventId', 'mkwo-2027') = 'mkwo-2027';
+-- delete from public.anglers   where coalesce(data->>'eventId', 'mkwo-2027') = 'mkwo-2027';
+-- delete from public.donations where coalesce(data->>'eventId', 'mkwo-2027') = 'mkwo-2027';
+
+-- Wipe EVERYTHING, every event, for a completely fresh start:
 --
 -- delete from public.catches;
 -- delete from public.anglers;

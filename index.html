@@ -63,6 +63,7 @@
   .field input[type=text],
   .field input[type=tel],
   .field input[type=number],
+  .field textarea,
   .field select{
     width:100%;
     padding:10px 11px;
@@ -73,7 +74,8 @@
     color:var(--ink);
     font-family:inherit;
   }
-  .field input:focus,.field select:focus{outline:2px solid var(--gold);outline-offset:1px;}
+  .field input:focus,.field select:focus,.field textarea:focus{outline:2px solid var(--gold);outline-offset:1px;}
+  .field textarea{resize:vertical;font-family:'Space Mono',monospace;font-size:12px;line-height:1.5;}
   .row2{display:flex;gap:10px;}
   .row2 > div{flex:1;}
 
@@ -198,6 +200,9 @@
 
   nav.tabbar{
     position:fixed;
+    /* Above Leaflet, whose controls sit as high as 1000. Without this the map's
+       zoom buttons scroll out over the top of the bottom nav. */
+    z-index:1200;
     bottom:14px;left:0;right:0;
     max-width:480px;
     margin:0 auto;
@@ -537,6 +542,35 @@
   .gps-row-name{font-size:13px;font-weight:600;}
   .gps-row-meta{font-size:11px;color:var(--steel);}
 
+  /* ---- course map ----
+     Leaflet and its tiles both need a network. Everything that decides whether
+     a position is in bounds is local maths, so the map is an enhancement laid
+     over a readout that still works with no signal at all. */
+  /* position + z-index makes this a stacking context, so Leaflet's internal
+     z-indexes stay inside the map instead of climbing over the page. */
+  .lw-map{height:280px;border:1px solid var(--line);background:var(--paper-2);position:relative;z-index:0;}
+  .lw-map.tall{height:340px;}
+  .lw-map-fallback{
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    height:100%;padding:16px;font-size:12px;color:var(--steel);
+  }
+  .lw-map-tools{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;}
+  .lw-map-tools button{width:auto;padding:7px 11px;font-size:11px;margin:0;}
+  .lw-map-tools button.active{background:var(--deep);color:var(--paper);border-color:var(--deep);}
+  .lw-readout{
+    display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+    padding:10px;border:1px solid var(--line);background:var(--paper-2);margin-bottom:10px;
+  }
+  .lw-readout strong{font-family:'Fraunces',serif;font-size:16px;color:var(--deep);}
+  .lw-readout.in strong{color:var(--olive);}
+  .lw-readout.out strong{color:var(--danger);}
+  .lw-readout span{font-size:11px;color:var(--steel);text-align:right;}
+  .lw-coordrow{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .lw-vertex{
+    font-family:'Space Mono',monospace;font-size:11px;color:var(--steel);
+    max-height:96px;overflow:auto;padding:6px 0;
+  }
+
   .fp{margin-top:8px;border:1px solid var(--line);border-left:3px solid var(--line);background:var(--paper);padding:8px 9px;}
   .fp.level-clear{border-left-color:#5FAE85;}
   .fp.level-review{border-left-color:#D5A33A;}
@@ -666,6 +700,11 @@
   .home-signal.sync-bad{color:#E03725;}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Leaflet, for drawing and viewing the course boundary. Both of these are
+     allowed to fail: on the water there is no signal, and every screen that
+     uses them falls back to a text readout computed on the phone. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
 <div id="app" data-theme="home">
@@ -692,7 +731,7 @@
       <section class="home-event" aria-labelledby="home-event-title">
         <div class="home-event-top">
           <span class="home-live" id="home-reg-badge"><span class="home-live-dot"></span><span id="home-reg-text">Registration open</span></span>
-          <span class="home-event-date">Sept 18&ndash;19, 2027</span>
+          <span class="home-event-date" id="home-event-date">Sept 18&ndash;19, 2027</span>
         </div>
         <svg class="home-fishmark" viewBox="0 0 260 150" aria-hidden="true">
           <path d="M28 78c34-42 102-58 158-28 20 11 34 25 48 28-14 4-28 18-48 29-56 30-124 14-158-29Z"/>
@@ -703,11 +742,11 @@
           <path d="M199 91c12 2 23-2 35-13"/>
           <line x1="69" y1="58" x2="163" y2="86"/>
         </svg>
-        <p class="home-kicker">Turmanator Trailer &amp; Ironworks presents</p>
+        <p class="home-kicker" id="home-event-presenter">Turmanator Trailer &amp; Ironworks presents</p>
         <h1 id="home-event-title">Montana Kayak<br>Walleye Open</h1>
         <div class="home-location">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
-          <span>Canyon Ferry &middot; Silos to the Ponds</span>
+          <span id="home-event-course">Canyon Ferry &middot; Silos to the Ponds</span>
         </div>
         <button class="home-register" id="home-register-btn" type="button" data-goto="register">Register now</button>
       </section>
@@ -770,9 +809,9 @@
     <section class="screen" id="screen-register">
       <a class="backlink" data-goto="home" role="button" tabindex="0">&larr; Home</a>
       <header class="hero" style="margin:0 0 16px;border-radius:6px;">
-        <p class="kicker">Turmanator Trailer &amp; Ironworks presents</p>
-        <h1>Montana Kayak Walleye Open</h1>
-        <p class="meta">Sept 18&ndash;19, 2027 &middot; Silos to the Ponds, Canyon Ferry &middot; Catch &middot; Photo &middot; Release</p>
+        <p class="kicker" id="reg-event-presenter">Turmanator Trailer &amp; Ironworks presents</p>
+        <h1 id="reg-event-title">Montana Kayak Walleye Open</h1>
+        <p class="meta" id="reg-event-meta">Sept 18&ndash;19, 2027 &middot; Silos to the Ponds, Canyon Ferry &middot; Catch &middot; Photo &middot; Release</p>
       </header>
       <div class="card">
         <h2>Register</h2>
@@ -804,7 +843,7 @@
         </div>
         <div class="err" id="reg-err" style="display:none;"></div>
         <button class="primary" id="reg-submit">Complete registration</button>
-        <p class="hint">Registration closes June 1, 2027. This confirms your spot on the roster &mdash; entry fees and side pot buy-ins are collected separately by PayPal, per the info in your confirmation email.</p>
+        <p class="hint" id="reg-close-note">Registration closes June 1, 2027. This confirms your spot on the roster &mdash; entry fees and side pot buy-ins are collected separately by PayPal, per the info in your confirmation email.</p>
       </div>
 
       <div class="card" id="reg-roster-card">
@@ -843,10 +882,8 @@
           </div>
           <div class="field">
             <label for="sub-species">Species</label>
-            <select id="sub-species">
-              <option value="Walleye">Walleye</option>
-              <option value="Other">Other (not scored)</option>
-            </select>
+            <!-- Filled from the event's target species - see renderSpeciesOptions(). -->
+            <select id="sub-species"></select>
           </div>
         </div>
         <div class="field">
@@ -982,7 +1019,7 @@
           <label for="lw-angler">Angler</label>
           <select id="lw-angler"></select>
         </div>
-        <p class="hint" style="margin-top:0;">Every approved catch is released on the water, so your livewell is a running tally rather than fish in a tank. Your longest approved walleye is what currently counts toward standings.</p>
+        <p class="hint" style="margin-top:0;" id="livewell-note">Every approved catch is released on the water, so your livewell is a running tally rather than fish in a tank.</p>
         <div id="lw-list"></div>
       </div>
     </section>
@@ -1006,7 +1043,7 @@
       <a class="backlink" data-goto="home" role="button" tabindex="0">&larr; Home</a>
       <div class="card">
         <h2>Big Fish pot</h2>
-        <p class="hint" style="margin-top:0;">Optional $10/angler side pot. Longest approved walleye across both divisions wins, winner take all.</p>
+        <p class="hint" style="margin-top:0;" id="bigfish-note">Optional $10/angler side pot. Winner take all.</p>
         <div id="bf-list"></div>
       </div>
     </section>
@@ -1014,6 +1051,15 @@
     <!-- PUBLIC GPS STATUS -->
     <section class="screen" id="screen-gps">
       <a class="backlink" data-goto="home" role="button" tabindex="0">&larr; Home</a>
+      <div class="card">
+        <h2>Where am I?</h2>
+        <p class="hint" style="margin-top:0;" id="my-pos-intro"></p>
+        <div id="my-pos-readout"></div>
+        <div class="err" id="my-pos-err" style="display:none;"></div>
+        <button class="secondary" id="my-pos-check">Check my position</button>
+        <div id="course-map" class="lw-map" style="margin-top:10px;"></div>
+        <p class="hint" style="margin-bottom:0;">The map needs a signal, so it may not draw out on the water. The in/out reading above does not &mdash; that is worked out on your phone from the boundary, and it works with no bars at all.</p>
+      </div>
       <div class="card">
         <h2>GPS status</h2>
         <p class="hint" style="margin-top:0;">Read-only course-location summary. Anglers can see the status of their own submitted catches; only the Tournament Director can review or act on flagged entries.</p>
@@ -1062,6 +1108,92 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19"/><circle cx="10" cy="8" r="3.2"/><path d="M20 19v-1.5a3.5 3.5 0 0 0-2.6-3.4"/><path d="M15.4 5.2a3.2 3.2 0 0 1 0 5.6"/></svg>
             <span class="director-tool-copy"><strong>Contestants</strong><span id="contestants-tool-summary">No anglers yet</span></span>
           </button>
+          <button class="director-tool wide" type="button" data-admin-tool="event">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3.5v3M16 3.5v3"/><path d="m9 14.5 2 2 4-4"/></svg>
+            <span class="director-tool-copy"><strong>Event</strong><span id="event-tool-summary">&mdash;</span></span>
+          </button>
+        </div>
+
+        <div class="card" id="admin-tool-event" style="display:none;">
+          <h2>Event</h2>
+          <p class="hint" style="margin-top:0;">Which tournament this app is running. Every device follows this setting, so change it once and the whole field moves together. Records stay attached to the event they were logged under &mdash; switching never mixes two fields, and switching back brings the first one up exactly as it was.</p>
+          <div class="field">
+            <label for="event-select">Live event</label>
+            <select id="event-select"></select>
+          </div>
+          <div class="err" id="event-err" style="display:none;"></div>
+          <button class="secondary" id="event-apply">Make this the live event</button>
+
+          <hr class="divider">
+          <h2 style="margin-bottom:8px;">Target species</h2>
+          <p class="hint" style="margin-top:0;">The one species this event scores. Anglers pick it or &ldquo;Other (not scored)&rdquo; when they submit, and only this species is ranked, placed and paid. The ceiling is a sanity check &mdash; a catch longer than it gets flagged for you, never rejected.</p>
+          <div class="row2">
+            <div class="field">
+              <label for="species-name">Species</label>
+              <input type="text" id="species-name" placeholder="Walleye" autocapitalize="words" spellcheck="false">
+            </div>
+            <div class="field">
+              <label for="species-record">Length ceiling (in)</label>
+              <input type="number" id="species-record" step="0.5" min="0" placeholder="36">
+            </div>
+          </div>
+          <div class="err" id="species-err" style="display:none;"></div>
+          <button class="secondary" id="species-save">Save species</button>
+
+          <hr class="divider">
+          <h2 style="margin-bottom:8px;">Course boundary</h2>
+          <p class="hint" style="margin-top:0;">Where the event is fished. Every catch records whether it was taken inside this line. Draw it on the map or type the numbers &mdash; either way it is the same boundary, and anglers can check themselves against it from the GPS screen.</p>
+          <div class="lw-map-tools" id="bnd-modes">
+            <button type="button" data-bmode="circle">Circle</button>
+            <button type="button" data-bmode="polygon">Outline</button>
+            <button type="button" data-bmode="none">No boundary</button>
+          </div>
+          <p class="hint" id="bnd-help" style="margin-top:0;"></p>
+          <div id="boundary-map" class="lw-map tall"></div>
+          <div class="lw-map-tools">
+            <button class="secondary" type="button" id="bnd-locate">Use my location</button>
+            <button class="secondary" type="button" id="bnd-undo">Undo point</button>
+            <button class="secondary" type="button" id="bnd-clear">Clear</button>
+          </div>
+
+          <div id="bnd-circle-fields">
+            <div class="lw-coordrow">
+              <div class="field">
+                <label for="bnd-lat">Centre latitude</label>
+                <input type="number" id="bnd-lat" step="0.00001" placeholder="46.38917">
+              </div>
+              <div class="field">
+                <label for="bnd-lng">Centre longitude</label>
+                <input type="number" id="bnd-lng" step="0.00001" placeholder="-111.57556">
+              </div>
+            </div>
+            <div class="field">
+              <label for="bnd-radius">Radius (miles)</label>
+              <input type="number" id="bnd-radius" step="0.1" min="0.1" placeholder="4">
+            </div>
+          </div>
+
+          <div id="bnd-poly-fields" style="display:none;">
+            <div class="field">
+              <label for="bnd-points">Corner points &mdash; one &ldquo;latitude, longitude&rdquo; per line</label>
+              <textarea id="bnd-points" rows="5" spellcheck="false" placeholder="46.41200, -111.60100&#10;46.41200, -111.54000&#10;46.36000, -111.54000"></textarea>
+            </div>
+          </div>
+
+          <div class="err" id="bnd-err" style="display:none;"></div>
+          <button class="secondary" id="bnd-save">Save boundary</button>
+          <p class="hint" id="bnd-saved-note" style="margin-bottom:0;"></p>
+
+          <hr class="divider">
+          <h2 style="margin-bottom:8px;">Re-check logged catches</h2>
+          <p class="hint" style="margin-top:0;">Each catch was judged against the boundary that was set when it was logged. If you have changed the boundary since, this re-runs every catch against the current one using the position already stored with it. Nothing is approved, rejected or deleted &mdash; only the in/out reading changes.</p>
+          <div id="bnd-recheck-note"></div>
+          <button class="secondary" id="bnd-recheck">Re-check every catch</button>
+
+          <hr class="divider">
+          <h2 style="margin-bottom:8px;">On record</h2>
+          <p class="hint" style="margin-top:0;">What each event holds in the shared store right now.</p>
+          <div id="event-list"></div>
         </div>
 
         <div class="card" id="admin-tool-contestants" style="display:none;">
@@ -1181,12 +1313,74 @@ function bindEl(id, evt, fn){
 // in plain text to every phone that opens the page, so treat it as a "keep
 // honest people out of the director panel" latch, not real security.
 const ADMIN_PASS = "MKWO-2027";
-const TOURNAMENT_PREFIX = "MKWO";
-// Approximate center of the Silos-to-Ponds course at Canyon Ferry Reservoir.
-// Boundary check is approximate (straight-line radius, not the actual shoreline course)
-// and is meant to flag catches for director review, not to auto-reject them.
-const COURSE_CENTER = { lat: 46.38917, lng: -111.57556 };
-const COURSE_RADIUS_MILES = 4;
+
+// ---- the events this copy of the app knows about ----
+// One entry per tournament. Every angler, catch and donation record is stamped
+// with the id of the event that was active when it was written, and the whole
+// app reads through that stamp - so a second event shares this page, this
+// database and this link with the first without their fields ever mixing.
+//
+// TO ADD NEXT YEAR'S EVENT: copy the last block, give it a NEW id (never reuse
+// one - the id is what the records point at), set the dates, course and prefix,
+// then switch to it from Director -> Event. Nothing else to do.
+//
+// Boundary checks are approximate (straight-line radius from the point below,
+// not the actual shoreline course) and are meant to flag catches for director
+// review, not to auto-reject them.
+const EVENTS = [
+  {
+    id: 'mkwo-2027',
+    name: 'Montana Kayak Walleye Open',
+    nameHtml: 'Montana Kayak<br>Walleye Open',
+    presenter: 'Turmanator Trailer &amp; Ironworks presents',
+    prefix: 'MKWO',
+    dates: ['2027-09-18','2027-09-19'],
+    timeZone: 'America/Denver',
+    courseLabel: 'Canyon Ferry &middot; Silos to the Ponds',
+    courseLabelLong: 'Silos to the Ponds, Canyon Ferry',
+    // Starting values only. The director edits both of these from
+    // Director -> Event, and the edit is what every device then uses.
+    targetSpecies: 'Walleye',
+    recordInches: 36,          // all-tackle world record walleye is ~35"
+    course: { kind:'circle', center:{ lat: 46.38917, lng: -111.57556 }, radiusMiles: 4 },
+    // Registration closes at the very start of this instant (Mountain time).
+    registrationClose: '2027-06-02T00:00:00-06:00'
+  },
+  {
+    id: 'mkwo-2028',
+    name: 'Montana Kayak Walleye Open',
+    nameHtml: 'Montana Kayak<br>Walleye Open',
+    presenter: 'Turmanator Trailer &amp; Ironworks presents',
+    prefix: 'MKWO28',
+    dates: ['2028-09-16','2028-09-17'],
+    timeZone: 'America/Denver',
+    courseLabel: 'Canyon Ferry &middot; Silos to the Ponds',
+    courseLabelLong: 'Silos to the Ponds, Canyon Ferry',
+    targetSpecies: 'Walleye',
+    recordInches: 36,
+    course: { kind:'circle', center:{ lat: 46.38917, lng: -111.57556 }, radiusMiles: 4 },
+    registrationClose: '2028-06-02T00:00:00-06:00'
+  }
+];
+
+// Records written before the app knew about events carry no eventId at all.
+// They belong to the first event, and are read as such without a migration -
+// see rowEventId(). Never renumber this.
+const LEGACY_EVENT_ID = EVENTS[0].id;
+
+// Used only until the shared config says which event is live - which is to say
+// on a store that has never had an event set, i.e. one carrying the original
+// event's records. Defaulting to the FIRST event is what makes installing this
+// version a no-op: the existing field keeps showing up exactly as it did, and
+// nothing moves until the director switches events on purpose.
+const DEFAULT_EVENT_ID = EVENTS[0].id;
+
+function eventById(id){
+  for(let i=0;i<EVENTS.length;i++){ if(EVENTS[i].id === id) return EVENTS[i]; }
+  return null;
+}
+// activeEventId() / activeEvent() read the shared store, so they live with it -
+// see "which event is live" further down.
 
 // ---- automated first-pass review ----
 // Endpoint on YOUR server that holds the Anthropic API key and calls Claude's
@@ -1200,7 +1394,8 @@ const PRECHECK_BLUR_THRESHOLD = 40;     // Laplacian variance; lower = softer im
 const PRECHECK_DARK_THRESHOLD = 55;     // mean luminance, 0-255
 const PRECHECK_BRIGHT_THRESHOLD = 225;
 const PRECHECK_DUP_MAX_DISTANCE = 6;    // Hamming distance over a 64-bit dHash
-const WALLEYE_RECORD_INCHES = 36;       // all-tackle world record walleye is ~35"
+// Per-species plausibility ceiling now lives on the event and is editable by
+// the director - see eventSettings().recordInches.
 
 // Auto-capture gates. These judge PHOTO QUALITY only - steady, sharp, lit.
 // Nothing here can tell whether the fish is on the board correctly.
@@ -1211,25 +1406,61 @@ const AUTOCAP_BRIGHT_MIN = 50;
 const AUTOCAP_BRIGHT_MAX = 235;
 const AUTOCAP_STABLE_SAMPLES = 3;   // consecutive good samples before arming
 const AUTOCAP_COUNTDOWN = 3;        // ticks shown before the shutter fires
-const EVENT_DATES = ['2027-09-18','2027-09-19'];
-const EVENT_TIME_ZONE = 'America/Denver';
-// Registration closes at the end of the day (Mountain time) on this date.
-const REGISTRATION_CLOSE = new Date('2027-06-02T00:00:00-06:00');
+function eventDates(){ return activeEvent().dates; }
 function isRegistrationClosed(){
-  return Date.now() >= REGISTRATION_CLOSE.getTime();
+  return Date.now() >= new Date(activeEvent().registrationClose).getTime();
 }
 const LINES_OUT_SECONDS = 14 * 60 * 60;
 const FINAL_CHECKIN_SECONDS = 15 * 60 * 60;
-const EVENT_CLOCK_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  timeZone: EVENT_TIME_ZONE,
-  year: 'numeric', month: '2-digit', day: '2-digit',
-  hour: '2-digit', minute: '2-digit', second: '2-digit',
-  hourCycle: 'h23'
-});
+
+// One formatter per time zone, built on first use. Events can sit in different
+// zones, and building an Intl formatter on every clock tick is wasteful.
+const eventClockFormatters = new Map();
+function eventClockFormatter(){
+  const tz = activeEvent().timeZone;
+  let f = eventClockFormatters.get(tz);
+  if(!f){
+    f = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hourCycle: 'h23'
+    });
+    eventClockFormatters.set(tz, f);
+  }
+  return f;
+}
+
+// Event dates are bare YYYY-MM-DD, which Date parses as UTC midnight. Format
+// them back in UTC too, or a viewer west of Greenwich reads a day earlier.
+function eventDayText(dateKey, opts){
+  const o = Object.assign({ timeZone:'UTC', month:'short', day:'numeric' }, opts||{});
+  return new Date(dateKey + 'T00:00:00Z').toLocaleDateString('en-US', o);
+}
+// "Sept 18-19, 2027" when the days share a month, "Sept 30 - Oct 1, 2027" when
+// not. Defaults to the live event; the director's event list passes each one.
+function eventDateRangeText(evt){
+  const dates = (evt || activeEvent()).dates;
+  if(dates.length === 0) return '';
+  const year = dates[dates.length-1].slice(0,4);
+  const first = eventDayText(dates[0]);
+  if(dates.length === 1) return first + ', ' + year;
+  const last = dates[dates.length-1];
+  const sameMonth = dates[0].slice(0,7) === last.slice(0,7);
+  const lastText = sameMonth ? eventDayText(last, { month:undefined }) : eventDayText(last);
+  return first + '–' + lastText + ', ' + year;
+}
+// registrationClose is the instant registration STOPS, so the last day anyone
+// can enter is the moment before it - "closes June 1", not "closes June 2".
+function registrationCloseText(){
+  const evt = activeEvent();
+  return new Date(new Date(evt.registrationClose).getTime() - 1)
+    .toLocaleDateString('en-US', { timeZone: evt.timeZone, month:'long', day:'numeric', year:'numeric' });
+}
 
 function eventTimeParts(now){
   const values = {};
-  EVENT_CLOCK_FORMATTER.formatToParts(now).forEach(part=>{
+  eventClockFormatter().formatToParts(now).forEach(part=>{
     if(part.type !== 'literal') values[part.type] = part.value;
   });
   return {
@@ -1250,7 +1481,7 @@ function updateEventCountdown(now = new Date()){
   const wrap = document.getElementById('event-countdown');
   if(!wrap) return;
   const eventNow = eventTimeParts(now);
-  const dayIndex = EVENT_DATES.indexOf(eventNow.dateKey);
+  const dayIndex = eventDates().indexOf(eventNow.dateKey);
   if(dayIndex === -1){ wrap.hidden = true; return; }
 
   wrap.hidden = false;
@@ -1291,6 +1522,201 @@ function milesBetween(lat1, lng1, lat2, lng2){
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+// ---- course boundary ----
+// Two shapes. A CIRCLE is a launch point and a radius - quick to set up and the
+// right answer for open water. A POLYGON is an outline traced on the map, which
+// is what a shoreline stretch like Silos-to-the-Ponds actually is. 'none' turns
+// the check off and just records where each catch was taken.
+//
+// All of it runs on the phone with no network: the boundary is a handful of
+// numbers held in the shared config, and the maths below is local. That matters
+// because the reservoir has no signal - map TILES need a connection, knowing
+// whether you are inside the line does not.
+
+// Flat-earth projection about a reference latitude, in miles. Over a course a
+// few miles across the error is far below GPS noise, and it turns the segment
+// maths into ordinary 2D geometry.
+const MILES_PER_DEG_LAT = 69.0546;
+function projectMiles(lat, lng, refLat){
+  return { x: lng * MILES_PER_DEG_LAT * Math.cos(refLat * Math.PI/180),
+           y: lat * MILES_PER_DEG_LAT };
+}
+function polygonRefLat(points){
+  return points.reduce((s,p)=> s + p.lat, 0) / points.length;
+}
+// Ray casting. Counts crossings of the ray heading east from the point.
+function pointInPolygon(lat, lng, points){
+  let inside = false;
+  for(let i=0, j=points.length-1; i<points.length; j=i++){
+    const yi = points[i].lat, xi = points[i].lng;
+    const yj = points[j].lat, xj = points[j].lng;
+    const straddles = (yi > lat) !== (yj > lat);
+    if(straddles && lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+function distanceToSegmentMiles(p, a, b){
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const lenSq = dx*dx + dy*dy;
+  // A degenerate edge (two identical vertices) is just a point.
+  const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((p.x-a.x)*dx + (p.y-a.y)*dy) / lenSq));
+  const cx = a.x + t*dx, cy = a.y + t*dy;
+  return Math.hypot(p.x - cx, p.y - cy);
+}
+function distanceToPolygonEdgeMiles(lat, lng, points){
+  const ref = polygonRefLat(points);
+  const p = projectMiles(lat, lng, ref);
+  const ring = points.map(q=> projectMiles(q.lat, q.lng, ref));
+  let best = Infinity;
+  for(let i=0, j=ring.length-1; i<ring.length; j=i++){
+    best = Math.min(best, distanceToSegmentMiles(p, ring[j], ring[i]));
+  }
+  return best;
+}
+
+function boundaryIsUsable(b){
+  if(!b || b.kind === 'none') return false;
+  if(b.kind === 'circle') return !!(b.center && isFinite(b.center.lat) && isFinite(b.center.lng) && b.radiusMiles > 0);
+  if(b.kind === 'polygon') return Array.isArray(b.points) && b.points.length >= 3;
+  return false;
+}
+
+// The verdict stored on a catch, and the same one the angler sees live.
+//   withinBounds : true / false, or null when there is no boundary to judge by
+//   distanceMiles: for a circle, distance from the launch - unchanged meaning,
+//                  so records written by earlier versions still read correctly
+//   outsideMiles : how far past the line, 0 when inside. Defined for every
+//                  shape, which distanceMiles cannot be.
+function evaluateBoundary(lat, lng, boundary){
+  const b = boundary || courseBoundary();
+  if(!boundaryIsUsable(b)) return { withinBounds: null, outsideMiles: 0 };
+  if(b.kind === 'circle'){
+    const distanceMiles = milesBetween(lat, lng, b.center.lat, b.center.lng);
+    return {
+      withinBounds: distanceMiles <= b.radiusMiles,
+      distanceMiles,
+      outsideMiles: Math.max(0, distanceMiles - b.radiusMiles)
+    };
+  }
+  const inside = pointInPolygon(lat, lng, b.points);
+  const edge = distanceToPolygonEdgeMiles(lat, lng, b.points);
+  return { withinBounds: inside, edgeMiles: edge, outsideMiles: inside ? 0 : edge };
+}
+
+// ---- map ----
+// Leaflet is loaded from a CDN and is allowed to be missing: no signal at the
+// ramp, a blocked CDN, a cached page opened offline. Every caller checks.
+function leafletReady(){ return typeof L !== 'undefined' && !!L && typeof L.map === 'function'; }
+
+const BOUNDARY_STYLE = { color:'#24404D', weight:2, fillColor:'#5C6B4F', fillOpacity:0.12 };
+const DRAFT_STYLE    = { color:'#C98A2C', weight:2, dashArray:'5,4', fillColor:'#C98A2C', fillOpacity:0.10 };
+const METRES_PER_MILE = 1609.344;
+
+function boundaryCenter(b){
+  if(b && b.kind === 'circle' && b.center) return b.center;
+  if(b && b.kind === 'polygon' && b.points && b.points.length){
+    const n = b.points.length;
+    return { lat: b.points.reduce((s,p)=>s+p.lat,0)/n, lng: b.points.reduce((s,p)=>s+p.lng,0)/n };
+  }
+  // Nothing set yet - fall back to whatever the event was shipped with, so the
+  // director starts looking at roughly the right water.
+  const dflt = (activeEvent().course || {});
+  if(dflt.center) return dflt.center;
+  if(dflt.points && dflt.points.length) return dflt.points[0];
+  return { lat: 46.38917, lng: -111.57556 };
+}
+
+// One live map per container id. Leaflet throws if you initialise the same
+// element twice, and these containers are re-rendered constantly.
+const mapRegistry = new Map();
+function ensureMap(elId, center){
+  const el = document.getElementById(elId);
+  if(!el) return null;
+  if(!leafletReady()){
+    if(!el.dataset.fallback){
+      el.dataset.fallback = '1';
+      el.innerHTML = '<div class="lw-map-fallback">The map needs a connection and could not load.<br>' +
+        'The distances below are worked out on your phone and are correct either way.</div>';
+    }
+    return null;
+  }
+  let entry = mapRegistry.get(elId);
+  if(entry && entry.el === el && el.isConnected) return entry;
+  if(entry){ try{ entry.map.remove(); }catch(e){} }
+  delete el.dataset.fallback;
+  el.innerHTML = '';
+  const map = L.map(el, { zoomControl:true });
+  // The subdomain form ({s}.tile...) is deprecated; this is the current URL.
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+  map.setView([center.lat, center.lng], 12);
+  entry = { el, map, boundary: L.layerGroup().addTo(map), pins: L.layerGroup().addTo(map) };
+  mapRegistry.set(elId, entry);
+  return entry;
+}
+
+// A map built inside a hidden screen has no size yet. Every render path calls
+// this once the screen is on show.
+function refreshMapSize(entry){
+  if(!entry) return;
+  setTimeout(()=>{ try{ entry.map.invalidateSize(); }catch(e){} }, 60);
+}
+
+function boundaryShape(b, style){
+  if(!boundaryIsUsable(b)) return null;
+  if(b.kind === 'circle'){
+    return L.circle([b.center.lat, b.center.lng],
+      Object.assign({ radius: b.radiusMiles * METRES_PER_MILE }, style));
+  }
+  return L.polygon(b.points.map(p=>[p.lat, p.lng]), style);
+}
+
+function drawBoundary(entry, b, style){
+  if(!entry) return null;
+  entry.boundary.clearLayers();
+  const shape = boundaryShape(b, style || BOUNDARY_STYLE);
+  if(shape) shape.addTo(entry.boundary);
+  return shape;
+}
+
+// Frame the course, with a little air around it.
+function fitToBoundary(entry, b){
+  if(!entry) return;
+  const shape = boundaryShape(b, BOUNDARY_STYLE);
+  if(!shape){ entry.map.setView([boundaryCenter(b).lat, boundaryCenter(b).lng], 12); return; }
+  try{ entry.map.fitBounds(shape.getBounds(), { padding:[24,24], maxZoom:15 }); }
+  catch(e){ entry.map.setView([boundaryCenter(b).lat, boundaryCenter(b).lng], 12); }
+}
+
+// A single position fix. Rejects rather than hanging - on the water a fix can
+// simply never arrive, and the caller needs to be able to say so.
+function currentPosition(timeoutMs){
+  return new Promise((resolve, reject)=>{
+    if(!navigator.geolocation){ reject(new Error('This device cannot report a location.')); return; }
+    let settled = false;
+    const timer = setTimeout(()=>{
+      if(!settled){ settled = true; reject(new Error('Could not get a fix in time. Try again in the open.')); }
+    }, timeoutMs || 12000);
+    navigator.geolocation.getCurrentPosition(
+      (pos)=>{
+        if(settled) return;
+        settled = true; clearTimeout(timer);
+        resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude,
+                  accuracyMiles: (pos.coords.accuracy || 0) / METRES_PER_MILE });
+      },
+      (err)=>{
+        if(settled) return;
+        settled = true; clearTimeout(timer);
+        reject(new Error(err && err.code === 1
+          ? 'Location permission is off for this page.'
+          : 'Could not get a location fix.'));
+      },
+      { enableHighAccuracy: true, timeout: (timeoutMs || 12000) - 500, maximumAge: 5000 }
+    );
+  });
+}
+
 function getCatchLocation(){
   return new Promise((resolve)=>{
     if(!navigator.geolocation){ resolve(null); return; }
@@ -1299,8 +1725,7 @@ function getCatchLocation(){
       (pos)=>{
         clearTimeout(timer);
         const lat = pos.coords.latitude, lng = pos.coords.longitude;
-        const distanceMiles = milesBetween(lat, lng, COURSE_CENTER.lat, COURSE_CENTER.lng);
-        resolve({ lat, lng, distanceMiles, withinBounds: distanceMiles <= COURSE_RADIUS_MILES });
+        resolve(Object.assign({ lat, lng }, evaluateBoundary(lat, lng)));
       },
       ()=>{ clearTimeout(timer); resolve(null); },
       { enableHighAccuracy: true, timeout: 5500 }
@@ -1309,13 +1734,27 @@ function getCatchLocation(){
 }
 
 function boundaryBadgeHtml(c){
-  if(!c.location){
+  const loc = c.location;
+  if(!loc){
     return '<span class="badge" style="background:#E4E1D8;color:#6B6963;">Location unavailable</span>';
   }
-  if(c.location.withinBounds){
-    return '<span class="badge" style="background:#DDE6D5;color:#3D6A50;">In bounds &middot; '+c.location.distanceMiles.toFixed(1)+' mi from launch</span>';
+  // No boundary was set when this was logged - the position is on record, there
+  // was simply nothing to judge it against.
+  if(loc.withinBounds === null || loc.withinBounds === undefined){
+    return '<span class="badge" style="background:#E4E1D8;color:#6B6963;">Location recorded &middot; no boundary set</span>';
   }
-  return '<span class="badge" style="background:#F1D6D0;color:#A3372A;">Outside course boundary &middot; '+c.location.distanceMiles.toFixed(1)+' mi from launch</span>';
+  // distanceMiles is only meaningful for a circle (distance from the launch).
+  // Records from a polygon course, and any record at all written before
+  // outsideMiles existed, fall back to the plain verdict.
+  const fromLaunch = typeof loc.distanceMiles === 'number'
+    ? ' &middot; '+loc.distanceMiles.toFixed(1)+' mi from launch' : '';
+  if(loc.withinBounds){
+    return '<span class="badge" style="background:#DDE6D5;color:#3D6A50;">In bounds'+fromLaunch+'</span>';
+  }
+  const out = typeof loc.outsideMiles === 'number' && loc.outsideMiles > 0
+    ? ' &middot; '+loc.outsideMiles.toFixed(1)+' mi outside the line'
+    : fromLaunch;
+  return '<span class="badge" style="background:#F1D6D0;color:#A3372A;">Outside course boundary'+out+'</span>';
 }
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -1395,6 +1834,31 @@ const liveCache = { anglers:null, catches:null, donations:null, config:null };
 // a catch another angler files between one device's load and its save is never
 // mistaken for "the user removed this".
 const loadedIds = { anglers:null, catches:null, donations:null };
+
+// ---- which event is live ----
+// Held in the shared config record rather than on the phone, so every device
+// agrees. An angler must never be able to register into a different event than
+// the one the director is scoring.
+//
+// The localStorage copy is only a cold-start hint: it paints the right event on
+// a phone opening the app before the first sync lands, and is overwritten by
+// the shared value the moment it arrives.
+function activeEventId(){
+  const fromConfig = liveCache.config && liveCache.config.activeEventId;
+  if(fromConfig && eventById(fromConfig)) return fromConfig;
+  const remembered = localGet('activeEventId');
+  if(remembered && eventById(remembered)) return remembered;
+  return DEFAULT_EVENT_ID;
+}
+function activeEvent(){ return eventById(activeEventId()) || EVENTS[0]; }
+
+// Which event a stored record belongs to. Records written before this app knew
+// about events carry no eventId, and they are all from the first event - so the
+// backfill is this line, not a migration. Rows get a real stamp as they are
+// next written (see saveCollection), and untouched ones keep reading correctly
+// forever.
+function rowEventId(row){ return (row && row.eventId) || LEGACY_EVENT_ID; }
+function isActiveEventRow(row){ return rowEventId(row) === activeEventId(); }
 const photoCache = new Map();
 let storeRefreshTimer = null;
 
@@ -1580,7 +2044,9 @@ async function initStore(){
 function onRows(coll, rows){
   if(coll === 'config'){
     liveCache.config = rows[0] || {};
-    localSet('awardsBudget', String(liveCache.config.awardsBudget || 0));
+    // Carries the live event as well as the budgets, so this is also how a
+    // phone finds out the director has switched events.
+    mirrorConfigLocally();
   } else {
     liveCache[coll] = rows;
     // Metadata only - photos are stored apart, which is the whole point. This
@@ -1703,14 +2169,40 @@ async function runOps(ops){
 // ---- collection adapters ----
 // The rest of the app still thinks in arrays (load -> modify -> save), so these
 // keep that shape and translate it into per-record writes underneath.
-function cachedRows(name){
+// THE tournament filter. Every screen in the app - leaderboard, GPS check, Big
+// Fish, payouts, contestants, livewell - reads its data through here, so
+// scoping happens once instead of in each of them, and a screen added later
+// gets it for free.
+//
+// loadedIds is deliberately set from the FILTERED ids: saveCollection works out
+// deletions by subtracting what came back from what went out, and seeding it
+// with the whole table would make every other event's records look like rows
+// the user had just deleted.
+// Every row in a collection, every event. Deliberately does NOT touch
+// loadedIds - only a scoped load may do that, or a later save would read the
+// other events' records as rows the user had deleted.
+function allRows(name){
   let rows = liveCache[name];
   if(!rows){
     try{ rows = JSON.parse(localGet(name) || '[]'); }catch(e){ rows = []; }
     if(!Array.isArray(rows)) rows = [];
   }
-  loadedIds[name] = new Set(rows.map(r=>r.id));
-  return deepClone(rows);
+  return rows;
+}
+
+function cachedRows(name){
+  const mine = allRows(name).filter(isActiveEventRow);
+  loadedIds[name] = new Set(mine.map(r=>r.id));
+  return deepClone(mine);
+}
+
+// Every record written carries the event that was live when it was written.
+// Stamping here rather than at each creation site means registration, catch
+// submission and donations all inherit it with no code of their own - and an
+// older record being edited keeps the event it was born in.
+function stampEvent(row){
+  if(row && !row.eventId) row.eventId = activeEventId();
+  return row;
 }
 
 function rowBody(row){
@@ -1720,18 +2212,30 @@ function rowBody(row){
   return body;
 }
 
+// The caller only ever saw the live event's rows, so what it hands back has to
+// be folded into the full cache rather than replacing it - otherwise saving one
+// catch would wipe every other event's records out of the local mirror.
+function mergeIntoCache(name, rows){
+  const others = (liveCache[name] || []).filter(r=> !isActiveEventRow(r));
+  const mine = deepClone(rows).map(r=>{ const b = rowBody(r); b.id = r.id; return b; });
+  return others.concat(mine);
+}
+
 async function saveCollection(name, list){
   const rows = Array.isArray(list) ? list : [];
+  rows.forEach(stampEvent);
   const ids = new Set(rows.map(r=>r.id));
+  // Scoped to the live event by cachedRows(), so another event's records can
+  // never appear here as something to delete.
   const prior = loadedIds[name] || new Set();
   const removed = [];
   prior.forEach(id=>{ if(!ids.has(id)) removed.push(id); });
 
   if(!store){
-    const stripped = rows.map(r=>{ const b = rowBody(r); b.id = r.id; return b; });
-    const ok = localSet(name, JSON.stringify(stripped));
+    const merged = mergeIntoCache(name, rows);
+    const ok = localSet(name, JSON.stringify(merged));
     if(name === 'catches') removed.forEach(id=> deletePhoto(id));
-    liveCache[name] = stripped;
+    liveCache[name] = merged;
     loadedIds[name] = ids;
     return ok;
   }
@@ -1756,7 +2260,7 @@ async function saveCollection(name, list){
   // polling one can take a whole interval - long enough that registering and
   // then submitting a catch would find an empty angler list. The next sync
   // reconciles this against whatever else the field has been doing.
-  liveCache[name] = deepClone(rows).map(r=>{ const b = rowBody(r); b.id = r.id; return b; });
+  liveCache[name] = mergeIntoCache(name, rows);
   loadedIds[name] = ids;
   localSet(name, JSON.stringify(liveCache[name]));
   onStoreChanged();
@@ -1767,22 +2271,101 @@ async function saveCollection(name, list){
 async function loadAnglers(){ return cachedRows('anglers'); }
 async function saveAnglers(list){ return await saveCollection('anglers', list); }
 async function loadCatches(){ return cachedRows('catches'); }
+// Every catch ever logged, across all events. ONLY the duplicate-photo check
+// uses this: a photo reused from an earlier tournament is precisely what that
+// check exists to catch, and scoping it to the live event would blind it to the
+// strongest case there is. Everything that scores, ranks or pays uses
+// loadCatches() instead.
+async function loadCatchesAllEvents(){ return deepClone(allRows('catches')); }
 async function saveCatches(list){ return await saveCollection('catches', list); }
 async function loadDonations(){ return cachedRows('donations'); }
 async function saveDonations(list){ return await saveCollection('donations', list); }
 
+// ---- config ----
+// One shared record, holding which event is live and a budget per event. Both
+// backends already subscribe to exactly this one document, so keeping it single
+// is what lets the event switcher reach every phone with no new plumbing.
+//
+// Writes go through saveConfig() because the underlying op REPLACES the record:
+// writing just the field that changed would silently drop the other one.
+function configBody(){
+  const body = Object.assign({}, liveCache.config || {});
+  delete body.id;
+  return body;
+}
+function mirrorConfigLocally(){
+  const cfg = liveCache.config || {};
+  if(cfg.activeEventId) localSet('activeEventId', cfg.activeEventId);
+  const map = awardsBudgetMap();
+  Object.keys(map).forEach(id=> localSet('awardsBudget:' + id, String(map[id] || 0)));
+}
+async function saveConfig(patch){
+  if(!liveCache.config) liveCache.config = {};
+  Object.assign(liveCache.config, patch);
+  // Once budgets are held per event, the old single number is stale - drop it
+  // so it can never be read back over the real value.
+  if(liveCache.config.awardsBudgets) delete liveCache.config.awardsBudget;
+  mirrorConfigLocally();
+  if(!store) return true;
+  return await runOps([{ kind:'set', coll:'config', id:'tournament', body: configBody() }]);
+}
+
+async function setActiveEvent(id){
+  if(!eventById(id)) return false;
+  localSet('activeEventId', id);
+  return await saveConfig({ activeEventId: id });
+}
+
+// Budgets keyed by event. Builds from before this app knew about events stored
+// a single number for the only event there was, so it reads as that event's.
+function awardsBudgetMap(){
+  const cfg = liveCache.config || {};
+  const map = Object.assign({}, cfg.awardsBudgets || {});
+  if(map[LEGACY_EVENT_ID] === undefined && cfg.awardsBudget !== undefined && cfg.awardsBudget !== null){
+    map[LEGACY_EVENT_ID] = Number(cfg.awardsBudget) || 0;
+  }
+  return map;
+}
+// ---- per-event settings the director edits ----
+// The EVENTS entry supplies the starting values; anything the director saves
+// for that event in the shared config wins. Same shape as the budgets above,
+// so it reaches every phone through the one config record.
+function eventSettings(id){
+  const evt = eventById(id || activeEventId()) || EVENTS[0];
+  const all = (liveCache.config && liveCache.config.eventSettings) || {};
+  const saved = all[evt.id] || {};
+  return {
+    targetSpecies: saved.targetSpecies || evt.targetSpecies || 'Fish',
+    recordInches: Number(saved.recordInches != null ? saved.recordInches : evt.recordInches) || 0,
+    course: saved.course || evt.course || { kind:'none' }
+  };
+}
+async function saveEventSettings(patch){
+  const all = Object.assign({}, (liveCache.config && liveCache.config.eventSettings) || {});
+  const id = activeEventId();
+  all[id] = Object.assign({}, all[id] || {}, patch);
+  return await saveConfig({ eventSettings: all });
+}
+// The one species that scores in this event. Everything else an angler logs is
+// filed as OTHER_SPECIES and never ranked or paid.
+function targetSpecies(){ return eventSettings().targetSpecies; }
+function recordInches(){ return eventSettings().recordInches; }
+function courseBoundary(){ return eventSettings().course; }
+const OTHER_SPECIES = 'Other';
+// Catches carry the species NAME as typed at submit time, so a catch logged
+// before the director renamed the target species still reads correctly. Scoring
+// asks this question instead of comparing to a hardcoded 'Walleye'.
+function isScoringSpecies(name){ return name === targetSpecies(); }
+
 async function loadAwardsBudget(){
-  if(liveCache.config) return Number(liveCache.config.awardsBudget) || 0;
-  const raw = localGet('awardsBudget');
+  if(liveCache.config) return Number(awardsBudgetMap()[activeEventId()]) || 0;
+  const raw = localGet('awardsBudget:' + activeEventId());
   return raw ? (parseFloat(raw) || 0) : 0;
 }
 async function saveAwardsBudget(amount){
-  const value = Number(amount) || 0;
-  localSet('awardsBudget', String(value));
-  if(!liveCache.config) liveCache.config = {};
-  liveCache.config.awardsBudget = value;
-  if(!store) return true;
-  return await runOps([{ kind:'set', coll:'config', id:'tournament', body:{ awardsBudget: value } }]);
+  const map = awardsBudgetMap();
+  map[activeEventId()] = Number(amount) || 0;
+  return await saveConfig({ awardsBudgets: map });
 }
 
 // ---- photos ----
@@ -1949,26 +2532,42 @@ function updateSyncUi(){
   }
   const line = document.getElementById('admin-sync-line');
   if(line){
-    const counts = ['anglers','catches','donations'].map(n=>(liveCache[n] ? liveCache[n].length : 0));
+    // Scoped to the live event, so this never disagrees with the roster and
+    // standings on the same screen. Other events are broken out under Event.
+    const counts = ['anglers','catches','donations'].map(n=>
+      (liveCache[n] ? liveCache[n].filter(isActiveEventRow).length : 0));
     line.textContent = s.text + ' · ' + counts[0] + ' anglers, ' + counts[1] +
       ' catches, ' + counts[2] + ' donations on record.';
   }
 }
 
 let memoryStore = {};
-function localVal(key, val){
-  if(val === undefined) return memoryStore[key] || null;
-  memoryStore[key] = val;
-  // Deliberately device-local: this answers "whose phone is this", which is not
-  // shared tournament data.
-  if(key === 'myAnglerId') localSet('myAnglerId', val);
-  return val;
+// "Whose phone is this" - deliberately device-local, this is not shared
+// tournament data. Kept per event: being registered for one tournament is not
+// being registered for the next, and switching back finds the angler again
+// instead of making them register a second time.
+function myAnglerKey(){ return 'myAnglerId:' + activeEventId(); }
+function getMyAnglerId(){
+  const key = myAnglerKey();
+  if(memoryStore[key] === undefined){
+    let v = localGet(key);
+    // Builds from before this app knew about events kept one unsuffixed key,
+    // for the only event there was.
+    if(!v && activeEventId() === LEGACY_EVENT_ID) v = localGet('myAnglerId');
+    memoryStore[key] = v || null;
+  }
+  return memoryStore[key];
 }
-function getMyAnglerId(){ return localVal('myAnglerId'); }
-async function loadMyAnglerId(){
-  const v = localGet('myAnglerId');
-  if(v) memoryStore.myAnglerId = v;
+function setMyAnglerId(id){
+  const key = myAnglerKey();
+  memoryStore[key] = id;
+  localSet(key, id);
+  return id;
 }
+// Reads through the same per-event key, so this is just a warm-up. Called
+// before the first sync, it caches under whichever event is the cold-start
+// guess; the shared config arriving switches the key, not the value.
+async function loadMyAnglerId(){ getMyAnglerId(); }
 
 // Escapes quotes as well as angle brackets. Several of these strings are
 // interpolated into HTML ATTRIBUTES (value="...") further down, where a bare
@@ -2135,9 +2734,15 @@ function analyzePhoto(dataUrl, srcWidth, srcHeight){
 // Combines the local photo measurements, the GPS already stored with the catch,
 // and cross-checks against the rest of the field. Nothing here rejects a catch -
 // it produces flags for the director, who still makes every call.
-function evaluateFirstPass(c, allCatches){
+// allCatches is the LIVE EVENT's field - that is what "well above the rest of
+// the field" has to mean. dupCorpus is every catch across every event, because
+// a photo reused from a previous tournament is the strongest fraud signal here.
+// It defaults to allCatches so a caller that has no cross-event list still
+// behaves sensibly rather than silently checking nothing.
+function evaluateFirstPass(c, allCatches, dupCorpus){
   const checks = [];
   const p = c.precheck;
+  const dupPool = dupCorpus || allCatches;
 
   if(!p){
     checks.push({ level:'info', label:'Photo not analyzed',
@@ -2161,29 +2766,53 @@ function evaluateFirstPass(c, allCatches){
     }
   }
 
-  // Duplicate photo detection - the strongest fraud signal available locally.
+  // Duplicate photo detection - the strongest fraud signal available locally,
+  // and the one check that deliberately looks across every event.
   if(p && p.hash){
-    const near = allCatches
+    const near = dupPool
       .filter(o=> o.id!==c.id && o.precheck && o.precheck.hash)
       .map(o=> ({ other:o, distance: hammingHex(p.hash, o.precheck.hash) }))
       .filter(x=> x.distance <= PRECHECK_DUP_MAX_DISTANCE)
       .sort((a,b)=> a.distance-b.distance);
     if(near.length){
       const hit = near[0];
-      const sameAngler = hit.other.anglerId === c.anglerId;
-      const when = new Date(hit.other.timestamp).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
-      checks.push({
-        level: 'flag',
-        label: sameAngler ? 'Possible duplicate of this angler\'s own entry' : 'Possible duplicate of '+hit.other.anglerName+'\'s entry',
-        detail: 'Near-identical photo ('+hit.distance+'/64 bits differ) to a '+hit.other.length+'" '+hit.other.species+' submitted '+when+'.'
-      });
+      const hitEventId = rowEventId(hit.other);
+      const crossEvent = hitEventId !== rowEventId(c);
+      const hitEvent = eventById(hitEventId);
+      // Across events the same person is a NEW angler record with a new id, so
+      // an id match cannot be the test - fall back to the name.
+      const sameAngler = hit.other.anglerId === c.anglerId ||
+                         (crossEvent && hit.other.anglerName === c.anglerName);
+      // A match from another year is meaningless without the year on it.
+      const when = new Date(hit.other.timestamp).toLocaleString([], crossEvent
+        ? {year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}
+        : {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+
+      let label, detail;
+      if(crossEvent){
+        const which = hitEvent ? eventDateRangeText(hitEvent) : hitEventId;
+        label = sameAngler
+          ? 'Photo reused from this angler\'s earlier event entry'
+          : 'Photo reused from an earlier event';
+        detail = 'Near-identical photo ('+hit.distance+'/64 bits differ) to '+
+          hit.other.anglerName+'\'s '+hit.other.length+'" '+hit.other.species+
+          ' from '+which+', submitted '+when+'.';
+      } else {
+        label = sameAngler
+          ? 'Possible duplicate of this angler\'s own entry'
+          : 'Possible duplicate of '+hit.other.anglerName+'\'s entry';
+        detail = 'Near-identical photo ('+hit.distance+'/64 bits differ) to a '+
+          hit.other.length+'" '+hit.other.species+' submitted '+when+'.';
+      }
+      checks.push({ level:'flag', label, detail });
     }
   }
 
   // Length plausibility.
-  if(c.species==='Walleye' && c.length > WALLEYE_RECORD_INCHES){
+  if(isScoringSpecies(c.species) && recordInches() > 0 && c.length > recordInches()){
     checks.push({ level:'flag', label:'Length exceeds the world record',
-      detail: c.length+'" is longer than the all-tackle record walleye (about 35"). Re-read the board before approving.' });
+      detail: c.length+'" is longer than the '+recordInches()+'" ceiling set for '+
+        targetSpecies().toLowerCase()+' in this event. Re-read the board before approving.' });
   } else {
     const field = allCatches
       .filter(o=> o.id!==c.id && o.species===c.species && o.status==='approved')
@@ -2200,12 +2829,12 @@ function evaluateFirstPass(c, allCatches){
 
   // Submission timing against the published tournament window.
   const t = eventTimeParts(new Date(c.timestamp));
-  if(EVENT_DATES.indexOf(t.dateKey) === -1){
+  if(eventDates().indexOf(t.dateKey) === -1){
     // Informational only. Off-event-day submissions are normal during testing
     // and practice, so this notes the date without pushing the card to review.
     // The fishing-hours check below stays a real flag - that one matters.
     checks.push({ level:'info', label:'Not an event day',
-      detail:'Logged '+t.dateKey+'; the tournament runs '+EVENT_DATES.join(' and ')+'.' });
+      detail:'Logged '+t.dateKey+'; the tournament runs '+eventDates().join(' and ')+'.' });
   } else if(t.seconds < 7*3600 || t.seconds > LINES_OUT_SECONDS){
     checks.push({ level:'flag', label:'Submitted outside fishing hours',
       detail:'Logged at '+formatCountdown(t.seconds).slice(0,5)+'; lines are 0700 to 1400.' });
@@ -2215,9 +2844,11 @@ function evaluateFirstPass(c, allCatches){
   if(!c.location){
     checks.push({ level:'review', label:'No GPS on this submission',
       detail:'Location was unavailable or denied when the catch was logged.' });
-  } else if(!c.location.withinBounds){
-    checks.push({ level:'flag', label:'Outside the course boundary',
-      detail: c.location.distanceMiles.toFixed(1)+' mi from the launch (limit '+COURSE_RADIUS_MILES+' mi).' });
+  } else if(c.location.withinBounds === false){
+    const out = typeof c.location.outsideMiles === 'number' && c.location.outsideMiles > 0
+      ? c.location.outsideMiles.toFixed(1)+' mi past the course boundary.'
+      : 'Logged outside the course boundary.';
+    checks.push({ level:'flag', label:'Outside the course boundary', detail: out });
   }
 
   const level = checks.some(x=>x.level==='flag') ? 'flag'
@@ -2305,14 +2936,20 @@ function fishIVisionAvailable(){
   return !!fishISampler || !!AI_REVIEW_ENDPOINT;
 }
 
-const FISHI_PROMPT =
-  'You are reviewing a catch photo for a catch-photo-release kayak walleye tournament ' +
-  'on Canyon Ferry Reservoir, Montana. You are a FIRST PASS for a human tournament ' +
+// Built per call: the target species and the water are both event settings now,
+// so the prompt has to name whatever this tournament is actually scoring.
+function fishiPrompt(){
+  const target = targetSpecies();
+  const where = activeEvent().courseLabelLong || 'the tournament water';
+  return (
+  'You are reviewing a catch photo for a catch-photo-release kayak ' + target.toLowerCase() +
+  ' tournament on ' + where + '. You are a FIRST PASS for a human tournament ' +
   'director. You never decide whether a catch counts; you surface what the director ' +
   'should look at.\n\n' +
   'Judge only these:\n' +
-  '1. Species. Walleye and sauger look alike. Say which you see, and say plainly when ' +
-  'the photo does not let you tell them apart. Only walleye score in this event.\n' +
+  '1. Species. Say which species you see, and say plainly when the photo does not let ' +
+  'you tell it apart from species it closely resembles. Only ' + target.toLowerCase() +
+  ' score in this event.\n' +
   '2. Whether the photo works as evidence: is a bump board with a readable scale in ' +
   'frame, is the fish flat along it rather than curled or lifted, is the nose against ' +
   'the zero stop, is the tail and the scale beneath it fully visible, and is a hand ' +
@@ -2325,9 +2962,11 @@ const FISHI_PROMPT =
   'Be conservative. Raise a concern only if a reasonable director would want a second ' +
   'look; an ordinary well-shot photo returns an empty concerns array.\n\n' +
   'Reply with only a JSON object of this shape:\n' +
-  '{"species":"walleye","speciesConfidence":0.9,"matchesClaim":true,"boardVisible":true,' +
+  '{"species":"' + target.toLowerCase() + '","speciesConfidence":0.9,"matchesClaim":true,"boardVisible":true,' +
   '"fishFlat":true,"noseAtStop":true,"tailInFrame":true,"handBlocking":false,' +
-  '"concerns":["short specific concern"],"notes":"one short sentence"}';
+  '"concerns":["short specific concern"],"notes":"one short sentence"}'
+  );
+}
 
 async function requestAiVisionReview(c, photoDataUrl){
   // Preferred path: ask Claude straight from the page.
@@ -2336,14 +2975,16 @@ async function requestAiVisionReview(c, photoDataUrl){
     if(!blob) throw new Error('No photo is stored with this catch.');
     // "Other" is a not-scored bucket, not a species, so asking whether the
     // fish "matches Other" is meaningless unless we say what it means.
-    const claimLine = c.species === 'Walleye'
-      ? 'The angler entered this as a WALLEYE (a scoring species), ' + c.length + ' inches. ' +
-        'Set matchesClaim true only if this really looks like a walleye.'
-      : 'The angler entered this as OTHER, meaning they are declaring it is NOT a walleye ' +
+    const target = targetSpecies();
+    const up = target.toUpperCase(), low = target.toLowerCase();
+    const claimLine = isScoringSpecies(c.species)
+      ? 'The angler entered this as a ' + up + ' (the scoring species), ' + c.length + ' inches. ' +
+        'Set matchesClaim true only if this really looks like a ' + low + '.'
+      : 'The angler entered this as OTHER, meaning they are declaring it is NOT a ' + low + ' ' +
         'and it will not be scored. Name the species you actually see. Set matchesClaim ' +
-        'true if the fish is indeed something other than a walleye, and false if it does ' +
-        'look like a walleye that was filed as Other.';
-    const prompt = FISHI_PROMPT + '\n\n' + claimLine;
+        'true if the fish is indeed something other than a ' + low + ', and false if it does ' +
+        'look like a ' + low + ' that was filed as Other.';
+    const prompt = fishiPrompt() + '\n\n' + claimLine;
     return await fishISampler.json(prompt, { images: blob, modelTier: 'complex' });
   }
 
@@ -2386,6 +3027,7 @@ let currentScreen = 'home';
 // Split out of goto() so a write from another device can repaint what is
 // already on screen without navigating anywhere.
 function renderScreen(name){
+  renderEventCopy();
   if(name==='home'){
     renderHome();
     updateEventCountdown();
@@ -2431,6 +3073,39 @@ document.querySelectorAll('nav.tabbar button').forEach(btn=>{
 });
 
 // ---- home ----
+// ---- event copy ----
+// Name, dates, course and the registration deadline are all properties of the
+// live event, so switching events repaints them rather than leaving last year's
+// dates sitting on the home screen.
+function setText(id, value){ const el = document.getElementById(id); if(el) el.textContent = value; }
+function setHtml(id, value){ const el = document.getElementById(id); if(el) el.innerHTML = value; }
+
+function renderEventCopy(){
+  const evt = activeEvent();
+  const range = eventDateRangeText();
+  const closeText = registrationCloseText();
+  // presenter/courseLabel carry entities (&amp;, &middot;), so they go in as HTML.
+  setHtml('home-event-presenter', evt.presenter);
+  setHtml('home-event-title', evt.nameHtml || escapeHtml(evt.name));
+  setHtml('home-event-course', evt.courseLabel);
+  setText('home-event-date', range);
+  setHtml('reg-event-presenter', evt.presenter);
+  setText('reg-event-title', evt.name);
+  setHtml('reg-event-meta', range + ' &middot; ' + evt.courseLabelLong + ' &middot; Catch &middot; Photo &middot; Release');
+  setText('reg-closed-notice', 'Registration closed on ' + closeText +
+    '. Contact the tournament director if you still need to enter.');
+  setText('reg-close-note', 'Registration closes ' + closeText +
+    '. This confirms your spot on the roster — entry fees and side pot buy-ins are collected separately by PayPal, per the info in your confirmation email.');
+
+  const sp = targetSpecies().toLowerCase();
+  setText('livewell-note', 'Every approved catch is released on the water, so your livewell is a running ' +
+    'tally rather than fish in a tank. Your longest approved ' + sp + ' is what currently counts toward standings.');
+  setText('bigfish-note', 'Optional $10/angler side pot. Longest approved ' + sp +
+    ' across both divisions wins, winner take all.');
+
+  document.title = 'LiveWire — ' + evt.name;
+}
+
 async function renderHome(){
   const anglers = await loadAnglers();
   const myId = getMyAnglerId();
@@ -2489,7 +3164,9 @@ bindEl('reg-submit','click', async ()=>{
   const anglers = await loadAnglers();
   // Number registrations (teams count as one entry), not individual anglers.
   const entryNumber = anglers.filter(a=>a.role!=='partner').length + 1;
-  const tournamentId = TOURNAMENT_PREFIX + '-' + pad3(entryNumber);
+  // Prefixed per event, so MKWO-001 and MKWO28-001 are different anglers even
+  // though entry numbering restarts from 1 for each event.
+  const tournamentId = activeEvent().prefix + '-' + pad3(entryNumber);
   const freshCheckins = ()=>({ day1:{in:null,out:null}, day2:{in:null,out:null} });
 
   const captainId = uid();
@@ -2518,7 +3195,7 @@ bindEl('reg-submit','click', async ()=>{
     errEl.style.display='block';
     return;
   }
-  localVal('myAnglerId', captainId);
+  setMyAnglerId(captainId);
 
   // Reset the whole form, division included - it used to stay on Team with an
   // empty partner box, which silently blocked the next entry.
@@ -2569,7 +3246,8 @@ async function renderCheckinBody(){
 
   el.innerHTML = ['day1','day2'].map((dayKey,i)=>{
     const rec = me.checkins[dayKey] || {in:null,out:null};
-    const label = 'Day ' + (i+1) + (i===0 ? ' &middot; Sept 18' : ' &middot; Sept 19');
+    const dayDate = eventDates()[i];
+    const label = 'Day ' + (i+1) + (dayDate ? ' &middot; ' + eventDayText(dayDate) : '');
     let statusText = 'Not checked in';
     if(rec.in && !rec.out) statusText = 'Checked in at ' + new Date(rec.in).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
     if(rec.in && rec.out) statusText = 'Checked out at ' + new Date(rec.out).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
@@ -2609,6 +3287,7 @@ async function populateAnglerSelect(selectId){
 
 async function renderSubmitScreen(){
   await populateAnglerSelect('sub-angler');
+  renderSpeciesOptions();
   updateGuide();
 }
 
@@ -2617,13 +3296,37 @@ let camStream = null;
 let capturedPhotoData = null;
 let capturedPhotoDims = { width: 0, height: 0 }; // native sensor size, before downscaling
 
+// The scoring species plus the not-scored bucket. Rebuilt whenever the submit
+// screen is shown, so a director changing the target species reaches anglers
+// without them reloading anything.
+function renderSpeciesOptions(){
+  const sel = document.getElementById('sub-species');
+  if(!sel || document.activeElement === sel) return;
+  const target = targetSpecies();
+  const keep = sel.value;
+  sel.innerHTML =
+    '<option value="'+escapeHtml(target)+'">'+escapeHtml(target)+'</option>'+
+    '<option value="'+OTHER_SPECIES+'">Other (not scored)</option>';
+  // Hold the angler's choice across a repaint, but never leave them pointed at
+  // a species this event no longer scores.
+  sel.value = (keep === OTHER_SPECIES) ? OTHER_SPECIES : target;
+}
+
+// The detailed bump-board overlay is a walleye drawing, so it is only honest to
+// show it for a walleye event. Every other species gets the plain framing box,
+// which carries the part that is universal: whole fish, in frame, on the board.
+function hasSpeciesGuide(name){ return name === 'Walleye'; }
+
 function updateGuide(){
   const species = document.getElementById('sub-species').value;
-  document.getElementById('vf-guide-walleye').style.display = species==='Walleye' ? 'block' : 'none';
-  document.getElementById('vf-guide-other').style.display = species==='Walleye' ? 'none' : 'block';
-  document.getElementById('vf-hint').textContent = species==='Walleye'
+  const detailed = hasSpeciesGuide(species);
+  document.getElementById('vf-guide-walleye').style.display = detailed ? 'block' : 'none';
+  document.getElementById('vf-guide-other').style.display = detailed ? 'none' : 'block';
+  document.getElementById('vf-hint').textContent = detailed
     ? 'Fish flat on the blue outline, nose to the stop \u2014 keep hands out of the red'
-    : 'Frame the whole fish inside the box';
+    : (species === OTHER_SPECIES
+        ? 'Frame the whole fish inside the box'
+        : 'Whole fish flat on the board, nose to the stop \u2014 keep hands off the scale');
 }
 bindEl('sub-species','change', updateGuide);
 
@@ -2988,9 +3691,9 @@ bindEl('lw-angler','change', renderLivewellList);
 
 async function renderLivewellList(){
   const anglerId = document.getElementById('lw-angler').value;
-  const catches = (await loadCatches()).filter(c=>c.anglerId===anglerId && c.species==='Walleye').sort((a,b)=>b.length-a.length);
+  const catches = (await loadCatches()).filter(c=>c.anglerId===anglerId && isScoringSpecies(c.species)).sort((a,b)=>b.length-a.length);
   const el = document.getElementById('lw-list');
-  if(catches.length===0){ el.innerHTML = '<p class="empty">No walleye submitted yet.</p>'; return; }
+  if(catches.length===0){ el.innerHTML = '<p class="empty">No '+escapeHtml(targetSpecies().toLowerCase())+' submitted yet.</p>'; return; }
 
   const bestApprovedId = (catches.find(c=>c.status==='approved') || {}).id;
   el.innerHTML = catches.map(c=>{
@@ -3021,7 +3724,7 @@ function standingsFor(division, catches, anglers){
   anglers.forEach(a=>{ anglerById[a.id] = a; });
 
   const eligible = catches.filter(c=>{
-    if(c.status!=='approved' || c.species!=='Walleye' || c.division!==division) return false;
+    if(c.status!=='approved' || !isScoringSpecies(c.species) || c.division!==division) return false;
     const a = anglerById[c.anglerId];
     return !(a && a.disqualified);
   });
@@ -3073,16 +3776,17 @@ async function renderLeaderboard(){
       '<div class="lbrow"><div class="rank">'+(i+1)+'</div><div class="who"><div class="name">'+escapeHtml(a.name)+'</div><div class="sub">Best 3 combined: '+a.top3sum.toFixed(2)+'"</div></div><div class="len">'+a.best.toFixed(2)+'"</div></div>'
     ).join('');
   }
+  const sp = targetSpecies().toLowerCase();
   document.getElementById('lb-tiebreak-note').textContent = currentDiv==='team'
-    ? 'Ranked by the single longest walleye caught by either teammate. Ties broken by the combined length of the team\'s best 3 fish.'
-    : 'Ranked by single longest walleye. Ties broken by combined length of best 3 fish.';
+    ? 'Ranked by the single longest '+sp+' caught by either teammate. Ties broken by the combined length of the team\'s best 3 fish.'
+    : 'Ranked by single longest '+sp+'. Ties broken by combined length of best 3 fish.';
 }
 
 // ---- big fish ----
 async function renderBigFish(){
   const anglers = await loadAnglers();
   const inPot = new Set(anglers.filter(a=>a.bigfish && !a.disqualified).map(a=>a.id));
-  const catches = (await loadCatches()).filter(c=>c.status==='approved' && c.species==='Walleye' && inPot.has(c.anglerId));
+  const catches = (await loadCatches()).filter(c=>c.status==='approved' && isScoringSpecies(c.species) && inPot.has(c.anglerId));
   const el = document.getElementById('bf-list');
   if(catches.length===0){ el.innerHTML = '<p class="empty">No qualifying catches yet.</p>'; return; }
   const sorted = catches.slice().sort((a,b)=>b.length-a.length).slice(0,10);
@@ -3100,9 +3804,11 @@ function showAdminTool(name){
   document.querySelectorAll('[data-admin-tool]').forEach(btn=>{
     btn.classList.toggle('active', btn.dataset.adminTool===name);
   });
-  ['gps','payout','contestants'].forEach(tool=>{
+  ['gps','payout','contestants','event'].forEach(tool=>{
     document.getElementById('admin-tool-'+tool).style.display = tool===name ? 'block' : 'none';
   });
+  // The map was built inside a hidden card and has no size until now.
+  if(name === 'event') renderBoundaryEditor();
 }
 
 document.querySelectorAll('[data-admin-tool]').forEach(btn=>{
@@ -3136,8 +3842,10 @@ bindEl('admin-unlock','click', tryAdminUnlock);
 bindEl('admin-pass','keydown', (e)=>{ if(e.key === 'Enter') tryAdminUnlock(); });
 
 function renderGpsCheck(catches){
-  const inBounds = catches.filter(c=>c.location && c.location.withinBounds).length;
-  const outside = catches.filter(c=>c.location && !c.location.withinBounds).length;
+  // withinBounds is true / false / null - null meaning no boundary was set when
+  // the catch was logged. Only an explicit false is out of bounds.
+  const inBounds = catches.filter(c=>c.location && c.location.withinBounds === true).length;
+  const outside = catches.filter(c=>c.location && c.location.withinBounds === false).length;
   const missing = catches.filter(c=>!c.location).length;
   const flagged = outside + missing;
   const summary = document.getElementById('gps-tool-summary');
@@ -3145,14 +3853,21 @@ function renderGpsCheck(catches){
     ? 'No catches yet'
     : flagged===0 ? 'All '+catches.length+' catches clear' : flagged+' need'+(flagged===1?'s':'')+' review';
 
+  // Catches logged while no boundary was set get their own tile rather than
+  // being quietly folded into one of the other three, so the counts add up.
+  const unjudged = catches.length - inBounds - outside - missing;
   const statHtml = '<div class="gps-summary">'+
     '<div class="gps-stat"><strong>'+inBounds+'</strong><span>In bounds</span></div>'+
     '<div class="gps-stat"><strong>'+outside+'</strong><span>Outside</span></div>'+
     '<div class="gps-stat"><strong>'+missing+'</strong><span>No GPS</span></div>'+
-    '</div>';
-  const review = catches.filter(c=>!c.location || !c.location.withinBounds).sort((a,b)=>b.timestamp-a.timestamp);
+    '</div>'+
+    (unjudged > 0
+      ? '<p class="hint">'+unjudged+' catch'+(unjudged===1?' was':'es were')+
+        ' logged with no course boundary set. Set one under Event, then re-check.</p>'
+      : '');
+  const review = catches.filter(c=>!c.location || c.location.withinBounds === false).sort((a,b)=>b.timestamp-a.timestamp);
   const rows = review.length===0
-    ? '<p class="empty">'+(catches.length===0?'No catches submitted yet.':'All submitted catches have an in-bounds GPS location.')+'</p>'
+    ? '<p class="empty">'+(catches.length===0?'No catches submitted yet.':'Nothing flagged — every catch with a position is inside the course.')+'</p>'
     : review.map(c=>{
         const submitted = new Date(c.timestamp).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
         return '<div class="gps-row"><div class="gps-row-top"><span class="gps-row-name">'+escapeHtml(c.anglerName)+'</span><span class="gps-row-meta">'+c.length.toFixed(2)+'&quot;</span></div>'+
@@ -3161,10 +3876,115 @@ function renderGpsCheck(catches){
   document.getElementById('gps-body').innerHTML = statHtml + rows;
 }
 
+// ---- "where am I" (angler) ----
+// The last fix taken on this device. Kept in memory only: a stale position is
+// worse than none, so it goes when the page does.
+let myPosition = null;
+
+function myPositionHtml(){
+  const b = courseBoundary();
+  if(!myPosition){
+    return '<div class="lw-readout"><strong>Not checked yet</strong>' +
+      '<span>' + (boundaryIsUsable(b) ? 'Tap below for a fix' : 'No boundary set for this event') + '</span></div>';
+  }
+  const v = evaluateBoundary(myPosition.lat, myPosition.lng);
+  const acc = myPosition.accuracyMiles
+    ? '±' + (myPosition.accuracyMiles * 5280).toFixed(0) + ' ft'
+    : '';
+  const taken = new Date(myPosition.at).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
+  const coords = myPosition.lat.toFixed(5) + ', ' + myPosition.lng.toFixed(5);
+
+  if(v.withinBounds === null){
+    return '<div class="lw-readout"><strong>Position recorded</strong>' +
+      '<span>' + coords + '<br>No boundary set &middot; ' + taken + (acc ? ' &middot; ' + acc : '') + '</span></div>';
+  }
+  if(v.withinBounds){
+    // Distance to the line is the useful number when you are inside it.
+    const room = typeof v.edgeMiles === 'number' ? v.edgeMiles
+      : (typeof v.distanceMiles === 'number' && b.kind === 'circle' ? b.radiusMiles - v.distanceMiles : null);
+    const roomText = (room !== null && isFinite(room))
+      ? room.toFixed(2) + ' mi inside the line' : 'Inside the course boundary';
+    return '<div class="lw-readout in"><strong>In bounds</strong>' +
+      '<span>' + roomText + '<br>' + coords + ' &middot; ' + taken + (acc ? ' &middot; ' + acc : '') + '</span></div>';
+  }
+  return '<div class="lw-readout out"><strong>Outside the line</strong>' +
+    '<span>' + v.outsideMiles.toFixed(2) + ' mi past the boundary<br>' +
+    coords + ' &middot; ' + taken + (acc ? ' &middot; ' + acc : '') + '</span></div>';
+}
+
+// The angler's own catches, so the map shows where they have been fishing.
+// Set by renderPublicGps; the position button reuses whatever it last saw.
+let myGpsCatches = [];
+
+function renderCourseMap(){
+  const b = courseBoundary();
+  const entry = ensureMap('course-map', boundaryCenter(b));
+  if(!entry) return;
+  drawBoundary(entry, b, BOUNDARY_STYLE);
+  entry.pins.clearLayers();
+
+  myGpsCatches.forEach(c=>{
+    if(!c.location || !isFinite(c.location.lat) || !isFinite(c.location.lng)) return;
+    const out = c.location.withinBounds === false;
+    L.circleMarker([c.location.lat, c.location.lng], {
+      radius:5, weight:2,
+      color: out ? '#A3372A' : '#5C6B4F',
+      fillColor: out ? '#F1D6D0' : '#DDE6D5', fillOpacity:1
+    }).bindTooltip(escapeHtml(c.species) + ' · ' + Number(c.length).toFixed(2) + '"',
+      { permanent:false }).addTo(entry.pins);
+  });
+
+  if(myPosition){
+    L.circleMarker([myPosition.lat, myPosition.lng],
+      { radius:7, color:'#24404D', fillColor:'#4FD2E8', fillOpacity:1, weight:3 })
+      .bindTooltip('You', { permanent:false }).addTo(entry.pins);
+  }
+  if(!entry.fittedCourse){
+    entry.fittedCourse = true;
+    if(boundaryIsUsable(b)) fitToBoundary(entry, b);
+    else if(myPosition) entry.map.setView([myPosition.lat, myPosition.lng], 13);
+  }
+  refreshMapSize(entry);
+}
+
+function renderMyPosition(){
+  const b = courseBoundary();
+  setText('my-pos-intro', boundaryIsUsable(b)
+    ? 'Check yourself against the course boundary before you launch, and any time you are not sure. This is for your own use — nothing here is sent to the director.'
+    : 'The director has not set a course boundary for this event, so there is no line to check against. Your position is still shown.');
+  setHtml('my-pos-readout', myPositionHtml());
+  renderCourseMap();
+}
+
+bindEl('my-pos-check','click', async (e)=>{
+  const errEl = document.getElementById('my-pos-err');
+  const btn = e.currentTarget;
+  errEl.style.display = 'none';
+  const was = btn.textContent;
+  btn.textContent = 'Finding…'; btn.disabled = true;
+  try{
+    const pos = await currentPosition();
+    myPosition = Object.assign({ at: Date.now() }, pos);
+    renderMyPosition();
+    const entry = ensureMap('course-map', boundaryCenter(courseBoundary()));
+    if(entry) entry.map.setView([pos.lat, pos.lng], 14);
+  }catch(err){
+    errEl.textContent = err.message;
+    errEl.style.display = 'block';
+  }finally{
+    btn.textContent = was; btn.disabled = false;
+  }
+});
+
 async function renderPublicGps(){
   const catches = await loadCatches();
-  const inBounds = catches.filter(c=>c.location && c.location.withinBounds).length;
-  const outside = catches.filter(c=>c.location && !c.location.withinBounds).length;
+  const myAnglerId = getMyAnglerId();
+  myGpsCatches = myAnglerId ? catches.filter(c=> c.anglerId === myAnglerId) : [];
+  renderMyPosition();
+  // withinBounds is true / false / null - null meaning no boundary was set when
+  // the catch was logged. Only an explicit false is out of bounds.
+  const inBounds = catches.filter(c=>c.location && c.location.withinBounds === true).length;
+  const outside = catches.filter(c=>c.location && c.location.withinBounds === false).length;
   const missing = catches.filter(c=>!c.location).length;
   document.getElementById('public-gps-summary').innerHTML =
     '<div class="gps-summary">'+
@@ -3388,11 +4208,385 @@ bindEl('don-add','click', async ()=>{
   renderPayoutCalculator();
 });
 
+// ---- event switcher ----
+// Counts read the WHOLE cache rather than going through cachedRows(), because
+// the point of this panel is to show what the other events hold too.
+function eventRowCounts(id){
+  const count = (name)=> allRows(name).filter(r=> rowEventId(r) === id).length;
+  return { anglers: count('anglers'), catches: count('catches'), donations: count('donations') };
+}
+function eventLabel(evt){ return evt.name + ' · ' + eventDateRangeText(evt); }
+
+function renderEventAdmin(){
+  const activeId = activeEventId();
+  const sel = document.getElementById('event-select');
+  // Never yank a select out from under the director mid-choice.
+  if(sel && document.activeElement !== sel){
+    sel.innerHTML = EVENTS.map(e=>
+      '<option value="'+escapeHtml(e.id)+'"'+(e.id===activeId?' selected':'')+'>'+
+      escapeHtml(eventLabel(e))+(e.id===activeId?' — live':'')+'</option>').join('');
+  }
+
+  setText('event-tool-summary', eventLabel(activeEvent()));
+
+  const list = document.getElementById('event-list');
+  if(list){
+    list.innerHTML = EVENTS.map(e=>{
+      const c = eventRowCounts(e.id);
+      const live = e.id===activeId
+        ? '<span class="badge" style="background:#DDE6D5;color:#3D6A50;">Live</span>'
+        : '';
+      const sub = c.anglers+' angler'+(c.anglers===1?'':'s')+' · '+
+                  c.catches+' catch'+(c.catches===1?'':'es')+' · '+
+                  c.donations+' donation'+(c.donations===1?'':'s');
+      return '<div class="lbrow"><div class="who"><div class="name">'+escapeHtml(eventLabel(e))+'</div>'+
+             '<div class="sub">'+escapeHtml(sub)+'</div></div><div class="len">'+live+'</div></div>';
+    }).join('');
+  }
+}
+
+bindEl('event-apply','click', async ()=>{
+  const errEl = document.getElementById('event-err');
+  errEl.style.display = 'none';
+  const id = document.getElementById('event-select').value;
+  const evt = eventById(id);
+  if(!evt){
+    errEl.textContent = 'That event is not one this build knows about.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if(id === activeEventId()){
+    errEl.textContent = 'That event is already live.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if(!confirm('Make "'+eventLabel(evt)+'" the live event?\n\n'+
+              'Every device switches to it, and the leaderboard, Big Fish pot and payouts '+
+              'will show that event only. Nothing already logged is changed or deleted.')) return;
+
+  const ok = await setActiveEvent(id);
+  if(!ok){
+    errEl.textContent = 'Could not save the change on this device. Check your storage and try again.';
+    errEl.style.display = 'block';
+    return;
+  }
+  // The whole app is scoped to this, so repaint everything rather than just
+  // this card - the roster, standings and payouts are all different now.
+  refreshActiveScreen();
+});
+
+// ---- target species (director) ----
+function renderSpeciesAdmin(){
+  const s = eventSettings();
+  const nameEl = document.getElementById('species-name');
+  const recEl = document.getElementById('species-record');
+  if(nameEl && document.activeElement !== nameEl) nameEl.value = s.targetSpecies;
+  if(recEl && document.activeElement !== recEl) recEl.value = s.recordInches ? String(s.recordInches) : '';
+}
+
+bindEl('species-save','click', async ()=>{
+  const errEl = document.getElementById('species-err');
+  errEl.style.display = 'none';
+  const name = document.getElementById('species-name').value.trim();
+  const rec = parseFloat(document.getElementById('species-record').value);
+  if(!name){
+    errEl.textContent = 'Give the species a name — this is what anglers pick when they submit.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if(name.toLowerCase() === OTHER_SPECIES.toLowerCase()){
+    errEl.textContent = '"Other" is the not-scored bucket, so it cannot also be the scoring species.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const current = targetSpecies();
+  if(name !== current){
+    // Catches carry the species name they were logged under, so a rename
+    // quietly drops the existing ones out of the standings. Say so plainly.
+    const affected = (await loadCatches()).filter(c=> c.species === current).length;
+    if(affected && !window.confirm(
+        affected + ' catch' + (affected===1?' is':'es are') + ' already logged as "' + current + '".\n\n' +
+        'Changing the target species to "' + name + '" means ' + (affected===1?'it stops':'they stop') +
+        ' counting toward standings, placements and the Big Fish pot. ' +
+        (affected===1?'It stays':'They stay') + ' on record either way.\n\nContinue?')) return;
+  }
+  const ok = await saveEventSettings({ targetSpecies: name, recordInches: (isFinite(rec) && rec > 0) ? rec : 0 });
+  if(!ok){
+    errEl.textContent = 'Could not save that on this device. Check your storage and try again.';
+    errEl.style.display = 'block';
+    return;
+  }
+  refreshActiveScreen();
+});
+
+// ---- boundary editor (director) ----
+// bndDraft is a scratch copy. Nothing reaches the shared config, and so nothing
+// reaches an angler's phone, until Save.
+let bndDraft = null;
+let bndFitted = false;
+
+function ensureBndDraft(){
+  if(!bndDraft){
+    bndDraft = deepClone(courseBoundary() || { kind:'none' });
+    if(!bndDraft.kind) bndDraft.kind = 'none';
+  }
+  return bndDraft;
+}
+function parsePointLines(text){
+  const pts = [];
+  String(text||'').split('\n').forEach(line=>{
+    const parts = line.trim().split(/[\s,]+/).filter(Boolean);
+    if(parts.length < 2) return;
+    const lat = parseFloat(parts[0]), lng = parseFloat(parts[1]);
+    if(isFinite(lat) && isFinite(lng)) pts.push({ lat, lng });
+  });
+  return pts;
+}
+function formatPointLines(pts){
+  return (pts||[]).map(p=> p.lat.toFixed(5)+', '+p.lng.toFixed(5)).join('\n');
+}
+
+const BND_HELP = {
+  circle:  'Tap the map to drop the launch point, then set how far out the course runs. Typing the numbers does the same thing.',
+  polygon: 'Tap the map to drop each corner, going around the course. Three or more corners make the shape; the last joins back to the first.',
+  none:    'No boundary. Catches still record where they were taken, but nothing is judged in or out.'
+};
+
+function renderBoundaryEditor(opts){
+  const skipInputs = !!(opts && opts.skipInputs);
+  const d = ensureBndDraft();
+
+  document.querySelectorAll('#bnd-modes [data-bmode]').forEach(b=>
+    b.classList.toggle('active', b.dataset.bmode === d.kind));
+  document.getElementById('bnd-circle-fields').style.display = d.kind === 'circle' ? 'block' : 'none';
+  document.getElementById('bnd-poly-fields').style.display   = d.kind === 'polygon' ? 'block' : 'none';
+  setText('bnd-help', BND_HELP[d.kind] || '');
+
+  const undo = document.getElementById('bnd-undo');
+  if(undo) undo.style.display = d.kind === 'polygon' ? 'inline-block' : 'none';
+
+  if(!skipInputs){
+    const latEl = document.getElementById('bnd-lat');
+    const lngEl = document.getElementById('bnd-lng');
+    const radEl = document.getElementById('bnd-radius');
+    const ptsEl = document.getElementById('bnd-points');
+    if(latEl && document.activeElement !== latEl) latEl.value = (d.center && isFinite(d.center.lat)) ? d.center.lat : '';
+    if(lngEl && document.activeElement !== lngEl) lngEl.value = (d.center && isFinite(d.center.lng)) ? d.center.lng : '';
+    if(radEl && document.activeElement !== radEl) radEl.value = d.radiusMiles || '';
+    if(ptsEl && document.activeElement !== ptsEl) ptsEl.value = formatPointLines(d.points);
+  }
+
+  const saved = courseBoundary();
+  setText('bnd-saved-note', 'In force now: ' + describeBoundary(saved) +
+    (JSON.stringify(normalizeBoundary(d)) === JSON.stringify(normalizeBoundary(saved)) ? '' : ' — unsaved changes above.'));
+
+  const entry = ensureMap('boundary-map', boundaryCenter(d));
+  if(entry){
+    if(!entry.wiredBoundary){
+      entry.wiredBoundary = true;
+      entry.map.on('click', (e)=>{
+        const draft = ensureBndDraft();
+        const lat = Number(e.latlng.lat.toFixed(5)), lng = Number(e.latlng.lng.toFixed(5));
+        if(draft.kind === 'circle'){
+          draft.center = { lat, lng };
+          if(!(draft.radiusMiles > 0)) draft.radiusMiles = 1;
+        } else if(draft.kind === 'polygon'){
+          if(!Array.isArray(draft.points)) draft.points = [];
+          draft.points.push({ lat, lng });
+        } else {
+          return;   // 'none' - the map is just a picture
+        }
+        renderBoundaryEditor();
+      });
+    }
+    drawBoundary(entry, d, DRAFT_STYLE);
+    entry.pins.clearLayers();
+    const dot = { radius:5, color:'#8F5F16', fillColor:'#FFFFFF', fillOpacity:1, weight:2 };
+    if(d.kind === 'polygon' && Array.isArray(d.points)){
+      d.points.forEach((p,i)=> L.circleMarker([p.lat,p.lng], dot)
+        .bindTooltip(String(i+1), { permanent:false }).addTo(entry.pins));
+    } else if(d.kind === 'circle' && d.center && isFinite(d.center.lat) && isFinite(d.center.lng)){
+      L.circleMarker([d.center.lat, d.center.lng], dot)
+        .bindTooltip('Launch', { permanent:false }).addTo(entry.pins);
+    }
+    // Frame it once on open, then leave the director's panning alone.
+    if(!bndFitted && boundaryIsUsable(d)){ bndFitted = true; fitToBoundary(entry, d); }
+    refreshMapSize(entry);
+  }
+}
+
+// Strip a draft down to exactly what the boundary kind needs, so a circle never
+// carries stale polygon points around in the shared config.
+function normalizeBoundary(b){
+  if(!b || b.kind === 'none' || !b.kind) return { kind:'none' };
+  if(b.kind === 'circle'){
+    return { kind:'circle',
+      center: { lat: Number(b.center && b.center.lat), lng: Number(b.center && b.center.lng) },
+      radiusMiles: Number(b.radiusMiles) };
+  }
+  return { kind:'polygon', points: (b.points||[]).map(p=>({ lat:Number(p.lat), lng:Number(p.lng) })) };
+}
+function describeBoundary(b){
+  if(!boundaryIsUsable(b)) return 'no boundary';
+  if(b.kind === 'circle') return b.radiusMiles + ' mile circle around ' +
+    b.center.lat.toFixed(4) + ', ' + b.center.lng.toFixed(4);
+  return b.points.length + '-point outline';
+}
+
+document.querySelectorAll('#bnd-modes [data-bmode]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const d = ensureBndDraft();
+    if(d.kind === btn.dataset.bmode) return;
+    d.kind = btn.dataset.bmode;
+    if(d.kind === 'circle' && !(d.radiusMiles > 0)) d.radiusMiles = 1;
+    if(d.kind === 'polygon' && !Array.isArray(d.points)) d.points = [];
+    bndFitted = false;
+    renderBoundaryEditor();
+  });
+});
+
+['bnd-lat','bnd-lng','bnd-radius'].forEach(id=> bindEl(id,'input', ()=>{
+  const d = ensureBndDraft();
+  const lat = parseFloat(document.getElementById('bnd-lat').value);
+  const lng = parseFloat(document.getElementById('bnd-lng').value);
+  const rad = parseFloat(document.getElementById('bnd-radius').value);
+  d.center = { lat, lng };
+  d.radiusMiles = rad;
+  renderBoundaryEditor({ skipInputs:true });
+}));
+bindEl('bnd-points','input', ()=>{
+  ensureBndDraft().points = parsePointLines(document.getElementById('bnd-points').value);
+  renderBoundaryEditor({ skipInputs:true });
+});
+
+bindEl('bnd-undo','click', ()=>{
+  const d = ensureBndDraft();
+  if(d.kind === 'polygon' && Array.isArray(d.points) && d.points.length){
+    d.points.pop();
+    renderBoundaryEditor();
+  }
+});
+bindEl('bnd-clear','click', ()=>{
+  const d = ensureBndDraft();
+  if(d.kind === 'polygon') d.points = [];
+  else { d.center = null; d.radiusMiles = 0; }
+  renderBoundaryEditor();
+});
+
+bindEl('bnd-locate','click', async (e)=>{
+  const errEl = document.getElementById('bnd-err');
+  const btn = e.currentTarget;
+  errEl.style.display = 'none';
+  const was = btn.textContent;
+  btn.textContent = 'Finding…'; btn.disabled = true;
+  try{
+    const pos = await currentPosition();
+    const d = ensureBndDraft();
+    if(d.kind === 'circle'){
+      d.center = { lat: Number(pos.lat.toFixed(5)), lng: Number(pos.lng.toFixed(5)) };
+      if(!(d.radiusMiles > 0)) d.radiusMiles = 1;
+    } else if(d.kind === 'polygon'){
+      if(!Array.isArray(d.points)) d.points = [];
+      d.points.push({ lat: Number(pos.lat.toFixed(5)), lng: Number(pos.lng.toFixed(5)) });
+    }
+    bndFitted = false;
+    renderBoundaryEditor();
+    const entry = ensureMap('boundary-map', boundaryCenter(d));
+    if(entry) entry.map.setView([pos.lat, pos.lng], 14);
+  }catch(err){
+    errEl.textContent = err.message;
+    errEl.style.display = 'block';
+  }finally{
+    btn.textContent = was; btn.disabled = false;
+  }
+});
+
+bindEl('bnd-save','click', async ()=>{
+  const errEl = document.getElementById('bnd-err');
+  errEl.style.display = 'none';
+  const d = ensureBndDraft();
+  const clean = normalizeBoundary(d);
+
+  if(clean.kind === 'circle'){
+    if(!isFinite(clean.center.lat) || !isFinite(clean.center.lng)){
+      errEl.textContent = 'Set a centre first — tap the map, use your location, or type a latitude and longitude.';
+      errEl.style.display = 'block'; return;
+    }
+    if(Math.abs(clean.center.lat) > 90 || Math.abs(clean.center.lng) > 180){
+      errEl.textContent = 'That is not a real position. Latitude runs -90 to 90, longitude -180 to 180.';
+      errEl.style.display = 'block'; return;
+    }
+    if(!(clean.radiusMiles > 0)){
+      errEl.textContent = 'Give the circle a radius in miles.';
+      errEl.style.display = 'block'; return;
+    }
+  } else if(clean.kind === 'polygon'){
+    const bad = clean.points.some(p=> !isFinite(p.lat) || !isFinite(p.lng) ||
+      Math.abs(p.lat) > 90 || Math.abs(p.lng) > 180);
+    if(bad){
+      errEl.textContent = 'One of those points is not a real position. Latitude runs -90 to 90, longitude -180 to 180.';
+      errEl.style.display = 'block'; return;
+    }
+    if(clean.points.length < 3){
+      errEl.textContent = 'An outline needs at least three corners. Tap the map to add them.';
+      errEl.style.display = 'block'; return;
+    }
+  }
+
+  const ok = await saveEventSettings({ course: clean });
+  if(!ok){
+    errEl.textContent = 'Could not save that on this device. Check your storage and try again.';
+    errEl.style.display = 'block'; return;
+  }
+  bndDraft = deepClone(clean);
+  refreshActiveScreen();
+});
+
+// Re-runs the boundary test over positions already stored on each catch. The
+// catch itself - status, length, photo - is never touched.
+bindEl('bnd-recheck','click', async ()=>{
+  const noteEl = document.getElementById('bnd-recheck-note');
+  const catches = await loadCatches();
+  const located = catches.filter(c=> c.location && isFinite(c.location.lat) && isFinite(c.location.lng));
+  if(located.length === 0){
+    noteEl.innerHTML = '<p class="hint">No catch has a stored position to re-check.</p>';
+    return;
+  }
+  let changed = 0;
+  located.forEach(c=>{
+    const before = c.location.withinBounds;
+    c.location = Object.assign({ lat:c.location.lat, lng:c.location.lng },
+      evaluateBoundary(c.location.lat, c.location.lng));
+    if(c.location.withinBounds !== before) changed++;
+  });
+  if(changed === 0){
+    noteEl.innerHTML = '<p class="hint">Re-checked '+located.length+' catch'+(located.length===1?'':'es')+
+      ' — every in/out reading already matched the current boundary.</p>';
+    return;
+  }
+  if(!window.confirm('Re-checking against the current boundary changes the in/out reading on '+
+      changed+' of '+located.length+' catch'+(located.length===1?'':'es')+'.\n\n'+
+      'Nothing is approved, rejected or deleted. Apply?')){
+    return;
+  }
+  const ok = await saveCatches(catches);
+  noteEl.innerHTML = ok
+    ? '<p class="hint">Updated '+changed+' catch'+(changed===1?'':'es')+' against the current boundary.</p>'
+    : '<div class="err" style="display:block;">Could not save the updated readings.</div>';
+  renderAdmin();
+});
+
 async function renderAdmin(){
   if(!adminUnlocked) return;
+  renderEventAdmin();
+  renderSpeciesAdmin();
+  renderBoundaryEditor();
   await renderPayoutCalculator();
   await renderContestants();
   const catches = await loadCatches();
+  // Loaded once for both lists below: the duplicate-photo check reaches across
+  // every event, everything else stays on the live one.
+  const dupCorpus = await loadCatchesAllEvents();
   renderGpsCheck(catches);
   const pending = catches.filter(c=>c.status==='pending').sort((a,b)=>a.timestamp-b.timestamp);
   const pendEl = document.getElementById('admin-pending');
@@ -3402,7 +4596,7 @@ async function renderAdmin(){
       return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+c.length+'"</span></div>'+
         '<div class="name">'+escapeHtml(c.anglerName)+' &middot; '+c.species+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
         '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+'</div>'+
-        firstPassHtml(c, catches)+
+        firstPassHtml(c, catches, dupCorpus)+
         '<div class="actions"><button class="small" data-act="approve" data-id="'+c.id+'">Approve</button>'+
         '<button class="small" data-act="reject" data-id="'+c.id+'">Reject</button></div></div></div>';
     }).join('');
@@ -3416,7 +4610,7 @@ async function renderAdmin(){
         '<div class="name">'+escapeHtml(c.anglerName)+' &middot; '+c.species+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
         '<span class="status '+c.status+'">'+c.status+'</span>'+
         '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+'</div>'+
-        firstPassHtml(c, catches)+
+        firstPassHtml(c, catches, dupCorpus)+
         '<div class="actions"><button class="small" data-act="delete" data-id="'+c.id+'">Delete</button></div></div></div>';
     }).join('');
 
@@ -3446,8 +4640,8 @@ async function renderAdmin(){
 }
 
 // ---- first-pass review UI (director only) ----
-function firstPassHtml(c, allCatches){
-  const verdict = evaluateFirstPass(c, allCatches);
+function firstPassHtml(c, allCatches, dupCorpus){
+  const verdict = evaluateFirstPass(c, allCatches, dupCorpus);
   const labels = { clear:'Clear', review:'Look closer', flag:'Needs review' };
 
   const items = verdict.checks.length===0
@@ -3566,7 +4760,7 @@ async function renderContestants(){
   // Rank first, then fall back to alphabetical for the unranked.
   const decorated = list.map(a=>{
     const mine = catches.filter(c=>c.anglerId===a.id);
-    const approved = mine.filter(c=>c.status==='approved' && c.species==='Walleye');
+    const approved = mine.filter(c=>c.status==='approved' && isScoringSpecies(c.species));
     const best = approved.length ? Math.max.apply(null, approved.map(c=>c.length)) : 0;
     return {
       angler: a,
@@ -3737,6 +4931,9 @@ function wireContestantRows(){
     const app = document.getElementById('app');
     if(app) app.dataset.theme = 'home';
     await loadMyAnglerId();
+    // Paint the event's own name, dates and species before anything else, so the
+    // first frame is not last year's copy waiting to be corrected by the sync.
+    renderEventCopy();
     updateSyncUi();
     initStore();          // resolves later; the UI lights up when it does
     startEventClock();
