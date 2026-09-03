@@ -57,6 +57,9 @@ globalThis.__t = {
   registrationCloseFromDate, registrationCloseToDate, isRegistrationClosed,
   registrationCloseText,
   myAnglerIds, populateAnglerSelect, statusClass, statusHtml, lengthHtml, escapeHtml,
+  bearerToken, authModeLabel, noteAuthSession, initAuth, SUPABASE_ANON_KEY,
+  supabaseBackend,
+  get authMode(){ return authMode; },
   get adminUnlocked(){ return adminUnlocked; }, set adminUnlocked(v){ adminUnlocked = v; },
   loadAwardsBudget, saveAwardsBudget, awardsBudgetMap,
   standingsFor, eventDateRangeText, eventRowCounts, eventDayText,
@@ -927,7 +930,86 @@ check('a species payload keeps no angle brackets', t.escapeHtml(XSS).includes('<
 check('nor a closing one', t.escapeHtml(XSS).includes('>'), false);
 
 // ============================================================
-section('29. the page starts up clean');
+section('29. requests fall back to the shared key');
+// This is the property that makes the auth step safe to deploy before
+// anonymous sign-in is switched on in the dashboard: with no session, every
+// request must go out exactly as it did before.
+check('with no session the anon key is used', t.bearerToken(), t.SUPABASE_ANON_KEY);
+check('and the mode says so', t.authMode, 'anon-key');
+check('which reads as the shared key', t.authModeLabel(), 'shared key');
+
+// initAuth() must be survivable with no SDK present - which is the case here,
+// and is also a real state: a phone opening the page with the CDN unreachable.
+await t.initAuth();
+check('a missing SDK does not throw', true, true);
+check('and leaves the fallback in place', t.bearerToken(), t.SUPABASE_ANON_KEY);
+
+// An anonymous session takes over the Authorization header.
+t.noteAuthSession({ access_token:'tok-anon-123', user:{ id:'u1', is_anonymous:true } });
+check('a session token replaces the key', t.bearerToken(), 'tok-anon-123');
+check('the mode is anonymous', t.authMode, 'anonymous');
+check('shown as a device identity', t.authModeLabel(), 'device identity');
+
+// A director session is distinguished from an angler's.
+t.noteAuthSession({ access_token:'tok-dir-456', user:{ id:'u2', is_anonymous:false, email:'d@example.com' } });
+check('a director token is used', t.bearerToken(), 'tok-dir-456');
+check('and identified as director', t.authMode, 'director');
+check('shown as signed in', t.authModeLabel(), 'signed in as director');
+
+// Older SDK builds omit is_anonymous; no email then means anonymous.
+t.noteAuthSession({ access_token:'tok-old', user:{ id:'u3' } });
+check('a session with no email reads as anonymous', t.authMode, 'anonymous');
+t.noteAuthSession({ access_token:'tok-old2', user:{ id:'u4', email:'x@example.com' } });
+check('one with an email reads as director', t.authMode, 'director');
+
+// Signing out must not leave a dead token behind.
+t.noteAuthSession(null);
+check('clearing the session restores the key', t.bearerToken(), t.SUPABASE_ANON_KEY);
+check('and the mode resets', t.authMode, 'anon-key');
+
+// It is not enough for bearerToken() to be right - the REQUEST has to use it,
+// and has to re-read it every time. Headers captured once at startup would go
+// stale when the token refreshes and start 401ing an hour into an event, which
+// is the worst possible moment. So drive the real backend against a stub fetch.
+const sent = [];
+const realFetch = globalThis.fetch;
+globalThis.fetch = async (url, init)=>{
+  sent.push((init && init.headers && init.headers.Authorization) || '');
+  return { ok:true, status:200, async json(){ return []; }, async text(){ return ''; } };
+};
+try{
+  const backend = t.supabaseBackend();
+
+  t.noteAuthSession(null);
+  await backend.connect();
+  check('a request with no session carries the anon key',
+    sent[sent.length-1], 'Bearer ' + t.SUPABASE_ANON_KEY);
+
+  t.noteAuthSession({ access_token:'tok-first', user:{ id:'u1', is_anonymous:true } });
+  await backend.connect();
+  check('a request carries the session token', sent[sent.length-1], 'Bearer tok-first');
+
+  // The refresh case: same backend instance, new token.
+  t.noteAuthSession({ access_token:'tok-refreshed', user:{ id:'u1', is_anonymous:true } });
+  await backend.connect();
+  check('and picks up a refreshed token without rebuilding the backend',
+    sent[sent.length-1], 'Bearer tok-refreshed');
+
+  // Writes go out the same way, not just reads.
+  await backend.applyOp({ kind:'set', coll:'catches', id:'c1', body:{ length:22 } });
+  check('writes carry the session token too', sent[sent.length-1], 'Bearer tok-refreshed');
+
+  t.noteAuthSession(null);
+  await backend.connect();
+  check('and revert to the key when the session goes',
+    sent[sent.length-1], 'Bearer ' + t.SUPABASE_ANON_KEY);
+} finally {
+  globalThis.fetch = realFetch;
+  t.noteAuthSession(null);
+}
+
+// ============================================================
+section('30. the page starts up clean');
 // Let the init IIFE's promise chain settle before judging it.
 await new Promise(r => setTimeout(r, 0));
 check('no startup error banner', startupBanners, []);

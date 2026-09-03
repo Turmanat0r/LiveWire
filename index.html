@@ -2021,19 +2021,104 @@ function isActiveEventRow(row){ return rowEventId(row) === activeEventId(); }
 const photoCache = new Map();
 let storeRefreshTimer = null;
 
+// ---- identity ----
+// Data still goes out over plain fetch. The Supabase SDK is used for ONE thing:
+// holding a session and refreshing its token. That is worth a dependency we are
+// already loading, because hand-rolling refresh, persistence and expiry is
+// exactly the kind of code that fails at 6am on a boat ramp.
+//
+// WHY A SESSION AT ALL: the anon key ships in this page, so the database cannot
+// currently tell one angler from another and every row is writable by anyone.
+// An anonymous sign-in gives each device a real, durable auth.uid() with no
+// sign-up for the angler to do, which is what row-level policies need to say
+// "your own catch, not anyone else's".
+//
+// THIS STEP CHANGES NO BEHAVIOUR. Until anonymous sign-in is switched on in the
+// Supabase dashboard, signInAnonymously() fails and every request falls back to
+// the anon key exactly as before. Turning it on is what makes it live.
+let sbClient = null;
+let authSession = null;
+let authMode = 'anon-key';   // anon-key | anonymous | director
+
+function authModeLabel(){
+  if(authMode === 'director') return 'signed in as director';
+  if(authMode === 'anonymous') return 'device identity';
+  return 'shared key';
+}
+
+// The token every request goes out with. Falls back to the anon key, which is
+// what keeps this step a no-op before the dashboard switch is flipped.
+function bearerToken(){
+  return (authSession && authSession.access_token) || SUPABASE_ANON_KEY;
+}
+
+function noteAuthSession(session){
+  authSession = session || null;
+  const user = session && session.user;
+  authMode = !user ? 'anon-key'
+    // is_anonymous is the SDK's own flag; older builds omit it, in which case a
+    // session with no email is an anonymous one.
+    : ((user.is_anonymous === true || (user.is_anonymous === undefined && !user.email))
+        ? 'anonymous' : 'director');
+  try{ updateSyncUi(); }catch(e){}
+}
+
+async function initAuth(){
+  if(!SUPABASE_URL || !SUPABASE_ANON_KEY) return;
+  if(typeof supabase === 'undefined' || !supabase || typeof supabase.createClient !== 'function'){
+    console.warn('Supabase SDK unavailable - carrying on with the shared key.');
+    return;
+  }
+  try{
+    sbClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: false,
+        storageKey: STORAGE_PREFIX + 'auth'
+      }
+    });
+    // Fires on refresh as well as sign-in, so the token we send is never stale.
+    sbClient.auth.onAuthStateChange((_evt, session)=> noteAuthSession(session));
+
+    const existing = await sbClient.auth.getSession();
+    if(existing && existing.data && existing.data.session){
+      noteAuthSession(existing.data.session);
+      return;
+    }
+    const fresh = await sbClient.auth.signInAnonymously();
+    if(fresh && fresh.error){
+      // The expected path until the provider is enabled. Not an error worth
+      // showing an angler - the app works either way.
+      console.warn('Anonymous sign-in unavailable (' + fresh.error.message +
+                   ') - carrying on with the shared key.');
+      return;
+    }
+    if(fresh && fresh.data && fresh.data.session) noteAuthSession(fresh.data.session);
+  }catch(e){
+    console.warn('Could not establish a device identity - carrying on with the shared key.', e);
+  }
+}
+
 // ---- backend: Supabase ----
-// Plain fetch against PostgREST and the storage API - no SDK, so this works from
-// any static host and as a local file. Devices pick up each other's writes by
-// polling; for a tournament, five seconds is indistinguishable from realtime and
-// costs far less complexity than a websocket.
+// Plain fetch against PostgREST and the storage API - no SDK for data, so this
+// works from any static host and as a local file. Devices pick up each other's
+// writes by polling; for a tournament, five seconds is indistinguishable from
+// realtime and costs far less complexity than a websocket.
 function supabaseBackend(){
   const base = SUPABASE_URL.replace(/\/+$/, '');
   const TABLES = { anglers:'anglers', catches:'catches', donations:'donations', config:'config' };
-  const auth = { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY };
+  // Built per request, not once: the session token is refreshed in the
+  // background, and a header object captured at startup would go stale and
+  // start 401ing an hour into the event.
+  const authHeaders = ()=> ({
+    'apikey': SUPABASE_ANON_KEY,
+    'Authorization': 'Bearer ' + bearerToken()
+  });
 
   async function rest(path, init){
     const opts = Object.assign({}, init);
-    opts.headers = Object.assign({}, auth, (init && init.headers) || {});
+    opts.headers = Object.assign({}, authHeaders(), (init && init.headers) || {});
     const res = await fetch(base + path, opts);
     if(!res.ok){
       let detail = '';
@@ -2168,6 +2253,10 @@ function artifactDbBackend(db){
 async function initStore(){
   try{
     if(SUPABASE_URL && SUPABASE_ANON_KEY){
+      // Before the first request, so the very first read already carries the
+      // session token rather than the shared key. It never throws and never
+      // blocks for long - a failure just leaves us on the shared key.
+      await initAuth();
       const backend = supabaseBackend();
       store = backend;
       try{
@@ -2715,8 +2804,11 @@ function updateSyncUi(){
     // standings on the same screen. Other events are broken out under Event.
     const counts = ['anglers','catches','donations'].map(n=>
       (liveCache[n] ? liveCache[n].filter(isActiveEventRow).length : 0));
+    // The auth mode is here so the director can confirm at a glance which
+    // identity the app is using - the only way to tell whether enabling
+    // anonymous sign-in actually took effect.
     line.textContent = s.text + ' · ' + counts[0] + ' anglers, ' + counts[1] +
-      ' catches, ' + counts[2] + ' donations on record.';
+      ' catches, ' + counts[2] + ' donations on record. Auth: ' + authModeLabel() + '.';
   }
 }
 
