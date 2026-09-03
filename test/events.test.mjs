@@ -52,6 +52,10 @@ globalThis.__t = {
   describeBoundary, boundaryCenter, milesBetween, offsetLatLng, bearingFrom,
   SPECIES_PRESETS, SPECIES_CUSTOM, speciesPreset,
   updateGuide, renderSpeciesOptions, submittedSpecies,
+  allEvents, visibleEvents, storedEvents, saveEventRecord, deleteEventRecord,
+  slugifyEventId, parseDateLines, isValidTimeZone,
+  registrationCloseFromDate, registrationCloseToDate, isRegistrationClosed,
+  registrationCloseText,
   loadAwardsBudget, saveAwardsBudget, awardsBudgetMap,
   standingsFor, eventDateRangeText, eventRowCounts, eventDayText,
   getMyAnglerId, setMyAnglerId, onRows, readOutbox
@@ -654,7 +658,177 @@ check('"Other" is not silently switched back to the scoring species',
   elById.get('sub-species').value, t.OTHER_SPECIES);
 
 // ============================================================
-section('21. the page starts up clean');
+section('21. events the director creates');
+seed([], [], [], {});
+await setEvent(E1);
+
+check('only the built-ins to start', t.allEvents().length, t.EVENTS.length);
+check('and they are flagged as built-in', t.allEvents().every(e => e.builtIn === true), true);
+
+await t.saveEventRecord('mkwo-2029', {
+  name:'Montana Kayak Walleye Open', prefix:'MKWO29',
+  dates:['2029-09-15','2029-09-16'], timeZone:'America/Denver',
+  courseLabel:'Canyon Ferry', courseLabelLong:'Canyon Ferry',
+  registrationClose:'2029-06-02T00:00:00-06:00',
+  targetSpecies:'Walleye', recordInches:36,
+  course:{ kind:'circle', center:{ lat:46.38917, lng:-111.57556 }, radiusMiles:4 }
+});
+check('a created event joins the list', t.allEvents().length, t.EVENTS.length + 1);
+check('and is not flagged built-in', t.eventById('mkwo-2029').builtIn, false);
+check('it resolves by id', t.eventById('mkwo-2029').prefix, 'MKWO29');
+check('with its dates', t.eventDateRangeText(t.eventById('mkwo-2029')), 'Sep 15–16, 2029');
+
+// A created event has to work as a full event, not a listing.
+await setEvent('mkwo-2029');
+check('it can be made live', t.activeEventId(), 'mkwo-2029');
+check('its species applies', t.targetSpecies(), 'Walleye');
+check('its boundary applies', t.courseBoundary().radiusMiles, 4);
+check('its prefix drives entry IDs', t.activeEvent().prefix, 'MKWO29');
+
+// Records stamped to it must scope like any other event's.
+t.liveCache.anglers = [
+  { id:'x1', eventId:'mkwo-2029', name:'New Angler', division:'solo' },
+  { id:'x2', eventId:E1, name:'Old Angler', division:'solo' }
+];
+t.loadedIds.anglers = null;
+check('records scope to a created event', (await t.loadAnglers()).map(a=>a.name), ['New Angler']);
+await setEvent(E1);
+check('and the built-in event is unaffected', (await t.loadAnglers()).map(a=>a.name), ['Old Angler']);
+
+// ============================================================
+section('22. editing a built-in event');
+await setEvent(E1);
+const beforeEdit = t.eventById(E1);
+check('starts from the shipped prefix', beforeEdit.prefix, 'MKWO');
+await t.saveEventRecord(E1, { prefix:'MKWO27' });
+check('the edit takes effect', t.eventById(E1).prefix, 'MKWO27');
+check('untouched fields survive', t.eventById(E1).name, beforeEdit.name);
+check('as do its dates', t.eventById(E1).dates.length, 2);
+check('and it is still a built-in', t.eventById(E1).builtIn, true);
+check('the id is never stored inside the record', 'id' in t.storedEvents()[E1], false);
+check('nor is the derived builtIn flag', 'builtIn' in t.storedEvents()[E1], false);
+
+// ============================================================
+section('23. archiving keeps records, hides the event');
+seed([], [], [], {});
+await t.saveEventRecord('old-event', {
+  name:'Old Open', prefix:'OLD', dates:['2026-08-01'], timeZone:'America/Denver',
+  registrationClose:'2026-06-02T00:00:00-06:00', targetSpecies:'Walleye', recordInches:36
+});
+t.liveCache.catches = [{ id:'oc1', eventId:'old-event', anglerId:'oa', length:22 }];
+await setEvent(E1);
+
+check('it is in the switcher to begin with',
+  t.visibleEvents().some(e => e.id === 'old-event'), true);
+await t.saveEventRecord('old-event', { archived:true });
+check('archiving takes it out of the switcher',
+  t.visibleEvents().some(e => e.id === 'old-event'), false);
+check('but it still resolves by id', !!t.eventById('old-event'), true);
+
+// A second write must MERGE into the record, not replace it. A built-in hides
+// this bug - its shipped values backfill whatever the patch left out - so it
+// has to be checked on a director-created event, where nothing backfills.
+check('archiving keeps the name', t.eventById('old-event').name, 'Old Open');
+check('archiving keeps the prefix', t.eventById('old-event').prefix, 'OLD');
+check('archiving keeps the dates', t.eventById('old-event').dates, ['2026-08-01']);
+check('archiving keeps the time zone', t.eventById('old-event').timeZone, 'America/Denver');
+check('and it is still in the full list',
+  t.allEvents().some(e => e.id === 'old-event'), true);
+check('its records are untouched',
+  t.liveCache.catches.filter(c => t.rowEventId(c) === 'old-event').length, 1);
+check('and are still reachable by switching to it', (await (async ()=>{
+  await setEvent('old-event');
+  const n = (await t.loadCatches()).length;
+  await setEvent(E1);
+  return n;
+})()), 1);
+
+// The live event must never vanish from its own switcher, however it got
+// archived - that would leave the director looking at a list without it.
+await setEvent('old-event');
+check('an archived event that is live stays visible',
+  t.visibleEvents().some(e => e.id === 'old-event'), true);
+await setEvent(E1);
+
+await t.saveEventRecord('old-event', { archived:false });
+check('restoring puts it back', t.visibleEvents().some(e => e.id === 'old-event'), true);
+
+// ============================================================
+section('24. deleting an event');
+seed([], [], [], {});
+await setEvent(E1);
+await t.saveEventRecord('empty-one', {
+  name:'Empty Open', prefix:'EMP', dates:['2030-05-01'], timeZone:'America/Denver',
+  registrationClose:'2030-04-01T00:00:00-06:00', targetSpecies:'Walleye', recordInches:36
+});
+check('it exists', !!t.eventById('empty-one'), true);
+await t.deleteEventRecord('empty-one');
+check('deleting removes it', t.eventById('empty-one'), null);
+check('and it leaves the stored map', 'empty-one' in t.storedEvents(), false);
+
+// A built-in cannot be deleted - it lives in the code and returns on reload.
+await t.deleteEventRecord(E1);
+check('a built-in survives a delete attempt', !!t.eventById(E1), true);
+check('and keeps its shipped values', t.eventById(E1).prefix, 'MKWO');
+
+// ============================================================
+section('25. event id generation');
+seed([], [], [], {});
+check('a slug comes from the name and year',
+  t.slugifyEventId('Montana Kayak Walleye Open', '2030'), 'montana-kayak-walleye-open-2030');
+check('punctuation and spacing collapse',
+  t.slugifyEventId('Bob\'s  Big   Bass Bash!!', '2031'), 'bob-s-big-bass-bash-2031');
+check('an empty name still yields an id', t.slugifyEventId('', '2032'), 'event-2032');
+check('it avoids colliding with a built-in',
+  t.slugifyEventId('mkwo', '2027') === 'mkwo-2027', false);
+await t.saveEventRecord('taken-2030', { name:'Taken', prefix:'TK', dates:['2030-01-01'] });
+check('and with one already created', t.slugifyEventId('taken', '2030'), 'taken-2030-2');
+
+// ============================================================
+section('26. form validation helpers');
+check('a good date parses', t.parseDateLines('2029-09-15').map(p=>p.key), ['2029-09-15']);
+check('a short form normalises', t.parseDateLines('2029-9-5').map(p=>p.key), ['2029-09-05']);
+check('blank lines are ignored', t.parseDateLines('\n2029-09-15\n\n').length, 1);
+check('a nonsense line is flagged', !!t.parseDateLines('next tuesday')[0].bad, true);
+check('an impossible date is flagged', !!t.parseDateLines('2029-02-31')[0].bad, true);
+check('month 13 is flagged', !!t.parseDateLines('2029-13-01')[0].bad, true);
+check('a leap day is accepted', t.parseDateLines('2028-02-29').map(p=>p.key), ['2028-02-29']);
+check('a non-leap 29 Feb is flagged', !!t.parseDateLines('2029-02-29')[0].bad, true);
+
+check('a real zone is accepted', t.isValidTimeZone('America/Denver'), true);
+check('another real zone', t.isValidTimeZone('Europe/London'), true);
+check('a made-up zone is rejected', t.isValidTimeZone('Mars/Olympus'), false);
+check('an empty zone is rejected', t.isValidTimeZone(''), false);
+
+// Registration close: the form takes the last day open, and stores the instant
+// entries stop - the start of the following day, in the event's own zone.
+const summer = t.registrationCloseFromDate('2029-06-01', 'America/Denver');
+check('a summer close picks up MDT', /^2029-06-02T00:00:00-06:00$/.test(summer), true);
+const winter = t.registrationCloseFromDate('2029-12-01', 'America/Denver');
+check('a winter close picks up MST', /^2029-12-02T00:00:00-07:00$/.test(winter), true);
+check('it round-trips back to the day entered',
+  t.registrationCloseToDate(summer, 'America/Denver'), '2029-06-01');
+check('including across the winter offset',
+  t.registrationCloseToDate(winter, 'America/Denver'), '2029-12-01');
+check('a nonsense date yields nothing', t.registrationCloseFromDate('whenever', 'America/Denver'), null);
+
+// And the stored instant has to actually gate registration.
+seed([], [], [], {});
+await t.saveEventRecord('gate-test', {
+  name:'Gate', prefix:'GT', dates:['2029-09-15'], timeZone:'America/Denver',
+  registrationClose: summer, targetSpecies:'Walleye', recordInches:36
+});
+await setEvent('gate-test');
+check('registration is open before the deadline (2029 is in the future)',
+  t.isRegistrationClosed(), false);
+await t.saveEventRecord('gate-test', {
+  registrationClose: t.registrationCloseFromDate('2020-06-01', 'America/Denver') });
+check('and closed after it', t.isRegistrationClosed(), true);
+check('the closing date reads back as the last open day',
+  /June 1, 2020/.test(t.registrationCloseText()), true);
+
+// ============================================================
+section('27. the page starts up clean');
 // Let the init IIFE's promise chain settle before judging it.
 await new Promise(r => setTimeout(r, 0));
 check('no startup error banner', startupBanners, []);

@@ -1213,9 +1213,56 @@
           <button class="secondary" id="bnd-recheck">Re-check every catch</button>
 
           <hr class="divider">
-          <h2 style="margin-bottom:8px;">On record</h2>
-          <p class="hint" style="margin-top:0;">What each event holds in the shared store right now.</p>
+          <h2 style="margin-bottom:8px;">All events</h2>
+          <p class="hint" style="margin-top:0;">Everything this app knows about, and what each one holds. Archiving takes an event out of the switcher without touching a single record &mdash; restore it and it comes back exactly as it was.</p>
           <div id="event-list"></div>
+
+          <hr class="divider">
+          <h2 style="margin-bottom:8px;" id="event-form-title">Add an event</h2>
+          <p class="hint" style="margin-top:0;" id="event-form-intro">Set up next year&rsquo;s tournament without touching the code. Nothing about the live event changes until you switch to the new one.</p>
+
+          <div class="field">
+            <label for="ev-name">Tournament name</label>
+            <input type="text" id="ev-name" placeholder="Montana Kayak Walleye Open" autocapitalize="words">
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="ev-prefix">Entry ID prefix</label>
+              <input type="text" id="ev-prefix" placeholder="MKWO29" autocapitalize="characters" spellcheck="false">
+            </div>
+            <div class="field">
+              <label for="ev-species">Target species</label>
+              <select id="ev-species"></select>
+            </div>
+          </div>
+          <p class="hint" style="margin-top:0;">Anglers are numbered from 1 for each event, so the prefix is what keeps this year&rsquo;s entry 001 apart from last year&rsquo;s. It has to be unique.</p>
+
+          <div class="field">
+            <label for="ev-dates">Event days &mdash; one YYYY-MM-DD per line</label>
+            <textarea id="ev-dates" rows="3" spellcheck="false" placeholder="2029-09-15&#10;2029-09-16"></textarea>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="ev-tz">Time zone</label>
+              <input type="text" id="ev-tz" placeholder="America/Denver" spellcheck="false">
+            </div>
+            <div class="field">
+              <label for="ev-regclose">Registration closes after</label>
+              <input type="text" id="ev-regclose" placeholder="2029-06-01" spellcheck="false">
+            </div>
+          </div>
+          <div class="field">
+            <label for="ev-course">Water / course name</label>
+            <input type="text" id="ev-course" placeholder="Canyon Ferry · Silos to the Ponds">
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;font-weight:400;font-size:13px;margin-bottom:12px;">
+            <input type="checkbox" id="ev-copy-course" style="width:auto;" checked>
+            Start from the current event&rsquo;s course boundary
+          </label>
+
+          <div class="err" id="ev-err" style="display:none;"></div>
+          <button class="secondary" id="ev-save">Add event</button>
+          <button class="secondary" id="ev-cancel" style="display:none;">Cancel edit</button>
         </div>
 
         <div class="card" id="admin-tool-contestants" style="display:none;">
@@ -1402,9 +1449,65 @@ const LEGACY_EVENT_ID = EVENTS[0].id;
 // nothing moves until the director switches events on purpose.
 const DEFAULT_EVENT_ID = EVENTS[0].id;
 
+// ---- the live event list ----
+// EVENTS above is the list this BUILD ships with. The director can add events
+// and edit them from the portal, and those live in the shared config, so a new
+// tournament no longer means editing this file and redeploying.
+//
+// allEvents() must NOT filter on the active event: activeEventId() resolves
+// through eventById(), which reads this, and filtering here would recurse
+// forever. visibleEvents() does the hiding instead.
+function storedEvents(){
+  return (liveCache.config && liveCache.config.events) || {};
+}
+function allEvents(){
+  const stored = storedEvents();
+  // Built-ins first, with any director edits layered over the top.
+  const out = EVENTS.map(e=> Object.assign({}, e, stored[e.id] || {}, { id: e.id, builtIn: true }));
+  const known = new Set(EVENTS.map(e=> e.id));
+  Object.keys(stored).forEach(id=>{
+    if(!known.has(id)) out.push(Object.assign({}, stored[id], { id, builtIn: false }));
+  });
+  return out;
+}
+// What the switcher offers. An archived event stays resolvable - records still
+// point at it - it just drops out of the list. The live one is never hidden,
+// however it got archived.
+function visibleEvents(){
+  const active = activeEventId();
+  return allEvents().filter(e=> !e.archived || e.id === active);
+}
 function eventById(id){
-  for(let i=0;i<EVENTS.length;i++){ if(EVENTS[i].id === id) return EVENTS[i]; }
+  const list = allEvents();
+  for(let i=0;i<list.length;i++){ if(list[i].id === id) return list[i]; }
   return null;
+}
+
+// Records point at the id for good, so it is derived once at creation and never
+// changes - renaming an event later must not orphan its catches.
+function slugifyEventId(name, year){
+  let base = String(name||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,32);
+  if(!base) base = 'event';
+  const root = year ? base + '-' + year : base;
+  let candidate = root, n = 2;
+  while(eventById(candidate)) candidate = root + '-' + (n++);
+  return candidate;
+}
+
+async function saveEventRecord(id, patch){
+  const all = Object.assign({}, storedEvents());
+  all[id] = Object.assign({}, all[id] || {}, patch);
+  delete all[id].id;        // the key IS the id; storing it twice invites drift
+  delete all[id].builtIn;   // derived, never stored
+  return await saveConfig({ events: all });
+}
+// Only ever reaches a director-created event that holds no records - see the
+// guards in the portal. A built-in cannot be removed this way because it lives
+// in the code and would simply reappear.
+async function deleteEventRecord(id){
+  const all = Object.assign({}, storedEvents());
+  delete all[id];
+  return await saveConfig({ events: all });
 }
 // activeEventId() / activeEvent() read the shared store, so they live with it -
 // see "which event is live" further down.
@@ -4287,7 +4390,7 @@ function renderEventAdmin(){
   const sel = document.getElementById('event-select');
   // Never yank a select out from under the director mid-choice.
   if(sel && document.activeElement !== sel){
-    sel.innerHTML = EVENTS.map(e=>
+    sel.innerHTML = visibleEvents().map(e=>
       '<option value="'+escapeHtml(e.id)+'"'+(e.id===activeId?' selected':'')+'>'+
       escapeHtml(eventLabel(e))+(e.id===activeId?' — live':'')+'</option>').join('');
   }
@@ -4296,16 +4399,46 @@ function renderEventAdmin(){
 
   const list = document.getElementById('event-list');
   if(list){
-    list.innerHTML = EVENTS.map(e=>{
+    // Archived events are listed here even though they are out of the switcher,
+    // because this is where you go to bring one back.
+    list.innerHTML = allEvents().map(e=>{
       const c = eventRowCounts(e.id);
-      const live = e.id===activeId
-        ? '<span class="badge" style="background:#DDE6D5;color:#3D6A50;">Live</span>'
-        : '';
+      const isLive = e.id === activeId;
+      const total = c.anglers + c.catches + c.donations;
+      const tags = [];
+      if(isLive) tags.push('<span class="badge" style="background:#DDE6D5;color:#3D6A50;">Live</span>');
+      if(e.archived) tags.push('<span class="badge" style="background:#E4E1D8;color:#6B6963;">Archived</span>');
+      if(!e.builtIn) tags.push('<span class="badge">Added here</span>');
       const sub = c.anglers+' angler'+(c.anglers===1?'':'s')+' · '+
                   c.catches+' catch'+(c.catches===1?'':'es')+' · '+
                   c.donations+' donation'+(c.donations===1?'':'s');
-      return '<div class="lbrow"><div class="who"><div class="name">'+escapeHtml(eventLabel(e))+'</div>'+
-             '<div class="sub">'+escapeHtml(sub)+'</div></div><div class="len">'+live+'</div></div>';
+
+      // What you may do to it, and why not when you may not. The live event is
+      // frozen against archiving and deleting - switch away first. A built-in
+      // cannot be deleted at all: it lives in the code and would come back.
+      const acts = ['<button class="small" data-ev-act="edit" data-ev-id="'+escapeHtml(e.id)+'">Edit</button>'];
+      if(!isLive){
+        acts.push(e.archived
+          ? '<button class="small" data-ev-act="restore" data-ev-id="'+escapeHtml(e.id)+'">Restore</button>'
+          : '<button class="small" data-ev-act="archive" data-ev-id="'+escapeHtml(e.id)+'">Archive</button>');
+        if(!e.builtIn && total === 0){
+          acts.push('<button class="small" data-ev-act="delete" data-ev-id="'+escapeHtml(e.id)+'">Delete</button>');
+        }
+      }
+      const why = isLive
+        ? '<div class="sub">Switch to another event before archiving this one.</div>'
+        : (!e.builtIn && total > 0
+            ? '<div class="sub">Holds records — archive it rather than deleting.</div>'
+            : (e.builtIn && !e.archived
+                ? '<div class="sub">Shipped with the app — can be archived, not deleted.</div>'
+                : ''));
+
+      return '<div class="gps-row"><div class="gps-row-top">'+
+             '<span class="gps-row-name">'+escapeHtml(eventLabel(e))+'</span>'+
+             '<span>'+tags.join(' ')+'</span></div>'+
+             '<div class="gps-row-meta">'+escapeHtml(sub)+'</div>'+
+             why+
+             '<div class="actions">'+acts.join('')+'</div></div>';
     }).join('');
   }
 }
@@ -4484,6 +4617,240 @@ bindEl('species-save','click', async ()=>{
   }
   refreshActiveScreen();
 });
+
+// ---- add / edit an event (director) ----
+// evEditing is null when the form is adding, or the id of the event being
+// edited. The id itself is never editable: records point at it.
+let evEditing = null;
+
+function parseDateLines(text){
+  const out = [];
+  String(text||'').split('\n').forEach(line=>{
+    const t = line.trim();
+    if(!t) return;
+    // Accept 2029-9-5 as well as 2029-09-05, and normalise.
+    const m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if(!m) { out.push({ bad:t }); return; }
+    const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+    const key = m[1]+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    // Round-trip through Date to reject 2029-02-31 and friends.
+    const probe = new Date(key + 'T00:00:00Z');
+    if(isNaN(probe.getTime()) || probe.toISOString().slice(0,10) !== key){ out.push({ bad:t }); return; }
+    if(mo < 1 || mo > 12 || d < 1 || d > 31 || y < 2000 || y > 2100){ out.push({ bad:t }); return; }
+    out.push({ key });
+  });
+  return out;
+}
+function isValidTimeZone(tz){
+  if(!tz) return false;
+  try{ new Intl.DateTimeFormat('en-US', { timeZone: tz }); return true; }
+  catch(e){ return false; }
+}
+// The form takes a plain date - the last day anyone may enter. The stored value
+// is the instant registration STOPS, i.e. the start of the following day in the
+// event's own zone, which is what isRegistrationClosed() compares against.
+function registrationCloseFromDate(dateStr, tz){
+  const m = String(dateStr||'').trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if(!m) return null;
+  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+  const dayAfter = new Date(Date.UTC(y, mo-1, d+1));
+  const key = dayAfter.toISOString().slice(0,10);
+  // Work out that zone's offset on that date so the instant is right whether
+  // or not daylight saving is in force.
+  const probe = new Date(key + 'T12:00:00Z');
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, timeZoneName: 'longOffset'
+  }).formatToParts(probe).find(p=> p.type === 'timeZoneName');
+  const off = (parts && parts.value.match(/GMT([+-]\d{2}:\d{2})/) || [])[1] || '+00:00';
+  return key + 'T00:00:00' + off;
+}
+function registrationCloseToDate(iso, tz){
+  const t = new Date(iso);
+  if(isNaN(t.getTime())) return '';
+  // One millisecond earlier is the last day entries are open.
+  return new Date(t.getTime() - 1).toLocaleDateString('en-CA', { timeZone: tz || 'UTC' });
+}
+
+function renderEventForm(){
+  const editing = evEditing ? eventById(evEditing) : null;
+  setText('event-form-title', editing ? 'Edit ' + editing.name : 'Add an event');
+  setText('event-form-intro', editing
+    ? 'Changes reach every device. The entry ID prefix only affects anglers who register from now on — entry IDs already handed out do not change.'
+    : 'Set up next year’s tournament without touching the code. Nothing about the live event changes until you switch to the new one.');
+  const saveBtn = document.getElementById('ev-save');
+  if(saveBtn) saveBtn.textContent = editing ? 'Save changes' : 'Add event';
+  const cancel = document.getElementById('ev-cancel');
+  if(cancel) cancel.style.display = editing ? 'block' : 'none';
+  const copyRow = document.getElementById('ev-copy-course');
+  if(copyRow && copyRow.parentElement) copyRow.parentElement.style.display = editing ? 'none' : 'flex';
+
+  // Reuse the same species list the target-species picker uses.
+  const sp = document.getElementById('ev-species');
+  if(sp && !sp.dataset.built){
+    sp.dataset.built = '1';
+    sp.innerHTML = SPECIES_PRESETS.map(g=>
+      '<optgroup label="'+escapeHtml(g.group)+'">'+
+      g.items.map(it=>'<option value="'+escapeHtml(it.name)+'">'+escapeHtml(it.name)+'</option>').join('')+
+      '</optgroup>').join('');
+  }
+
+  const fill = (id, value)=>{
+    const el = document.getElementById(id);
+    if(el && document.activeElement !== el) el.value = value;
+  };
+  if(editing){
+    const s = eventSettings(editing.id);
+    fill('ev-name', editing.name || '');
+    fill('ev-prefix', editing.prefix || '');
+    fill('ev-dates', (editing.dates || []).join('\n'));
+    fill('ev-tz', editing.timeZone || '');
+    fill('ev-regclose', registrationCloseToDate(editing.registrationClose, editing.timeZone));
+    fill('ev-course', stripEntities(editing.courseLabel || ''));
+    if(sp && document.activeElement !== sp && speciesPreset(s.targetSpecies)) sp.value = s.targetSpecies;
+  }
+}
+
+// Course labels in EVENTS carry HTML entities (&middot;). The form is a plain
+// text box, so show and accept the characters themselves.
+function stripEntities(s){
+  return String(s).replace(/&middot;/g, '·').replace(/&amp;/g, '&').replace(/&ndash;/g, '–');
+}
+function toEntities(s){
+  return String(s).replace(/&/g, '&amp;');
+}
+
+function resetEventForm(){
+  evEditing = null;
+  ['ev-name','ev-prefix','ev-dates','ev-tz','ev-regclose','ev-course'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.value = '';
+  });
+  const copy = document.getElementById('ev-copy-course');
+  if(copy) copy.checked = true;
+  document.getElementById('ev-err').style.display = 'none';
+  renderEventForm();
+}
+
+bindEl('ev-cancel','click', ()=>{ resetEventForm(); renderAdmin(); });
+
+bindEl('ev-save','click', async ()=>{
+  const errEl = document.getElementById('ev-err');
+  const fail = (msg)=>{ errEl.textContent = msg; errEl.style.display = 'block'; };
+  errEl.style.display = 'none';
+
+  const name = document.getElementById('ev-name').value.trim();
+  const prefix = document.getElementById('ev-prefix').value.trim().toUpperCase();
+  const tz = document.getElementById('ev-tz').value.trim() || activeEvent().timeZone;
+  const courseLabel = document.getElementById('ev-course').value.trim();
+  const regClose = document.getElementById('ev-regclose').value.trim();
+  const species = document.getElementById('ev-species').value;
+  const parsed = parseDateLines(document.getElementById('ev-dates').value);
+
+  if(!name) return fail('Give the tournament a name.');
+  if(!prefix) return fail('Set an entry ID prefix — this is what makes an entry ID unique across years.');
+  if(!/^[A-Z0-9-]{2,12}$/.test(prefix)){
+    return fail('The prefix should be 2–12 characters, letters, digits and dashes only.');
+  }
+  // Unique prefix, or two events both hand out an entry 001 that reads the same.
+  const clash = allEvents().find(e=>
+    e.id !== evEditing && String(e.prefix||'').toUpperCase() === prefix);
+  if(clash) return fail('"'+prefix+'" is already used by '+clash.name+' ('+eventDateRangeText(clash)+'). Pick another.');
+
+  const bad = parsed.find(p=> p.bad);
+  if(bad) return fail('"'+bad.bad+'" is not a date I can read. Use YYYY-MM-DD, one per line.');
+  const dates = parsed.map(p=> p.key).sort();
+  if(dates.length === 0) return fail('Add at least one event day.');
+  if(dates.length > 7) return fail('That is more than seven days — check the dates.');
+  if(new Set(dates).size !== dates.length) return fail('One of those days is listed twice.');
+
+  if(!isValidTimeZone(tz)){
+    return fail('"'+tz+'" is not a time zone I recognise. Use an IANA name like America/Denver.');
+  }
+  const closeIso = registrationCloseFromDate(regClose || dates[0], tz);
+  if(!closeIso) return fail('Registration close should be a date, YYYY-MM-DD.');
+
+  const record = {
+    name,
+    nameHtml: escapeHtml(name),
+    presenter: (eventById(evEditing) || activeEvent()).presenter || '',
+    prefix,
+    dates,
+    timeZone: tz,
+    courseLabel: toEntities(courseLabel || 'Course not set'),
+    courseLabelLong: toEntities(courseLabel || 'the tournament water'),
+    registrationClose: closeIso
+  };
+  const preset = speciesPreset(species);
+  record.targetSpecies = species;
+  record.recordInches = preset ? preset.inches : 0;
+
+  const isNew = !evEditing;
+  const id = evEditing || slugifyEventId(name, dates[0].slice(0,4));
+
+  if(isNew){
+    // Same water next year is the common case, so offer the boundary as a
+    // starting point rather than making them redraw it.
+    const copy = document.getElementById('ev-copy-course');
+    record.course = (copy && copy.checked)
+      ? deepClone(courseBoundary() || { kind:'none' })
+      : { kind:'none' };
+  }
+
+  if(!await saveEventRecord(id, record)){
+    return fail('Could not save that on this device. Check your storage and try again.');
+  }
+  resetEventForm();
+  renderAdmin();
+  const note = document.getElementById('bnd-saved-note');
+  if(note && isNew) setText('bnd-saved-note',
+    'Added ' + name + '. It is not live yet — pick it in the switcher above when you are ready.');
+});
+
+// Row actions on the event list.
+function wireEventListActions(){
+  document.querySelectorAll('#event-list [data-ev-act]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = btn.dataset.evId;
+      const act = btn.dataset.evAct;
+      const evt = eventById(id);
+      if(!evt) return;
+
+      if(act === 'edit'){
+        evEditing = id;
+        renderEventForm();
+        document.getElementById('event-form-title').scrollIntoView({ behavior:'smooth', block:'start' });
+        return;
+      }
+      if(act === 'archive'){
+        if(id === activeEventId()) return;   // guarded in the UI too
+        if(!window.confirm('Archive "'+evt.name+' · '+eventDateRangeText(evt)+'"?\n\n'+
+          'It comes out of the event switcher. Every angler, catch and donation it holds '+
+          'stays exactly where it is, and restoring brings it all back.')) return;
+        await saveEventRecord(id, { archived:true });
+        renderAdmin();
+        return;
+      }
+      if(act === 'restore'){
+        await saveEventRecord(id, { archived:false });
+        renderAdmin();
+        return;
+      }
+      if(act === 'delete'){
+        const c = eventRowCounts(id);
+        // Belt and braces: the button is not rendered in this case anyway.
+        if(c.anglers + c.catches + c.donations > 0){
+          window.alert('That event holds records. Archive it instead.');
+          return;
+        }
+        if(!window.confirm('Delete "'+evt.name+'" for good?\n\n'+
+          'It holds no anglers, catches or donations. This cannot be undone.')) return;
+        await deleteEventRecord(id);
+        if(evEditing === id) resetEventForm();
+        renderAdmin();
+      }
+    });
+  });
+}
 
 // ---- boundary editor (director) ----
 // bndDraft is a scratch copy. Nothing reaches the shared config, and so nothing
@@ -4819,6 +5186,9 @@ bindEl('bnd-recheck','click', async ()=>{
 async function renderAdmin(){
   if(!adminUnlocked) return;
   renderEventAdmin();
+  // The list is rebuilt above, so its buttons are new elements each time.
+  wireEventListActions();
+  renderEventForm();
   renderSpeciesAdmin();
   renderBoundaryEditor();
   await renderPayoutCalculator();
