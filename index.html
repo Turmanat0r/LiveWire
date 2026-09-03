@@ -1139,15 +1139,17 @@
           <hr class="divider">
           <h2 style="margin-bottom:8px;">Target species</h2>
           <p class="hint" style="margin-top:0;">The one species this event scores. Anglers pick it or &ldquo;Other (not scored)&rdquo; when they submit, and only this species is ranked, placed and paid. The ceiling is a sanity check &mdash; a catch longer than it gets flagged for you, never rejected.</p>
-          <div class="row2">
-            <div class="field">
-              <label for="species-name">Species</label>
-              <input type="text" id="species-name" placeholder="Walleye" autocapitalize="words" spellcheck="false">
-            </div>
-            <div class="field">
-              <label for="species-record">Length ceiling (in)</label>
-              <input type="number" id="species-record" step="0.5" min="0" placeholder="36">
-            </div>
+          <div class="field">
+            <label for="species-select">Species</label>
+            <select id="species-select"></select>
+          </div>
+          <div class="field" id="species-custom-field" style="display:none;">
+            <label for="species-name">Species name</label>
+            <input type="text" id="species-name" placeholder="e.g. Lake Sturgeon" autocapitalize="words" spellcheck="false">
+          </div>
+          <div class="field">
+            <label for="species-record">Length ceiling (in)</label>
+            <input type="number" id="species-record" step="0.5" min="0" placeholder="36">
           </div>
           <div class="err" id="species-err" style="display:none;"></div>
           <button class="secondary" id="species-save">Save species</button>
@@ -4318,21 +4320,122 @@ bindEl('event-apply','click', async ()=>{
 });
 
 // ---- target species (director) ----
+// The species tournaments are actually run for, grouped so the list stays
+// scannable on a phone. `inches` is a PLAUSIBILITY CEILING, not a record: it
+// sits comfortably above any real fish so an obvious mis-entry (a 300" walleye,
+// a length typed into the wrong box) gets flagged for the director. Anything
+// not here is typed in by hand, so the list never has to be complete.
+const SPECIES_PRESETS = [
+  { group:'Bass', items:[
+    { name:'Largemouth Bass', inches:32 },
+    { name:'Smallmouth Bass', inches:30 },
+    { name:'Spotted Bass',    inches:28 },
+    { name:'Striped Bass',    inches:60 },
+    { name:'White Bass',      inches:24 }
+  ]},
+  { group:'Walleye & pike', items:[
+    { name:'Walleye',       inches:36 },
+    { name:'Sauger',        inches:32 },
+    { name:'Northern Pike', inches:56 },
+    { name:'Muskellunge',   inches:66 }
+  ]},
+  { group:'Panfish', items:[
+    { name:'Yellow Perch',  inches:22 },
+    { name:'Black Crappie', inches:22 },
+    { name:'White Crappie', inches:22 },
+    { name:'Bluegill',      inches:18 }
+  ]},
+  { group:'Catfish', items:[
+    { name:'Channel Catfish',  inches:56 },
+    { name:'Blue Catfish',     inches:66 },
+    { name:'Flathead Catfish', inches:62 }
+  ]},
+  { group:'Trout & salmon', items:[
+    { name:'Rainbow Trout', inches:48 },
+    { name:'Brown Trout',   inches:48 },
+    { name:'Brook Trout',   inches:34 },
+    { name:'Lake Trout',    inches:56 },
+    { name:'Chinook Salmon',inches:60 }
+  ]},
+  { group:'Inshore saltwater', items:[
+    { name:'Redfish',         inches:60 },
+    { name:'Speckled Trout',  inches:40 },
+    { name:'Flounder',        inches:40 },
+    { name:'Snook',           inches:56 },
+    { name:'Sheepshead',      inches:30 }
+  ]}
+];
+const SPECIES_CUSTOM = '__custom__';
+
+function speciesPreset(name){
+  for(const g of SPECIES_PRESETS){
+    for(const it of g.items){ if(it.name === name) return it; }
+  }
+  return null;
+}
+
+// What the director has chosen right now, reading the dropdown and, when it is
+// set to Other, the free-text box next to it.
+function chosenSpeciesName(){
+  const sel = document.getElementById('species-select');
+  if(!sel) return '';
+  if(sel.value === SPECIES_CUSTOM){
+    const el = document.getElementById('species-name');
+    return el ? el.value.trim() : '';
+  }
+  return sel.value;
+}
+
 function renderSpeciesAdmin(){
   const s = eventSettings();
+  const sel = document.getElementById('species-select');
   const nameEl = document.getElementById('species-name');
   const recEl = document.getElementById('species-record');
-  if(nameEl && document.activeElement !== nameEl) nameEl.value = s.targetSpecies;
+  if(!sel) return;
+
+  // The list never changes, so build it once. Rebuilding on every store tick
+  // would reset the director's choice mid-selection.
+  if(!sel.dataset.built){
+    sel.dataset.built = '1';
+    sel.innerHTML = SPECIES_PRESETS.map(g=>
+      '<optgroup label="'+escapeHtml(g.group)+'">'+
+      g.items.map(it=>'<option value="'+escapeHtml(it.name)+'">'+escapeHtml(it.name)+'</option>').join('')+
+      '</optgroup>').join('') +
+      '<option value="'+SPECIES_CUSTOM+'">Other — type it in</option>';
+  }
+
+  // A species that is not in the list (typed in previously, or renamed) has to
+  // come back as Other with its name filled in, not silently become something
+  // else in the list.
+  const known = !!speciesPreset(s.targetSpecies);
+  if(document.activeElement !== sel) sel.value = known ? s.targetSpecies : SPECIES_CUSTOM;
+  const custom = sel.value === SPECIES_CUSTOM;
+  document.getElementById('species-custom-field').style.display = custom ? 'block' : 'none';
+  if(nameEl && document.activeElement !== nameEl) nameEl.value = known ? '' : s.targetSpecies;
   if(recEl && document.activeElement !== recEl) recEl.value = s.recordInches ? String(s.recordInches) : '';
 }
+
+bindEl('species-select','change', ()=>{
+  const sel = document.getElementById('species-select');
+  const custom = sel.value === SPECIES_CUSTOM;
+  document.getElementById('species-custom-field').style.display = custom ? 'block' : 'none';
+  if(custom){
+    document.getElementById('species-name').focus();
+    return;
+  }
+  // Fill in the ceiling for the species just picked. It stays editable - this
+  // is the number a director is least likely to know off the top of their head.
+  const preset = speciesPreset(sel.value);
+  if(preset) document.getElementById('species-record').value = String(preset.inches);
+});
 
 bindEl('species-save','click', async ()=>{
   const errEl = document.getElementById('species-err');
   errEl.style.display = 'none';
-  const name = document.getElementById('species-name').value.trim();
+  const name = chosenSpeciesName();
   const rec = parseFloat(document.getElementById('species-record').value);
   if(!name){
-    errEl.textContent = 'Give the species a name — this is what anglers pick when they submit.';
+    errEl.textContent = 'Pick a species, or choose "Other" and type one in — this is what anglers see when they submit.';
     errEl.style.display = 'block';
     return;
   }
