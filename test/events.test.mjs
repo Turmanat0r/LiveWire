@@ -950,17 +950,39 @@ check('a session token replaces the key', t.bearerToken(), 'tok-anon-123');
 check('the mode is anonymous', t.authMode, 'anonymous');
 check('shown as a device identity', t.authModeLabel(), 'device identity');
 
-// A director session is distinguished from an angler's.
-t.noteAuthSession({ access_token:'tok-dir-456', user:{ id:'u2', is_anonymous:false, email:'d@example.com' } });
+// Director status comes from app_metadata, which only the server can set.
+// Having an email proves nothing - anyone can create an account.
+t.noteAuthSession({ access_token:'tok-dir-456', user:{
+  id:'u2', is_anonymous:false, email:'d@example.com', app_metadata:{ director:true } } });
 check('a director token is used', t.bearerToken(), 'tok-dir-456');
-check('and identified as director', t.authMode, 'director');
-check('shown as signed in', t.authModeLabel(), 'signed in as director');
+check('the flag makes a director', t.authMode, 'director');
+check('shown as signed in as director', t.authModeLabel(), 'signed in as director');
+
+// The security-relevant case: signed in, but no flag. Must NOT read as
+// director, or the panel would imply an authority the server will refuse.
+t.noteAuthSession({ access_token:'tok-plain', user:{
+  id:'u5', is_anonymous:false, email:'someone@example.com' } });
+check('an email alone is not a director', t.authMode, 'signed-in');
+check('and the label says so', t.authModeLabel(), 'signed in, not a director');
+
+// user_metadata is client-writable, so it must never be trusted for this.
+t.noteAuthSession({ access_token:'tok-fake', user:{
+  id:'u6', email:'liar@example.com', user_metadata:{ director:true } } });
+check('a self-declared director in user_metadata is ignored', t.authMode, 'signed-in');
+
+// Supabase can hand the flag back as a string rather than a boolean.
+t.noteAuthSession({ access_token:'tok-str', user:{
+  id:'u7', email:'d@example.com', app_metadata:{ director:'true' } } });
+check('a string flag still counts', t.authMode, 'director');
+
+// A falsy flag is not a director.
+t.noteAuthSession({ access_token:'tok-off', user:{
+  id:'u8', email:'d@example.com', app_metadata:{ director:false } } });
+check('director:false is not a director', t.authMode, 'signed-in');
 
 // Older SDK builds omit is_anonymous; no email then means anonymous.
 t.noteAuthSession({ access_token:'tok-old', user:{ id:'u3' } });
 check('a session with no email reads as anonymous', t.authMode, 'anonymous');
-t.noteAuthSession({ access_token:'tok-old2', user:{ id:'u4', email:'x@example.com' } });
-check('one with an email reads as director', t.authMode, 'director');
 
 // Signing out must not leave a dead token behind.
 t.noteAuthSession(null);

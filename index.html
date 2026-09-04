@@ -62,6 +62,8 @@
   .field label{display:block;font-size:12px;color:var(--steel);margin-bottom:5px;font-weight:500;}
   .field input[type=text],
   .field input[type=tel],
+  .field input[type=email],
+  .field input[type=password],
   .field input[type=number],
   .field textarea,
   .field select{
@@ -1110,6 +1112,21 @@
       <a class="backlink" data-goto="home" role="button" tabindex="0">&larr; Home</a>
       <div class="card" id="admin-lock-card">
         <h2>Tournament director sign-in</h2>
+        <p class="hint" style="margin-top:0;">Signing in is what lets the tournament server accept director changes. It is tied to your account, not to this device.</p>
+        <div class="field">
+          <label for="admin-email">Email</label>
+          <input type="email" id="admin-email" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="you@example.com">
+        </div>
+        <div class="field">
+          <label for="admin-password">Password</label>
+          <input type="password" id="admin-password" autocomplete="current-password">
+        </div>
+        <div class="err" id="admin-signin-err" style="display:none;"></div>
+        <button class="secondary" id="admin-signin">Sign in</button>
+
+        <hr class="divider">
+        <h2 style="margin-bottom:8px;">Passcode only</h2>
+        <p class="hint" style="margin-top:0;">Opens the panel on this device without signing in. Fine for looking around &mdash; but the passcode ships inside this page, so it is a latch, not a lock, and changes made this way will be refused once ownership policies are switched on.</p>
         <div class="lockrow">
           <input type="password" id="admin-pass" placeholder="Passcode" autocomplete="off" autocapitalize="off" spellcheck="false">
           <button class="secondary" id="admin-unlock" style="width:auto;padding:10px 16px;">Enter</button>
@@ -1118,7 +1135,9 @@
       </div>
 
       <div id="admin-panel" style="display:none;">
+        <div class="syncbanner" id="admin-auth-banner" style="display:none;"></div>
         <p class="hint" id="admin-sync-line" style="margin:0 0 12px;"></p>
+        <button class="secondary" id="admin-signout" style="margin-bottom:12px;">Sign out</button>
         <div class="director-tools">
           <button class="director-tool" type="button" data-admin-tool="gps">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
@@ -2038,10 +2057,11 @@ let storeRefreshTimer = null;
 // the anon key exactly as before. Turning it on is what makes it live.
 let sbClient = null;
 let authSession = null;
-let authMode = 'anon-key';   // anon-key | anonymous | director
+let authMode = 'anon-key';   // anon-key | anonymous | signed-in | director
 
 function authModeLabel(){
   if(authMode === 'director') return 'signed in as director';
+  if(authMode === 'signed-in') return 'signed in, not a director';
   if(authMode === 'anonymous') return 'device identity';
   return 'shared key';
 }
@@ -2055,12 +2075,110 @@ function bearerToken(){
 function noteAuthSession(session){
   authSession = session || null;
   const user = session && session.user;
+  const meta = (user && user.app_metadata) || {};
+  // Director status comes from app_metadata, which only the server can set.
+  // user_metadata would be worthless here - a client can write its own, so
+  // anyone could simply declare themselves the director.
+  const isDirector = meta.director === true || meta.director === 'true';
+  // is_anonymous is the SDK's own flag; older builds omit it, in which case a
+  // session with no email is an anonymous one.
+  const isAnon = user && (user.is_anonymous === true ||
+                          (user.is_anonymous === undefined && !user.email));
   authMode = !user ? 'anon-key'
-    // is_anonymous is the SDK's own flag; older builds omit it, in which case a
-    // session with no email is an anonymous one.
-    : ((user.is_anonymous === true || (user.is_anonymous === undefined && !user.email))
-        ? 'anonymous' : 'director');
+    : (isDirector ? 'director' : (isAnon ? 'anonymous' : 'signed-in'));
   try{ updateSyncUi(); }catch(e){}
+  try{ applyDirectorState(); }catch(e){}
+}
+
+// Signing in as a director opens the panel on its own - no passcode needed.
+// This only ever grants; revoking happens on an explicit sign-out.
+function applyDirectorState(){
+  const lock = document.getElementById('admin-lock-card');
+  const panel = document.getElementById('admin-panel');
+  if(!lock || !panel) return;
+  if(authMode === 'director' && !adminUnlocked){
+    adminUnlocked = true;
+    lock.style.display = 'none';
+    panel.style.display = 'block';
+    showAdminTool(activeAdminTool);
+    renderAdmin();
+  }
+  renderAdminAuthBanner();
+}
+
+// Says plainly which of the two ways in was used, because they are about to
+// stop being equivalent: once ownership policies are enforced, the passcode
+// opens the panel but the server refuses the writes.
+function renderAdminAuthBanner(){
+  const el = document.getElementById('admin-auth-banner');
+  if(!el) return;
+  if(!adminUnlocked){ el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  if(authMode === 'director'){
+    el.className = 'syncbanner';
+    el.textContent = 'Signed in as director. Changes you make here are accepted by the server.';
+    return;
+  }
+  el.className = 'syncbanner level-warn';
+  el.textContent = authMode === 'signed-in'
+    ? 'Signed in, but this account is not marked as a director. Director changes will be refused once ownership policies are switched on.'
+    : 'Opened with the passcode, not signed in. You can look around, but director changes will be refused once ownership policies are switched on. Sign in above to make changes stick.';
+}
+
+async function signInDirector(){
+  const errEl = document.getElementById('admin-signin-err');
+  const btn = document.getElementById('admin-signin');
+  errEl.style.display = 'none';
+  const email = (document.getElementById('admin-email').value || '').trim();
+  const password = document.getElementById('admin-password').value || '';
+  if(!email || !password){
+    errEl.textContent = 'Enter the director email and password.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if(!sbClient){
+    errEl.textContent = 'Sign-in needs a connection to the tournament server, and there is none right now.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const was = btn.textContent;
+  btn.textContent = 'Signing in…'; btn.disabled = true;
+  try{
+    const res = await sbClient.auth.signInWithPassword({ email, password });
+    if(res && res.error){
+      errEl.textContent = res.error.message || 'That sign-in did not work.';
+      errEl.style.display = 'block';
+      return;
+    }
+    document.getElementById('admin-password').value = '';
+    noteAuthSession(res.data && res.data.session);
+    if(authMode !== 'director'){
+      // Signed in fine, but the account has no director flag. Say exactly that
+      // rather than letting them wonder why nothing saves.
+      errEl.textContent = 'Signed in, but this account is not marked as a director. '+
+        'Set {"director": true} on its app_metadata in Supabase, then sign in again.';
+      errEl.style.display = 'block';
+    }
+  }catch(e){
+    errEl.textContent = (e && e.message) || 'That sign-in did not work.';
+    errEl.style.display = 'block';
+  }finally{
+    btn.textContent = was; btn.disabled = false;
+  }
+}
+
+async function signOutDirector(){
+  try{ if(sbClient) await sbClient.auth.signOut(); }catch(e){ console.error(e); }
+  adminUnlocked = false;
+  authSession = null;
+  authMode = 'anon-key';
+  const lock = document.getElementById('admin-lock-card');
+  const panel = document.getElementById('admin-panel');
+  if(lock) lock.style.display = 'block';
+  if(panel) panel.style.display = 'none';
+  // Straight back to a device identity, so ordinary angler use keeps working.
+  await initAuth();
+  updateSyncUi();
 }
 
 async function initAuth(){
@@ -3917,13 +4035,16 @@ bindEl('sub-submit','click', async ()=>{
     const catchId = uid();
     // The photo goes first and on its own. A catch with no evidence behind it is
     // worse than no catch, so this gates the rest of the write.
-    const photoRef = await savePhoto(catchId, photoData);
-    if(photoRef === null){
-      fail(storeFull
-        ? 'The tournament database is full. Show this to the director before submitting anything else.'
-        : 'The photo could not be saved. Nothing was submitted — check your signal and try again.');
-      return;
-    }
+    // ORDER MATTERS: the catch record goes in FIRST, then the photo.
+    //
+    // The storage policy that stops one angler overwriting another's evidence
+    // asks "does the catch this photo belongs to belong to you?" - which it can
+    // only answer if the catch row already exists. Uploading first made that
+    // check impossible and every first upload would have been rejected.
+    //
+    // Nothing is lost by the swap: the photo's URL is derived from the catch id
+    // (see publicPhotoUrl), so the record does not need the upload to have
+    // happened in order to point at it.
     const catches = await loadCatches();
     catches.push({
       id: catchId,
@@ -3933,17 +4054,29 @@ bindEl('sub-submit','click', async ()=>{
       species,
       length,
       hasPhoto: true,
-      photoUrl: photoRef || '',
+      photoUrl: store && store.photoUrlFor ? store.photoUrlFor(catchId) : '',
       precheck,
       location,
       timestamp: Date.now(),
       status: 'pending'
     });
     if(!await saveCatches(catches)){
-      deletePhoto(catchId);   // don't strand an orphan photo document
       fail(storeFull
         ? 'The tournament database is full. Show this to the director before submitting anything else.'
         : 'This catch could not be saved. Nothing was submitted — check your storage and try again.');
+      return;
+    }
+
+    const photoRef = await savePhoto(catchId, photoData);
+    if(photoRef === null){
+      // The record landed but the image did not. Take the record back out so
+      // the angler is never told a catch is filed when its evidence is missing.
+      const after = await loadCatches();
+      const at = after.findIndex(c=> c.id === catchId);
+      if(at !== -1){ after.splice(at, 1); await saveCatches(after); }
+      fail(storeFull
+        ? 'The tournament database is full. Show this to the director before submitting anything else.'
+        : 'The photo could not be saved. Nothing was submitted — check your signal and try again.');
       return;
     }
 
@@ -4184,6 +4317,7 @@ function tryAdminUnlock(){
     document.getElementById('admin-lock-card').style.display='none';
     document.getElementById('admin-panel').style.display='block';
     showAdminTool(activeAdminTool);
+    renderAdminAuthBanner();
     renderAdmin();
   } else {
     errEl.textContent = 'Incorrect passcode.';
@@ -4191,6 +4325,10 @@ function tryAdminUnlock(){
   }
 }
 bindEl('admin-unlock','click', tryAdminUnlock);
+bindEl('admin-signin','click', signInDirector);
+bindEl('admin-email','keydown', (e)=>{ if(e.key === 'Enter') document.getElementById('admin-password').focus(); });
+bindEl('admin-password','keydown', (e)=>{ if(e.key === 'Enter') signInDirector(); });
+bindEl('admin-signout','click', signOutDirector);
 // Phone keyboards show "go" on this field; without this it did nothing.
 bindEl('admin-pass','keydown', (e)=>{ if(e.key === 'Enter') tryAdminUnlock(); });
 
