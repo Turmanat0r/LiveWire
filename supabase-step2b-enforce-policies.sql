@@ -1,84 +1,49 @@
 -- ============================================================================
--- LiveWire - step 2: ownership
+-- LiveWire - step 2b: ENFORCE ownership
 --
--- Split deliberately. PART A is safe to run right now and changes no
--- behaviour. PART B is the switch that starts enforcing, and must NOT be run
--- until anonymous sign-in is confirmed working - see the check below.
+--   ##  DO NOT PASTE AND RUN THIS FILE BLIND.  ##
 --
--- WHY THE ORDER MATTERS
---   PART B's policies are granted to the `authenticated` role. If devices are
---   still using the shared anon key their role is `anon`, and every write in
---   the app would start failing - registration, catches, check-ins, the lot.
---   Running the check first is not bureaucracy; it is the difference between a
---   migration and an outage.
+-- This is the switch that starts refusing writes. Run it at the wrong moment
+-- and every write in the app fails at once - registration, catches,
+-- check-ins, donations, director changes. Reads keep working, so the app looks
+-- healthy right up to the point where nothing saves.
 --
--- Plain statements only, matching supabase-setup.sql: no DO blocks, no
--- functions, no dollar-quoted bodies.
--- ============================================================================
-
-
--- ---------------------------------------------------------------------------
--- CHECK FIRST. Run this on its own.
+-- WHY: the policies below are granted to the `authenticated` role. A device
+-- using the shared anon key has the role `anon`, and matches none of them.
 --
--- anonymous_devices should be 1 or more, and should go up when you load the
--- app on another phone. If it is 0, anonymous sign-in is not on yet: go to
--- Authentication -> Sign In / Providers -> Anonymous Sign-Ins and enable it.
+-- THE GATE. Run this first, on its own:
 --
--- director_accounts should be 1, and is the user carrying {"director": true}.
--- ---------------------------------------------------------------------------
-select
-  count(*) filter (where is_anonymous)                                as anonymous_devices,
-  count(*) filter (where (raw_app_meta_data ->> 'director') = 'true') as director_accounts,
-  count(*)                                                            as total_users,
-  max(created_at)                                                     as newest_signin
-from auth.users;
-
--- If the query above errors on is_anonymous (older Supabase), use this instead:
+--     select count(*) filter (where is_anonymous) as anonymous_devices,
+--            count(*) filter (where (raw_app_meta_data ->> 'director') = 'true')
+--              as director_accounts
+--     from auth.users;
 --
--- select count(*) as total_users, count(email) as with_email from auth.users;
---   with_email counts real accounts; the rest are anonymous devices.
-
-
--- ============================================================================
--- PART A - safe now. Adds the column the policies will read.
+--   anonymous_devices must be 1 or more. That is what proves devices are
+--   getting real identities. If it is 0:
+--     - enable Authentication -> Sign In / Providers -> Anonymous Sign-Ins
+--     - then OPEN THE APP once, which is what creates the first identity
+--     - then re-run the gate. Enabling alone does not create anything.
 --
--- No policy looks at `owner` yet, so nothing changes: reads, writes and
--- deletes all behave exactly as they do today. New rows written by a signed-in
--- device get stamped; rows written on the shared key get NULL, as do all the
--- rows that already exist.
+--   director_accounts must be 1, or you lock yourself out of your own
+--   director tools. Create the account, set {"director": true} on its
+--   app_metadata, and sign in once so the flag lands in a token.
 --
--- The default is what makes the app's upserts work without a client change -
--- the write body only ever carries id and data, so `owner` fills itself in.
--- ============================================================================
-
-alter table public.anglers   add column if not exists owner uuid default auth.uid();
-alter table public.catches   add column if not exists owner uuid default auth.uid();
-alter table public.donations add column if not exists owner uuid default auth.uid();
-
-create index if not exists anglers_owner_idx   on public.anglers   (owner);
-create index if not exists catches_owner_idx   on public.catches   (owner);
-create index if not exists donations_owner_idx on public.donations (owner);
-
--- Watch it working: load the app on a phone, register, then run this. The new
--- row should carry an owner once anonymous sign-in is on, and NULL before.
+-- Also confirm the app is running a build from 63faa64 or later. Earlier
+-- builds upload a catch photo before writing its record, and the photo
+-- policies here cannot authorise that.
 --
--- select id, owner, data ->> 'name' as name, created_at
--- from public.anglers order by created_at desc limit 5;
-
-
--- ============================================================================
--- PART B - the switch. Do NOT run until anonymous_devices above is non-zero.
+-- IF IT GOES WRONG: run supabase-rollback-open-access.sql. It restores write
+-- access immediately and loses nothing.
 --
--- Existing records have owner NULL. That includes every 2027 angler, catch and
--- donation. Under these policies an ordinary angler cannot edit an ownerless
--- row - only the director can. That is deliberate: those results are scored
--- and should not be rewritable. To let anglers keep editing their own older
--- records instead, add  or owner is null  to the USING clauses below - but be
--- aware that means ANY device can edit ANY ownerless row, which is where we
--- started.
+-- Existing records have owner NULL - every 2027 angler, catch and donation.
+-- Under these policies only the director can edit them. That is deliberate:
+-- those results are scored and should not be rewritable. To let anglers keep
+-- editing their own older records, add  or owner is null  to the USING
+-- clauses - but that means ANY device can edit ANY ownerless row, which is
+-- where we started.
 --
 -- Director identity comes from app_metadata, which a client cannot write to.
--- user_metadata would be worthless here: anyone could set it on themselves.
+-- user_metadata would be worthless: anyone could set it on themselves.
 -- ============================================================================
 
 -- ---- catches ----
@@ -210,10 +175,16 @@ create policy catch_photos_delete on storage.objects
 
 
 -- ============================================================================
--- ROLLBACK. If PART B goes wrong, this puts everything back to open access and
--- the app works again immediately. Nothing is lost - the owner columns stay,
--- they just stop being consulted.
+-- ROLLBACK
 --
--- Re-run section 2 of supabase-setup.sql, which recreates the *_public_rw
--- policies, then section 4 for the bucket.
+-- Run  supabase-rollback-open-access.sql.  Paste the whole file; it is safe in
+-- any state and restores write access immediately.
+--
+-- Nothing is lost. The owner columns from step 2a stay exactly where they are,
+-- they simply stop being consulted, so re-applying this file later picks up
+-- where it left off.
+--
+-- Do not try to undo this by re-running supabase-setup.sql section 2 alone: it
+-- does not drop the policies created here, and you would be left with both
+-- sets in place.
 -- ============================================================================
