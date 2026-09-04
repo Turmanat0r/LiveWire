@@ -866,7 +866,13 @@
         <h1 id="reg-event-title">Montana Kayak Walleye Open</h1>
         <p class="meta" id="reg-event-meta">Sept 18&ndash;19, 2027 &middot; Silos to the Ponds, Canyon Ferry &middot; Catch &middot; Photo &middot; Release</p>
       </header>
-      <div class="card">
+      <div class="card" id="reg-already" style="display:none;">
+        <h2>You are registered</h2>
+        <div id="reg-already-body"></div>
+        <p class="hint" style="margin-bottom:0;">One entry per device. Your handle is fixed now &mdash; the director can change it if there is a problem with it.</p>
+      </div>
+
+      <div class="card" id="reg-form-card">
         <h2>Register</h2>
         <p class="hint" id="reg-closed-notice" style="display:none;background:var(--paper-2);padding:10px;border-radius:4px;">Registration closed on June 1, 2027. Contact the tournament director if you still need to enter.</p>
         <div class="field">
@@ -2078,11 +2084,17 @@ function uniqueHandle(anglers){
   return base + ' ' + uid().slice(-4);
 }
 
-// What to call an angler in the chat. Falls back to the real name for anyone
-// who registered before handles existed.
+// The ONLY identity the field is shown: the handle. Anyone who registered
+// before handles existed falls back to their entry ID, never their real name -
+// real names and phone numbers are the director's business alone.
+//
+// Client-side only, and worth being clear about: real names still travel in
+// the angler records the app downloads, so this hides them from the screen,
+// not from anyone determined to read the API. Splitting contact details into a
+// table only the director can read is the fix for that.
 function displayHandle(angler){
   if(!angler) return 'Unknown angler';
-  return angler.handle || angler.name || 'Unknown angler';
+  return angler.handle || angler.tournamentId || 'Angler';
 }
 
 // ---- shared tournament store ----
@@ -3687,7 +3699,41 @@ async function refreshPendingHandle(reroll){
 }
 bindEl('reg-handle-reroll','click', ()=> refreshPendingHandle(true));
 
-function renderRegisterScreen(){
+// Once this device holds an entry, the form is replaced by that entry. It is
+// also what makes "one per device" honest rather than an error message you only
+// see after filling the whole thing in.
+async function renderRegisteredCard(){
+  const anglers = await loadAnglers();
+  const me = anglers.find(a=> a.id === getMyAnglerId());
+  const card = document.getElementById('reg-already');
+  const form = document.getElementById('reg-form-card');
+  if(!card || !form) return;
+  if(!me){
+    card.style.display = 'none';
+    form.style.display = 'block';
+    return;
+  }
+  card.style.display = 'block';
+  form.style.display = 'none';
+
+  const mate = me.teamId ? anglers.find(m=> m.teamId===me.teamId && m.id!==me.id) : null;
+  // This is the angler's own device, so their own real name is theirs to see.
+  const rows = [
+    ['Name', me.name],
+    ['Handle', displayHandle(me)],
+    ['Entry ID', me.tournamentId],
+    ['Division', me.division === 'team' ? 'Team' : 'Solo']
+  ];
+  if(mate) rows.push(['Partner', mate.name + ' (' + displayHandle(mate) + ')']);
+  rows.push(['Big Fish pot', me.bigfish ? 'Entered' : 'Not entered']);
+
+  document.getElementById('reg-already-body').innerHTML = rows.map(r=>
+    '<div class="lbrow"><div class="who"><div class="name">'+escapeHtml(r[0])+'</div></div>'+
+    '<div class="len" style="font-size:13px;">'+escapeHtml(String(r[1]))+'</div></div>').join('');
+}
+
+async function renderRegisterScreen(){
+  await renderRegisteredCard();
   refreshPendingHandle(false);
   renderRoster();   // the roster card is on this screen; keep it current
   const closed = isRegistrationClosed();
@@ -3715,12 +3761,44 @@ bindEl('reg-submit','click', async ()=>{
   const bigfish = document.getElementById('reg-bigfish').checked;
   const errEl = document.getElementById('reg-err');
 
-  if(isRegistrationClosed()){ errEl.textContent = 'Registration is closed for this event.'; errEl.style.display='block'; return; }
-  if(!name){ errEl.textContent = 'Enter your name to register.'; errEl.style.display='block'; return; }
-  if(division==='team' && !partnerName){ errEl.textContent = "Enter your partner's name for a team entry."; errEl.style.display='block'; return; }
+  const fail = (msg)=>{ errEl.textContent = msg; errEl.style.display = 'block'; };
+
+  if(isRegistrationClosed()) return fail('Registration is closed for this event.');
+  if(!name) return fail('Enter your name to register.');
+  if(division==='team' && !partnerName) return fail("Enter your partner's name for a team entry.");
   errEl.style.display='none';
 
   const anglers = await loadAnglers();
+
+  // ---- one entry per device ----
+  // A second registration here would leave the first one stranded: this device
+  // can only hold one angler identity, so the earlier entry would lose its way
+  // to submit catches.
+  const already = anglers.find(a=> a.id === getMyAnglerId());
+  if(already){
+    return fail('This device is already registered as ' + already.tournamentId +
+      ' (' + displayHandle(already) + '). One entry per device — see the director if that is wrong.');
+  }
+
+  // ---- one entry per person ----
+  // Matched on name, which is the only thing we have: phone is optional and
+  // nothing else identifies a person. Deliberately blocks rather than warns,
+  // because a duplicate entry corrupts entry numbering, the pools and the
+  // payouts all at once.
+  const norm = (v)=> String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const clash = anglers.find(a=> norm(a.name) === norm(name));
+  if(clash){
+    return fail(name + ' is already registered as ' + clash.tournamentId +
+      '. If that is not you, add a middle initial or ask the director to enter you.');
+  }
+  if(division === 'team'){
+    if(norm(partnerName) === norm(name)) return fail('A team needs two different people.');
+    const partnerClash = anglers.find(a=> norm(a.name) === norm(partnerName));
+    if(partnerClash){
+      return fail(partnerName + ' is already registered as ' + partnerClash.tournamentId +
+        '. Each angler can only be entered once.');
+    }
+  }
   // Number registrations (teams count as one entry), not individual anglers.
   const entryNumber = anglers.filter(a=>a.role!=='partner').length + 1;
   // Prefixed per event, so MKWO-001 and MKWO28-001 are different anglers even
@@ -3788,7 +3866,11 @@ async function renderRoster(){
   const entries = anglers.filter(a=>a.role!=='partner');
   if(entries.length===0){ el.innerHTML = '<p class="empty">No anglers registered yet.</p>'; return; }
   el.innerHTML = entries.slice().reverse().map(a=>{
-    const displayName = a.division==='team' ? (escapeHtml(a.name)+' & '+escapeHtml(a.partner)) : escapeHtml(a.name);
+    // Handles, not names. The roster is public.
+    const mate = a.teamId ? anglers.find(m=> m.teamId===a.teamId && m.id!==a.id) : null;
+    const displayName = a.division==='team'
+      ? escapeHtml(displayHandle(a)) + ' &amp; ' + escapeHtml(mate ? displayHandle(mate) : 'partner')
+      : escapeHtml(displayHandle(a));
     const sub = (a.division==='team' ? 'Team' : 'Solo') + ' &middot; ' + a.tournamentId;
     return '<div class="lbrow"><div class="who"><div class="name">'+displayName+'</div><div class="sub">'+sub+(a.bigfish?' &middot; Big Fish pot':'')+'</div></div></div>';
   }).join('');
@@ -4403,12 +4485,13 @@ function standingsFor(division, catches, anglers){
     const angler = anglerById[c.anglerId];
     // A team ranks as one unit, so either partner's fish lands in the same group.
     const key = (division==='team' && angler && angler.teamId) ? angler.teamId : c.anglerId;
-    if(!groups[key]) groups[key] = { key, name: c.anglerName, fish: [], anglerIds: [] };
+    // Named by handle, never by c.anglerName - the leaderboard is public.
+    if(!groups[key]) groups[key] = { key, name: displayHandle(angler), fish: [], anglerIds: [] };
     groups[key].fish.push(c.length);
     if(groups[key].anglerIds.indexOf(c.anglerId)===-1) groups[key].anglerIds.push(c.anglerId);
     if(division==='team' && angler && angler.teamId){
       const mate = anglers.find(m=>m.teamId===angler.teamId && m.id!==angler.id);
-      groups[key].name = mate ? angler.name+' & '+mate.name : angler.name;
+      groups[key].name = mate ? displayHandle(angler)+' & '+displayHandle(mate) : displayHandle(angler);
     }
   });
 
@@ -4456,11 +4539,13 @@ async function renderBigFish(){
   const anglers = await loadAnglers();
   const inPot = new Set(anglers.filter(a=>a.bigfish && !a.disqualified).map(a=>a.id));
   const catches = (await loadCatches()).filter(c=>c.status==='approved' && isScoringSpecies(c.species) && inPot.has(c.anglerId));
+  const byId = {};
+  anglers.forEach(a=>{ byId[a.id] = a; });
   const el = document.getElementById('bf-list');
   if(catches.length===0){ el.innerHTML = '<p class="empty">No qualifying catches yet.</p>'; return; }
   const sorted = catches.slice().sort((a,b)=>b.length-a.length).slice(0,10);
   el.innerHTML = sorted.map((c,i)=>
-    '<div class="lbrow"><div class="rank">'+(i+1)+'</div><div class="who"><div class="name">'+escapeHtml(c.anglerName)+'</div><div class="sub">'+(c.division==='team'?'Team':'Solo')+' division</div></div><div class="len">'+c.length.toFixed(2)+'"</div></div>'
+    '<div class="lbrow"><div class="rank">'+(i+1)+'</div><div class="who"><div class="name">'+escapeHtml(displayHandle(byId[c.anglerId]))+'</div><div class="sub">'+(c.division==='team'?'Team':'Solo')+' division</div></div><div class="len">'+c.length.toFixed(2)+'"</div></div>'
   ).join('');
 }
 
@@ -6068,6 +6153,10 @@ async function runAiReview(catchId, btn){
 let contestantFilter = 'all';
 let expandedContestantId = null;
 let dqConfirmId = null;
+// Only one of these is ever set: editing and removing are mutually exclusive,
+// and neither survives collapsing the row.
+let editContestantId = null;
+let removeContestantId = null;
 
 document.querySelectorAll('#contestant-filters button').forEach(btn=>{
   btn.addEventListener('click', ()=>{
@@ -6204,7 +6293,71 @@ function contestantRowHtml(d, catches){
       '</div>';
   }
 
-  return '<div class="'+cls+'">'+head+'<div class="crow-body">'+stats+fish+dqArea+'</div></div>';
+  // ---- edit ----
+  // Name, phone and Big Fish are freely correctable. The handle is editable
+  // ONLY here: an angler cannot change theirs once chosen, but the director
+  // needs a way to deal with one that turns out to be a problem.
+  //
+  // Division is deliberately absent. Moving solo <-> team means creating or
+  // destroying a partner record and re-pricing the entry, which would quietly
+  // corrupt the pools and the payout split. Remove the entry and re-enter it.
+  let editArea = '';
+  if(editContestantId === a.id){
+    editArea =
+      '<div class="cdq">'+
+        '<div class="field"><label for="ce-name">Real name</label>'+
+          '<input type="text" id="ce-name" value="'+escapeHtml(a.name || '')+'"></div>'+
+        '<div class="field"><label for="ce-phone">Phone</label>'+
+          '<input type="tel" id="ce-phone" value="'+escapeHtml(a.phone || '')+'"></div>'+
+        '<div class="field"><label for="ce-handle">Handle</label>'+
+          '<input type="text" id="ce-handle" value="'+escapeHtml(a.handle || '')+'"></div>'+
+        '<div class="field"><label style="display:flex;align-items:center;gap:8px;font-weight:400;">'+
+          '<input type="checkbox" id="ce-bigfish" style="width:auto;"'+(a.bigfish?' checked':'')+'>'+
+          'In the Big Fish pot</label></div>'+
+        '<div class="err" id="ce-err" style="display:none;"></div>'+
+        '<div class="cdq-actions">'+
+          '<button class="small" data-act="c-edit-save" data-id="'+a.id+'">Save</button>'+
+          '<button class="small" data-act="c-edit-cancel" data-id="'+a.id+'">Cancel</button>'+
+        '</div>'+
+      '</div>';
+  }
+
+  // ---- remove ----
+  // Deleting an angler takes their catches, photos and chat posts with them.
+  // Anything else orphans records that still count toward standings and pools
+  // but belong to nobody. The confirmation names the exact damage first.
+  let removeArea = '';
+  if(removeContestantId === a.id){
+    const msgCount = (liveCache.messages || []).filter(m=>
+      isActiveEventRow(m) && m.anglerId === a.id).length;
+    const mateNote = a.teamId
+      ? '<br><strong>This is a team entry.</strong> Their partner stays registered but will be '+
+        'left without a teammate, so the team can no longer place. Remove both, or disqualify instead.'
+      : '';
+    removeArea =
+      '<div class="cdq">'+
+        '<div class="cdq-warn">Remove '+escapeHtml(a.name)+' completely?<br>'+
+          'This permanently deletes their entry, '+d.mine.length+' catch'+(d.mine.length===1?'':'es')+
+          ' with '+(d.mine.length===1?'its photo':'their photos')+', and '+msgCount+
+          ' chat post'+(msgCount===1?'':'s')+'. It cannot be undone and it changes the pools.'+
+          mateNote+'<br><br>'+
+          'To take someone out of the standings while keeping their record and their entry fee, '+
+          'disqualify them instead.</div>'+
+        '<div class="cdq-actions">'+
+          '<button class="small danger" data-act="c-remove-confirm" data-id="'+a.id+'">Yes, remove permanently</button>'+
+          '<button class="small" data-act="c-remove-cancel" data-id="'+a.id+'">Cancel</button>'+
+        '</div>'+
+      '</div>';
+  }
+
+  const manageArea = (editContestantId === a.id || removeContestantId === a.id) ? '' :
+    '<div class="actions" style="margin-top:8px;">'+
+      '<button class="small" data-act="c-edit" data-id="'+a.id+'">Edit profile</button>'+
+      '<button class="small danger" data-act="c-remove" data-id="'+a.id+'">Remove</button>'+
+    '</div>';
+
+  return '<div class="'+cls+'">'+head+'<div class="crow-body">'+
+    stats+fish+dqArea+manageArea+editArea+removeArea+'</div></div>';
 }
 
 function wireContestantRows(){
@@ -6214,8 +6367,103 @@ function wireContestantRows(){
     node.addEventListener('click', ()=>{
       const id = node.dataset.id;
       expandedContestantId = (expandedContestantId === id) ? null : id;
-      dqConfirmId = null;              // never leave a confirm armed across rows
+      // Never leave a confirm or an edit armed across rows.
+      dqConfirmId = null;
+      editContestantId = null;
+      removeContestantId = null;
       renderContestants();
+    });
+  });
+
+  // ---- edit / remove ----
+  const arm = (act, set)=>{
+    el.querySelectorAll('[data-act="'+act+'"]').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        editContestantId = null;
+        removeContestantId = null;
+        dqConfirmId = null;
+        if(set) set(btn.dataset.id);
+        renderContestants();
+      });
+    });
+  };
+  arm('c-edit',          (id)=>{ editContestantId = id; });
+  arm('c-edit-cancel',   null);
+  arm('c-remove',        (id)=>{ removeContestantId = id; });
+  arm('c-remove-cancel', null);
+
+  el.querySelectorAll('[data-act="c-edit-save"]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const errEl = document.getElementById('ce-err');
+      const showErr = (m)=>{ if(errEl){ errEl.textContent = m; errEl.style.display = 'block'; } };
+      if(errEl) errEl.style.display = 'none';
+
+      const name = (document.getElementById('ce-name').value || '').trim();
+      const phone = (document.getElementById('ce-phone').value || '').trim();
+      const handle = (document.getElementById('ce-handle').value || '').trim();
+      const bigfish = document.getElementById('ce-bigfish').checked;
+      if(!name) return showErr('An angler needs a real name on record.');
+      if(!handle) return showErr('An angler needs a handle — that is how they show up publicly.');
+
+      const anglers = await loadAnglers();
+      const idx = anglers.findIndex(a=> a.id === btn.dataset.id);
+      if(idx === -1) return showErr('That angler is no longer on the roster.');
+
+      const norm = (v)=> String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      // Same one-per-person rule the registration form enforces, minus this
+      // angler themselves.
+      if(anglers.some(a=> a.id !== btn.dataset.id && norm(a.name) === norm(name))){
+        return showErr(name + ' is already on the roster under another entry.');
+      }
+      if(anglers.some(a=> a.id !== btn.dataset.id && norm(a.handle) === norm(handle))){
+        return showErr('That handle is already taken. Two anglers sharing one makes the chat unreadable.');
+      }
+
+      anglers[idx].name = name;
+      anglers[idx].phone = phone;
+      anglers[idx].handle = handle;
+      anglers[idx].bigfish = bigfish;
+      // The partner field on the OTHER record carries this angler's name, so a
+      // rename has to fix both or the team reads inconsistently.
+      if(anglers[idx].teamId){
+        const mateIdx = anglers.findIndex(a=> a.teamId === anglers[idx].teamId && a.id !== anglers[idx].id);
+        if(mateIdx !== -1) anglers[mateIdx].partner = name;
+      }
+      if(!await saveAnglers(anglers)) return showErr('That did not save. Check your storage and try again.');
+      editContestantId = null;
+      renderAdmin();
+    });
+  });
+
+  el.querySelectorAll('[data-act="c-remove-confirm"]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const id = btn.dataset.id;
+
+      // Catches first, so their photos go with them. saveCatches() deletes the
+      // photo of any catch that disappears from the list.
+      const catches = await loadCatches();
+      const keptCatches = catches.filter(c=> c.anglerId !== id);
+      if(keptCatches.length !== catches.length) await saveCatches(keptCatches);
+
+      // Then their chat, including replies left under their posts.
+      const messages = await loadMessages();
+      const theirs = new Set(messages.filter(m=> m.anglerId === id).map(m=> m.id));
+      const keptMessages = messages.filter(m=> !theirs.has(m.id) && !theirs.has(m.replyTo));
+      if(keptMessages.length !== messages.length) await saveMessages(keptMessages);
+
+      // The angler last, so a failure part-way through never leaves a roster
+      // entry pointing at records that are already gone.
+      const anglers = await loadAnglers();
+      await saveAnglers(anglers.filter(a=> a.id !== id));
+
+      // If this device was that angler, it is now unregistered.
+      if(getMyAnglerId() === id) setMyAnglerId('');
+      removeContestantId = null;
+      expandedContestantId = null;
+      renderAdmin();
     });
   });
 

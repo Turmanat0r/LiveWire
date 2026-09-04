@@ -181,8 +181,8 @@ check('legacy angler is hidden under event 2', (await t.loadAnglers()).map(a => 
 // ============================================================
 section('2. the four features read scoped data');
 seed(
-  [{ id: 'a1', eventId: E1, name: 'Ann', division: 'solo', bigfish: true },
-   { id: 'a2', eventId: E2, name: 'Bob', division: 'solo', bigfish: true }],
+  [{ id: 'a1', eventId: E1, name: 'Ann', handle: 'Salty Bedrock Perch', division: 'solo', bigfish: true },
+   { id: 'a2', eventId: E2, name: 'Bob', handle: 'Rogue Basalt Pike',   division: 'solo', bigfish: true }],
   [{ id: 'c1', eventId: E1, anglerId: 'a1', anglerName: 'Ann', status: 'approved', species: 'Walleye', division: 'solo', length: 25, location: { withinBounds: true, distanceMiles: 1 }, timestamp: 1 },
    { id: 'c2', eventId: E2, anglerId: 'a2', anglerName: 'Bob', status: 'approved', species: 'Walleye', division: 'solo', length: 30, location: null, timestamp: 2 }],
   [{ id: 'd1', eventId: E1, target: 'solo', amount: 100 },
@@ -191,14 +191,18 @@ seed(
 
 await setEvent(E1);
 let ang = await t.loadAnglers(), cat = await t.loadCatches(), don = await t.loadDonations();
-check('leaderboard sees only event 1', t.standingsFor('solo', cat, ang).map(r => r.name), ['Ann']);
+check('leaderboard sees only event 1',
+  t.standingsFor('solo', cat, ang).map(r => r.name), ['Salty Bedrock Perch']);
+check('and never the real name', /Ann/.test(JSON.stringify(t.standingsFor('solo', cat, ang))), false);
 check('GPS check sees only event 1 catches', cat.map(c => c.id), ['c1']);
 check('Big Fish pot sees only event 1 anglers', ang.filter(a => a.bigfish).map(a => a.name), ['Ann']);
 check('payout sees only event 1 donations', don.reduce((s, d) => s + d.amount, 0), 100);
 
 await setEvent(E2);
 ang = await t.loadAnglers(); cat = await t.loadCatches(); don = await t.loadDonations();
-check('leaderboard sees only event 2', t.standingsFor('solo', cat, ang).map(r => r.name), ['Bob']);
+check('leaderboard sees only event 2',
+  t.standingsFor('solo', cat, ang).map(r => r.name), ['Rogue Basalt Pike']);
+check('again without the real name', /Bob/.test(JSON.stringify(t.standingsFor('solo', cat, ang))), false);
 check('GPS check sees only event 2 catches', cat.map(c => c.id), ['c2']);
 check('Big Fish pot sees only event 2 anglers', ang.filter(a => a.bigfish).map(a => a.name), ['Bob']);
 check('payout sees only event 2 donations', don.reduce((s, d) => s + d.amount, 0), 500);
@@ -1053,8 +1057,12 @@ for(let i = 0; i < 20; i++) packed.push({ id:'p'+i, handle:'Salty Granite Walley
 const forced = t.uniqueHandle(packed);
 check('a taken handle is not reissued', forced.toLowerCase() === 'salty granite walleye', false);
 
-check('display falls back to the real name for old records',
-  t.displayHandle({ name:'Ann Miller' }), 'Ann Miller');
+// A real name must never be the public fallback. Records from before handles
+// existed fall back to the entry ID instead.
+check('an old record falls back to its entry ID, not its name',
+  t.displayHandle({ name:'Ann Miller', tournamentId:'MKWO-001' }), 'MKWO-001');
+check('and with neither, to something anonymous',
+  t.displayHandle({ name:'Ann Miller' }), 'Angler');
 check('and prefers the handle when there is one',
   t.displayHandle({ name:'Ann Miller', handle:'Captain Soggy Pike' }), 'Captain Soggy Pike');
 check('an unknown angler still renders', t.displayHandle(null), 'Unknown angler');
@@ -1147,7 +1155,65 @@ check('replies cannot be replied to (one level only)', /data-chat-act="reply"/.t
 check('the length cap is a real number', t.CHAT_MAX > 0 && t.CHAT_MAX <= 1000, true);
 
 // ============================================================
-section('32. the page starts up clean');
+section('32. real names stay with the director');
+const PRIV = [
+  { id:'p1', eventId:E1, name:'Ann Miller', phone:'406-555-0100', handle:'Salty Bedrock Perch',
+    tournamentId:'MKWO-001', division:'team', role:'captain', teamId:'t1', partner:'Cal Reed', bigfish:true },
+  { id:'p2', eventId:E1, name:'Cal Reed', phone:'', handle:'Crankbait Muskie Esq.',
+    tournamentId:'MKWO-001P', division:'team', role:'partner', teamId:'t1', partner:'Ann Miller', bigfish:true }
+];
+const PRIV_CATCHES = [
+  { id:'pc1', eventId:E1, anglerId:'p1', anglerName:'Ann Miller', species:'Walleye',
+    status:'approved', division:'team', length:26 }
+];
+seed(PRIV, PRIV_CATCHES, [], {});
+await setEvent(E1);
+
+const standing = t.standingsFor('team', await t.loadCatches(), await t.loadAnglers());
+const asJson = JSON.stringify(standing);
+check('the team standing is named by handles', /Salty Bedrock Perch/.test(asJson), true);
+check('and includes the teammate\'s handle', /Crankbait Muskie Esq\./.test(asJson), true);
+check('no real name reaches the standings', /Ann Miller|Cal Reed/.test(asJson), false);
+check('no phone number either', /406-555-0100/.test(asJson), false);
+
+// A catch carries anglerName for the director's own screens - the public
+// renderers must not be reading it.
+check('the catch record still holds the real name for the director',
+  PRIV_CATCHES[0].anglerName, 'Ann Miller');
+
+// ============================================================
+section('33. one entry per person, one per device');
+const norm = (v)=> String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+// The rule the registration form applies, checked directly.
+const isTaken = (roster, nm)=> roster.some(a=> norm(a.name) === norm(nm));
+check('an exact repeat is caught', isTaken(PRIV, 'Ann Miller'), true);
+check('case does not dodge it', isTaken(PRIV, 'ANN MILLER'), true);
+check('nor does padding', isTaken(PRIV, '  Ann   Miller '), true);
+check('a genuinely new angler is fine', isTaken(PRIV, 'Ann Millar'), false);
+check('a partner already on the roster is caught', isTaken(PRIV, 'Cal Reed'), true);
+
+// One per device: the register screen swaps to the entry once this device
+// holds one, so the form is not even reachable.
+t.setMyAnglerId('p1');
+check('this device resolves to its entry',
+  (await t.loadAnglers()).some(a=> a.id === t.getMyAnglerId()), true);
+t.setMyAnglerId(null);
+check('a fresh device holds none',
+  (await t.loadAnglers()).some(a=> a.id === t.getMyAnglerId()), false);
+
+// ============================================================
+section('34. handles are fixed once chosen');
+// There is no angler-facing path that writes a handle after registration -
+// the only writer is the director's edit form. If that ever changes, this
+// count goes up and someone has to justify it.
+const appSrc = fs.readFileSync(HTML, 'utf8');
+const handleWrites = (appSrc.match(/\.handle\s*=/g) || []).length;
+check('exactly one place assigns a handle after the fact', handleWrites, 1);
+check('and it is the director edit form',
+  /anglers\[idx\]\.handle = handle;/.test(appSrc), true);
+
+// ============================================================
+section('35. the page starts up clean');
 // Let the init IIFE's promise chain settle before judging it.
 await new Promise(r => setTimeout(r, 0));
 check('no startup error banner', startupBanners, []);
