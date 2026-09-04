@@ -28,7 +28,7 @@
 select tablename, policyname, cmd, roles
 from pg_policies
 where schemaname = 'public'
-  and tablename in ('anglers','catches','donations','config')
+  and tablename in ('anglers','catches','donations','messages','config')
 order by tablename, policyname;
 
 
@@ -52,6 +52,12 @@ drop policy if exists donations_public_rw on public.donations;
 drop policy if exists donations_read      on public.donations;
 drop policy if exists donations_write     on public.donations;
 
+drop policy if exists messages_public_rw  on public.messages;
+drop policy if exists messages_read       on public.messages;
+drop policy if exists messages_insert     on public.messages;
+drop policy if exists messages_update     on public.messages;
+drop policy if exists messages_delete     on public.messages;
+
 drop policy if exists config_public_rw    on public.config;
 drop policy if exists config_read         on public.config;
 drop policy if exists config_write        on public.config;
@@ -63,6 +69,7 @@ drop policy if exists config_write        on public.config;
 alter table public.anglers   enable row level security;
 alter table public.catches   enable row level security;
 alter table public.donations enable row level security;
+alter table public.messages  enable row level security;
 alter table public.config    enable row level security;
 
 create policy anglers_public_rw on public.anglers
@@ -74,6 +81,10 @@ create policy catches_public_rw on public.catches
   using (true) with check (true);
 
 create policy donations_public_rw on public.donations
+  for all to anon, authenticated
+  using (true) with check (true);
+
+create policy messages_public_rw on public.messages
   for all to anon, authenticated
   using (true) with check (true);
 
@@ -115,7 +126,7 @@ create policy catch_photos_delete on storage.objects
 select tablename, policyname, cmd, roles
 from pg_policies
 where schemaname = 'public'
-  and tablename in ('anglers','catches','donations','config')
+  and tablename in ('anglers','catches','donations','messages','config')
 order by tablename;
 
 -- Then open the app and register a test angler. If that saves, you are back.

@@ -114,6 +114,31 @@ create policy donations_write on public.donations
   with check ((auth.jwt() -> 'app_metadata' ->> 'director') = 'true');
 
 
+-- ---- messages ----
+-- Chat is readable by anyone who can see the tournament. You post as yourself
+-- and may delete your own; the director can delete anything, which is the
+-- moderation tool for when the razzing stops being funny.
+drop policy if exists messages_public_rw on public.messages;
+drop policy if exists messages_read      on public.messages;
+drop policy if exists messages_insert    on public.messages;
+drop policy if exists messages_update    on public.messages;
+drop policy if exists messages_delete    on public.messages;
+
+create policy messages_read on public.messages
+  for select to anon, authenticated
+  using (true);
+
+create policy messages_insert on public.messages
+  for insert to authenticated
+  with check (owner = auth.uid());
+
+-- No update policy on purpose: a message cannot be edited after posting, so it
+-- cannot change out from under a reply that quoted it.
+create policy messages_delete on public.messages
+  for delete to authenticated
+  using (owner = auth.uid() or (auth.jwt() -> 'app_metadata' ->> 'director') = 'true');
+
+
 -- ---- config ----
 -- Every device must READ this - it carries the live event, the target species
 -- and the course boundary. Only the director may write it. Before this, any

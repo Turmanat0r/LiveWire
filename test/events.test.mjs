@@ -59,6 +59,9 @@ globalThis.__t = {
   myAnglerIds, populateAnglerSelect, statusClass, statusHtml, lengthHtml, escapeHtml,
   bearerToken, authModeLabel, noteAuthSession, initAuth, SUPABASE_ANON_KEY,
   supabaseBackend,
+  generateHandle, uniqueHandle, displayHandle,
+  loadMessages, saveMessages, chatAuthor, chatUnreadCount, chatLastSeen,
+  markChatSeen, chatItemHtml, chatBragHtml, announceCatch, CHAT_MAX,
   get authMode(){ return authMode; },
   get adminUnlocked(){ return adminUnlocked; }, set adminUnlocked(v){ adminUnlocked = v; },
   loadAwardsBudget, saveAwardsBudget, awardsBudgetMap,
@@ -1031,7 +1034,120 @@ try{
 }
 
 // ============================================================
-section('30. the page starts up clean');
+section('30. competitor handles');
+const H_ROSTER = [];
+for(let i = 0; i < 300; i++){
+  const h = t.uniqueHandle(H_ROSTER);
+  H_ROSTER.push({ id:'h'+i, handle:h });
+}
+check('300 handles are all distinct',
+  new Set(H_ROSTER.map(a => a.handle.toLowerCase())).size, 300);
+check('none come out empty', H_ROSTER.every(a => a.handle.trim().length > 3), true);
+check('none are absurdly long', H_ROSTER.every(a => a.handle.length < 90), true);
+
+// The collision path: every roll already taken, so it must number rather than
+// hang or hand back a duplicate.
+const only = { pick: 0 };
+const packed = [];
+for(let i = 0; i < 20; i++) packed.push({ id:'p'+i, handle:'Salty Granite Walleye' });
+const forced = t.uniqueHandle(packed);
+check('a taken handle is not reissued', forced.toLowerCase() === 'salty granite walleye', false);
+
+check('display falls back to the real name for old records',
+  t.displayHandle({ name:'Ann Miller' }), 'Ann Miller');
+check('and prefers the handle when there is one',
+  t.displayHandle({ name:'Ann Miller', handle:'Captain Soggy Pike' }), 'Captain Soggy Pike');
+check('an unknown angler still renders', t.displayHandle(null), 'Unknown angler');
+
+// ============================================================
+section('31. chat');
+const CHAT_ROSTER = [
+  { id:'a1', eventId:E1, name:'Ann', handle:'Salty Bedrock Perch',  division:'solo', role:'solo', teamId:null },
+  { id:'a2', eventId:E1, name:'Bob', handle:'Crankbait Muskie Esq.', division:'solo', role:'solo', teamId:null }
+];
+seed(CHAT_ROSTER, [
+  { id:'c1', eventId:E1, anglerId:'a1', anglerName:'Ann', species:'Walleye',
+    status:'pending', division:'solo', length:24.5 }
+], [], {});
+t.liveCache.messages = [];
+t.loadedIds.messages = null;
+await setEvent(E1);
+t.setMyAnglerId('a1');
+t.adminUnlocked = false;
+
+check('the author is this device\'s angler', t.chatAuthor(CHAT_ROSTER).id, 'a1');
+t.setMyAnglerId(null);
+check('an unregistered device has no author', t.chatAuthor(CHAT_ROSTER), null);
+t.setMyAnglerId('a1');
+
+// Submitting a catch announces it.
+await t.announceCatch('c1', CHAT_ROSTER[0]);
+let msgs = await t.loadMessages();
+check('a catch posts one message', msgs.length, 1);
+check('tagged as a catch', msgs[0].kind, 'catch');
+check('pointing at the catch', msgs[0].catchId, 'c1');
+check('under the angler\'s handle', msgs[0].handle, 'Salty Bedrock Perch');
+check('and stamped with the event', t.rowEventId(msgs[0]), E1);
+
+// The brag reads the catch live, so a rejection is not left boasting.
+let ctxCatches = await t.loadCatches();
+check('the brag shows the length', /24\.50/.test(t.chatBragHtml(msgs[0], ctxCatches)), true);
+check('and the live status', /pending/.test(t.chatBragHtml(msgs[0], ctxCatches)), true);
+ctxCatches[0].status = 'rejected';
+check('a rejected catch says so, not the old status',
+  /rejected/.test(t.chatBragHtml(msgs[0], ctxCatches)), true);
+check('a deleted catch degrades gracefully',
+  /no longer on the board/.test(t.chatBragHtml(msgs[0], [])), true);
+
+// Messages are event-scoped like everything else.
+await setEvent(E2);
+check('another event sees no chat', (await t.loadMessages()).length, 0);
+await setEvent(E1);
+check('and switching back finds it', (await t.loadMessages()).length, 1);
+
+// Unread counting ignores your own posts.
+t.liveCache.messages = [
+  { id:'m1', eventId:E1, anglerId:'a2', kind:'chat', text:'nice one', timestamp: 1000 },
+  { id:'m2', eventId:E1, anglerId:'a1', kind:'chat', text:'thanks',   timestamp: 2000 }
+];
+t.loadedIds.messages = null;
+mem.delete('mkwo:chatSeen:' + E1);
+msgs = await t.loadMessages();
+check('a stranger\'s post is unread', t.chatUnreadCount(msgs, CHAT_ROSTER), 1);
+check('your own is not counted', t.chatUnreadCount(msgs, CHAT_ROSTER) < 2, true);
+t.markChatSeen(msgs);
+check('marking seen clears it', t.chatUnreadCount(msgs, CHAT_ROSTER), 0);
+check('and the watermark is the newest message', t.chatLastSeen(), 2000);
+
+// Message text is written by other people, so it must never reach innerHTML raw.
+const evil = { id:'x', eventId:E1, anglerId:'a2', kind:'chat',
+               text:'<img src=x onerror=alert(1)>', timestamp: 3000 };
+const ctx = { anglerById:{ a2:{ id:'a2', handle:'<script>bad</script>' } },
+              catches:[], mine:new Set(['a1']), isDirector:false, repliesByParent:{} };
+const html = t.chatItemHtml(evil, ctx, false);
+check('message text creates no element', /<img/.test(html), false);
+check('the payload survives as escaped text', /&lt;img/.test(html), true);
+check('a handle cannot inject either', /<script/.test(html), false);
+check('escaped instead', /&lt;script/.test(html), true);
+
+// Moderation affordances.
+check('you can delete your own', /data-chat-act="delete"/.test(
+  t.chatItemHtml({ id:'m2', anglerId:'a1', kind:'chat', text:'x', timestamp:1 },
+    { anglerById:{}, catches:[], mine:new Set(['a1']), isDirector:false, repliesByParent:{} }, false)), true);
+check('not someone else\'s', /data-chat-act="delete"/.test(
+  t.chatItemHtml({ id:'m1', anglerId:'a2', kind:'chat', text:'x', timestamp:1 },
+    { anglerById:{}, catches:[], mine:new Set(['a1']), isDirector:false, repliesByParent:{} }, false)), false);
+check('but the director can delete anything', /data-chat-act="delete"/.test(
+  t.chatItemHtml({ id:'m1', anglerId:'a2', kind:'chat', text:'x', timestamp:1 },
+    { anglerById:{}, catches:[], mine:new Set(['a1']), isDirector:true, repliesByParent:{} }, false)), true);
+check('replies cannot be replied to (one level only)', /data-chat-act="reply"/.test(
+  t.chatItemHtml({ id:'r1', anglerId:'a2', kind:'chat', text:'x', timestamp:1 },
+    { anglerById:{}, catches:[], mine:new Set(), isDirector:false, repliesByParent:{} }, true)), false);
+
+check('the length cap is a real number', t.CHAT_MAX > 0 && t.CHAT_MAX <= 1000, true);
+
+// ============================================================
+section('32. the page starts up clean');
 // Let the init IIFE's promise chain settle before judging it.
 await new Promise(r => setTimeout(r, 0));
 check('no startup error banner', startupBanners, []);

@@ -544,6 +544,45 @@
   .gps-row-name{font-size:13px;font-weight:600;}
   .gps-row-meta{font-size:11px;color:var(--steel);}
 
+  /* ---- handle + chat ---- */
+  .handle-pick{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:11px;border:1px solid var(--line);background:var(--paper-2);border-radius:4px;
+  }
+  .handle-pick span{font-family:'Fraunces',serif;font-size:15px;color:var(--deep);line-height:1.3;}
+  .handle-pick button{flex-shrink:0;}
+  .chat-compose{display:flex;gap:8px;align-items:flex-end;margin-bottom:14px;}
+  .chat-compose textarea{
+    flex:1;min-height:44px;max-height:120px;padding:10px 11px;border:1px solid var(--line);
+    border-radius:4px;font-family:inherit;font-size:14px;background:var(--paper);
+    color:var(--ink);resize:vertical;
+  }
+  .chat-compose button{width:auto;flex-shrink:0;padding:11px 16px;}
+  .chat-count{font-size:11px;color:var(--steel);text-align:right;margin:-8px 0 12px;}
+  .chat-item{padding:12px 0;border-bottom:1px solid var(--line);}
+  .chat-item:last-child{border-bottom:0;}
+  .chat-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;}
+  .chat-handle{font-family:'Fraunces',serif;font-size:14px;color:var(--deep);font-weight:600;}
+  .chat-when{font-size:10px;color:var(--steel);flex-shrink:0;}
+  .chat-text{font-size:14px;line-height:1.5;margin-top:4px;white-space:pre-wrap;word-break:break-word;}
+  .chat-brag{
+    margin-top:6px;padding:9px 11px;border-left:3px solid var(--gold);
+    background:var(--paper-2);font-size:13px;
+  }
+  .chat-brag strong{font-family:'Fraunces',serif;font-size:15px;color:var(--deep);}
+  .chat-replies{margin:8px 0 0 14px;padding-left:12px;border-left:1px solid var(--line);}
+  .chat-reply{padding:7px 0;}
+  .chat-reply .chat-text{font-size:13px;}
+  .chat-actions{display:flex;gap:6px;margin-top:7px;}
+  .chat-mine .chat-handle{color:var(--gold-deep);}
+  .chat-unread{
+    position:absolute;top:2px;right:6px;min-width:16px;height:16px;padding:0 4px;
+    border-radius:8px;background:var(--danger);color:#fff;
+    font-family:'Inter',system-ui,sans-serif;font-size:10px;font-weight:600;
+    line-height:16px;text-align:center;
+  }
+  nav.tabbar button{position:relative;}
+
   /* ---- course map ----
      Leaflet and its tiles both need a network. Everything that decides whether
      a position is in bounds is local maths, so the map is an enhancement laid
@@ -855,6 +894,14 @@
             Enter Big Fish side pot &mdash; $10/angler ($20 for a team entry), winner take all
           </label>
         </div>
+        <div class="field">
+          <label>Your competitor handle</label>
+          <div class="handle-pick">
+            <span id="reg-handle"></span>
+            <button class="small" type="button" id="reg-handle-reroll">Reroll</button>
+          </div>
+          <p class="hint" style="margin:6px 0 0;">This is the name you show up as in the tournament chat. Reroll until you like it &mdash; it is fixed once you register. Standings and payouts use your real name.</p>
+        </div>
         <div class="err" id="reg-err" style="display:none;"></div>
         <button class="primary" id="reg-submit">Complete registration</button>
         <p class="hint" id="reg-close-note">Registration closes June 1, 2027. This confirms your spot on the roster &mdash; entry fees and side pot buy-ins are collected separately by PayPal, per the info in your confirmation email.</p>
@@ -1014,6 +1061,12 @@
             <input type="file" id="sub-photo" accept="image/*">
           </div>
         </div>
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:8px;font-weight:400;">
+            <input type="checkbox" id="sub-announce" style="width:auto;" checked>
+            Tell the field &mdash; posts this catch to the tournament chat
+          </label>
+        </div>
         <div class="err" id="sub-err" style="display:none;"></div>
         <button class="primary" id="sub-submit">Submit catch for scoring</button>
         <p class="hint">Fish must be shown flat on a bump board with a visible measuring scale (e.g. Ketch X-Board, Bubba Bump Board, YakAttack LeaderBoard, or similar) in the photo. Catches are reviewed before they count on the leaderboard.</p>
@@ -1104,6 +1157,22 @@
         <h2>Tournament payouts</h2>
         <p class="hint" style="margin-top:0;">Read-only estimate from the current roster, plus any donations the tournament director has logged. Final division pools use a 50/30/20 split. Big Fish is winner take all.</p>
         <div id="public-payout-body"></div>
+      </div>
+    </section>
+
+    <!-- CHAT -->
+    <section class="screen" id="screen-chat">
+      <a class="backlink" data-goto="home" role="button" tabindex="0">&larr; Home</a>
+      <div class="card">
+        <h2>Tournament chat</h2>
+        <p class="hint" style="margin-top:0;" id="chat-intro"></p>
+        <div class="chat-compose">
+          <textarea id="chat-input" rows="2" maxlength="280" placeholder="Say something to the field&hellip;"></textarea>
+          <button class="secondary" id="chat-send">Post</button>
+        </div>
+        <div class="chat-count" id="chat-remaining"></div>
+        <div class="err" id="chat-err" style="display:none;"></div>
+        <div id="chat-feed"></div>
       </div>
     </section>
 
@@ -1361,6 +1430,7 @@
     <button class="active" data-screen="home"><span class="ico"><svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9a1 1 0 0 0 1 1H9a1 1 0 0 0 1-1v-4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v4a1 1 0 0 0 1 1h2.5a1 1 0 0 0 1-1v-9"/></svg></span>Home</button>
     <button data-screen="submit"><span class="ico"><svg viewBox="0 0 24 24"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.3"/></svg></span>Submit</button>
     <button data-screen="leaderboard"><span class="ico"><svg viewBox="0 0 24 24"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v6a5 5 0 0 1-10 0V4Z"/><path d="M7 6H4.5A1.5 1.5 0 0 0 3 7.5 3.5 3.5 0 0 0 6.5 11H7"/><path d="M17 6h2.5A1.5 1.5 0 0 1 21 7.5 3.5 3.5 0 0 1 17.5 11H17"/></svg></span>Standings</button>
+    <button data-screen="chat"><span class="ico"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-8 8H7l-3 3v-6.5A8 8 0 1 1 20 12Z"/><path d="M8.5 11h7M8.5 14.5h4"/></svg></span>Chat<span class="chat-unread" id="chat-badge" hidden></span></button>
     <button data-screen="admin"><span class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.9a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V20a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.98 18.35a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87A1.7 1.7 0 0 0 3.06 12.9H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.65 7.87a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1.03-1.56V2a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V8a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.03Z"/></svg></span>Director</button>
   </nav>
 
@@ -1938,6 +2008,83 @@ function boundaryBadgeHtml(c){
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
 function pad3(n){ return String(n).padStart(3,'0'); }
 
+// ---- competitor handles ----
+// Ported from handle-generator.html. Every angler gets one at registration and
+// it is the name they razz each other under in the chat. Real names stay on
+// everything official - standings, payouts, the director's roster - because
+// that is money and placings; the handle is for the banter.
+const HANDLE_TITLES = ['Captain','Sir','Doc','Lord','Deputy','The Right Honorable','Reverend','Professor',
+  'Colonel','General','Chief','The Notorious','Commodore','Warden','Judge','Ambassador','Marshal','Baron',
+  'The Honorable','Detective','Sergeant','Governor'];
+const HANDLE_ADJECTIVES = ['Sneaky','Grumpy','Wobbly','Feral','Rogue','Salty','Lucky','Reckless','Soggy',
+  'Rowdy','Chaotic','Stubborn','Slippery','Mighty','Legendary','Wandering','Cranky','Jolly','Sly',
+  'Sedimental','Fossilized','Petrified','Igneous','Molten','Weathered','Unbothered','Overqualified',
+  'Suspiciously Calm','Feisty','Ornery','Restless','Waterlogged','Windburnt','Overcaffeinated',
+  'Unlicensed','Self-Appointed','Undeterred','Bewildered','Vengeful','Nocturnal','Barnacled','Crusty',
+  'Formerly Respectable','Mildly Feral','Certified','Unsupervised'];
+const HANDLE_GEO = ['Granite','Boulder','Shale','Basalt','Quartz','Obsidian','Bedrock','Canyon','Ridge',
+  'Fossil','Pyrite','Slate','Gravel','Cobble','Talus','Moraine','Feldspar','Schist','Limestone','Sediment',
+  'Cliffside','Riverstone','Mica','Sandstone','Dolomite','Gneiss','Magma','Silt','Chert','Alluvium','Bluff',
+  'Outcrop','Scree','Tundra','Permafrost','Butte','Mesa','Glacier','Tectonic','Sedimentary'];
+const HANDLE_FISH = ['Walleye','Bass','Pike','Catfish','Perch','Sturgeon','Trout','Muskie','Crappie','Carp',
+  'Gar','Herring','Salmon','Bluegill','Sucker','Chub','Minnow','Grayling','Kokanee','Ling','Sunfish',
+  'Northern','Burbot','Whitefish','Shiner','Darter','Bullhead','Smallmouth','Largemouth','Cisco','Goldeye',
+  'Sauger','Redhorse'];
+const HANDLE_SUFFIXES = ['McFin','Esq.','Jr.','the Third','of the Ponds','of Canyon Ferry','the Relentless',
+  'the Unbothered','the Elder','the Persistent','the Undefeated (Probably)','the Overpacked','of the Silos',
+  'the Sunburnt','the Overprepared','the Chronically Early','the Reigning Champion (Self-Declared)',
+  'the Well-Anchored','the Suspiciously Confident','the Locally Feared','of Third Place','the Bait-Rich',
+  'the Underfunded','the Overinsured'];
+const HANDLE_BAIT = ['Spinnerbait','Crankbait','Jerkbait','Chatterbait','Wacky Rig','Drop Shot','Jig','Spoon',
+  'Swimbait','Topwater','Bobber','Nightcrawler','Leech','Rooster Tail','Rapala','Powerbait','Treble Hook',
+  'Gulp Minnow','Rubber Worm','Buzzbait'];
+const HANDLE_WATERS = ['Canyon Ferry','Yellowstone','Missouri River','Bitterroot','Clark Fork',
+  'Flathead Lake','Hauser Lake','Holter Lake','Madison River','Gallatin River','Big Hole River','Fort Peck',
+  'Georgetown Lake','Hebgen Lake','Noxon Reservoir','Smith River','Blackfoot River','Rock Creek',
+  'Beaverhead','Tongue River','Ruby River'];
+const HANDLE_FASTFOOD = ['Whopper','Big Mac','McNugget','Baconator','Frosty','Crunchwrap','Gordita',
+  'Chalupa','Doritos Locos','Waffle Fry','McFlurry','Drive-Thru','Value Meal','Extra Crispy','Biggie Size',
+  'Dollar Menu','Curly Fry','Footlong','Spicy Chicken Sandwich','Junior Bacon'];
+
+function handlePick(arr){ return arr[Math.floor(Math.random() * arr.length)]; }
+
+function generateHandle(){
+  const pattern = Math.floor(Math.random() * 8);
+  if(pattern === 0) return [handlePick(HANDLE_ADJECTIVES), handlePick(HANDLE_GEO), handlePick(HANDLE_FISH)].join(' ');
+  if(pattern === 1) return [handlePick(HANDLE_FISH), handlePick(HANDLE_SUFFIXES)].join(' ');
+  if(pattern === 2) return [handlePick(HANDLE_TITLES), handlePick(HANDLE_ADJECTIVES), handlePick(HANDLE_FISH)].join(' ');
+  if(pattern === 3) return [handlePick(HANDLE_GEO), handlePick(HANDLE_FISH), handlePick(HANDLE_SUFFIXES)].join(' ');
+  if(pattern === 4) return [handlePick(HANDLE_BAIT), handlePick(HANDLE_FISH)].join(' ');
+  if(pattern === 5) return [handlePick(HANDLE_WATERS), handlePick(HANDLE_FISH)].join(' ');
+  if(pattern === 6) return [handlePick(HANDLE_FASTFOOD), handlePick(HANDLE_FISH)].join(' ');
+  const flavor = handlePick([HANDLE_BAIT, HANDLE_WATERS, HANDLE_FASTFOOD, HANDLE_GEO]);
+  return [handlePick(HANDLE_TITLES), handlePick(flavor), handlePick(HANDLE_FISH), handlePick(HANDLE_SUFFIXES)].join(' ');
+}
+
+// Two anglers sharing a handle would make the chat unreadable, and the pool is
+// big but not infinite. Reroll off a collision, and if the rolls keep landing
+// on taken names, number it rather than loop forever.
+function uniqueHandle(anglers){
+  const taken = new Set((anglers || []).map(a=> String(a.handle || '').toLowerCase()));
+  for(let i = 0; i < 40; i++){
+    const h = generateHandle();
+    if(!taken.has(h.toLowerCase())) return h;
+  }
+  const base = generateHandle();
+  for(let n = 2; n < 500; n++){
+    const h = base + ' ' + n;
+    if(!taken.has(h.toLowerCase())) return h;
+  }
+  return base + ' ' + uid().slice(-4);
+}
+
+// What to call an angler in the chat. Falls back to the real name for anyone
+// who registered before handles existed.
+function displayHandle(angler){
+  if(!angler) return 'Unknown angler';
+  return angler.handle || angler.name || 'Unknown angler';
+}
+
 // ---- shared tournament store ----
 // One store, every device. An angler's phone and the director's tablet read and
 // write the SAME records, so a catch submitted on the water lands in the
@@ -2002,16 +2149,16 @@ function deepClone(v){
   try{ return JSON.parse(JSON.stringify(v)); }catch(e){ return v; }
 }
 
-const SHARED_COLLECTIONS = ['anglers','catches','donations'];
+const SHARED_COLLECTIONS = ['anglers','catches','donations','messages'];
 let store = null;                 // the active backend, or null for device-only
 let syncState = 'connecting';     // connecting | live | offline | local
 let syncDetail = '';
 let storeFull = false;
-const liveCache = { anglers:null, catches:null, donations:null, config:null };
+const liveCache = { anglers:null, catches:null, donations:null, messages:null, config:null };
 // Ids as they were when the caller last LOADED. Deleting is scoped to these, so
 // a catch another angler files between one device's load and its save is never
 // mistaken for "the user removed this".
-const loadedIds = { anglers:null, catches:null, donations:null };
+const loadedIds = { anglers:null, catches:null, donations:null, messages:null };
 
 // ---- which event is live ----
 // Held in the shared config record rather than on the phone, so every device
@@ -2225,7 +2372,8 @@ async function initAuth(){
 // realtime and costs far less complexity than a websocket.
 function supabaseBackend(){
   const base = SUPABASE_URL.replace(/\/+$/, '');
-  const TABLES = { anglers:'anglers', catches:'catches', donations:'donations', config:'config' };
+  const TABLES = { anglers:'anglers', catches:'catches', donations:'donations',
+                   messages:'messages', config:'config' };
   // Built per request, not once: the session token is refreshed in the
   // background, and a header object captured at startup would go stale and
   // start 401ing an hour into the event.
@@ -2645,6 +2793,8 @@ async function loadCatches(){ return cachedRows('catches'); }
 async function loadCatchesAllEvents(){ return deepClone(allRows('catches')); }
 async function saveCatches(list){ return await saveCollection('catches', list); }
 async function loadDonations(){ return cachedRows('donations'); }
+async function loadMessages(){ return cachedRows('messages'); }
+async function saveMessages(list){ return await saveCollection('messages', list); }
 async function saveDonations(list){ return await saveCollection('donations', list); }
 
 // ---- config ----
@@ -3410,13 +3560,16 @@ function fishIErrorCopy(e){
 }
 
 // ---- navigation ----
-const screens = ['home','register','checkin','submit','manage','livewell','leaderboard','bigfish','gps','payouts','admin'];
+const screens = ['home','register','checkin','submit','manage','livewell','leaderboard','bigfish','gps','payouts','chat','admin'];
 let currentScreen = 'home';
 
 // Split out of goto() so a write from another device can repaint what is
 // already on screen without navigating anywhere.
 function renderScreen(name){
   renderEventCopy();
+  // The badge lives in the tab bar, so it has to stay current on every
+  // screen - not only while the chat is open.
+  if(name !== 'chat') refreshChatBadge();
   if(name==='home'){
     renderHome();
     updateEventCountdown();
@@ -3430,6 +3583,7 @@ function renderScreen(name){
   if(name==='bigfish') renderBigFish();
   if(name==='gps') renderPublicGps();
   if(name==='payouts') renderPayoutCalculator();
+  if(name==='chat') renderChat();
   if(name==='admin') renderAdmin();
 }
 function refreshActiveScreen(){ renderScreen(currentScreen); }
@@ -3518,7 +3672,23 @@ async function renderHome(){
 }
 
 // ---- register screen ----
+// The handle shown on the form before it is committed. Held here rather than
+// read back off the DOM so a background repaint cannot quietly change what the
+// angler thought they were signing up as.
+let pendingHandle = null;
+
+async function refreshPendingHandle(reroll){
+  const el = document.getElementById('reg-handle');
+  if(!el) return;
+  if(reroll || !pendingHandle){
+    pendingHandle = uniqueHandle(await loadAnglers());
+  }
+  el.textContent = pendingHandle;
+}
+bindEl('reg-handle-reroll','click', ()=> refreshPendingHandle(true));
+
 function renderRegisterScreen(){
+  refreshPendingHandle(false);
   renderRoster();   // the roster card is on this screen; keep it current
   const closed = isRegistrationClosed();
   document.getElementById('reg-closed-notice').style.display = closed ? 'block' : 'none';
@@ -3562,6 +3732,7 @@ bindEl('reg-submit','click', async ()=>{
   const captain = {
     id: captainId, name, phone, division, partner: division==='team'?partnerName:'', bigfish,
     tournamentId, role: division==='team' ? 'captain' : 'solo', teamId: null,
+    handle: pendingHandle || uniqueHandle(anglers),
     registeredAt: Date.now(), checkins: freshCheckins()
   };
   anglers.push(captain);
@@ -3575,6 +3746,9 @@ bindEl('reg-submit','click', async ()=>{
     anglers.push({
       id: uid(), name: partnerName, phone: '', division: 'team', partner: name, bigfish,
       tournamentId: tournamentId+'P', role: 'partner', teamId,
+      // Rolled against the list including the captain just pushed, so
+      // teammates can never land on the same handle as each other.
+      handle: uniqueHandle(anglers),
       registeredAt: Date.now(), checkins: freshCheckins()
     });
   }
@@ -3587,7 +3761,10 @@ bindEl('reg-submit','click', async ()=>{
   setMyAnglerId(captainId);
 
   // Reset the whole form, division included - it used to stay on Team with an
-  // empty partner box, which silently blocked the next entry.
+  // empty partner box, which silently blocked the next entry. The handle is
+  // cleared too, so a second registration on the same device gets its own.
+  pendingHandle = null;
+  refreshPendingHandle(true);
   document.getElementById('reg-name').value='';
   document.getElementById('reg-phone').value='';
   document.getElementById('reg-partner').value='';
@@ -4080,6 +4257,12 @@ bindEl('sub-submit','click', async ()=>{
       return;
     }
 
+    // The catch is safely filed by here. Announcing is a nice-to-have, so it
+    // runs after and its failure is swallowed rather than reported as a failed
+    // submission.
+    const announce = document.getElementById('sub-announce');
+    if(!announce || announce.checked) await announceCatch(catchId, angler);
+
     document.getElementById('sub-length').value='';
     fileInput.value='';
     capturedPhotoData = null;
@@ -4279,6 +4462,234 @@ async function renderBigFish(){
   el.innerHTML = sorted.map((c,i)=>
     '<div class="lbrow"><div class="rank">'+(i+1)+'</div><div class="who"><div class="name">'+escapeHtml(c.anglerName)+'</div><div class="sub">'+(c.division==='team'?'Team':'Solo')+' division</div></div><div class="len">'+c.length.toFixed(2)+'"</div></div>'
   ).join('');
+}
+
+// ---- tournament chat ----
+// One flat collection of messages, event-scoped like everything else because
+// it loads through cachedRows(). Two kinds:
+//   catch - posted automatically when a catch is submitted, the brag
+//   chat  - something an angler typed
+// Either can carry replyTo, which threads it under a parent. Deliberately one
+// level deep: this is a boat-ramp group chat, not a forum.
+const CHAT_MAX = 280;
+
+// Every message is written by whoever is holding this device. An angler cannot
+// post as someone else, the same way the catch and check-in pickers are scoped.
+function chatAuthor(anglers){
+  const mine = myAnglerIds(anglers);
+  if(mine.length === 0) return null;
+  return anglers.find(a=> a.id === mine[0]) || null;
+}
+
+function chatSeenKey(){ return 'chatSeen:' + activeEventId(); }
+function chatLastSeen(){
+  const raw = localGet(chatSeenKey());
+  const n = raw ? parseInt(raw, 10) : 0;
+  return isFinite(n) ? n : 0;
+}
+function markChatSeen(messages){
+  const newest = (messages || []).reduce((m, x)=> Math.max(m, x.timestamp || 0), 0);
+  if(newest > chatLastSeen()) localSet(chatSeenKey(), String(newest));
+}
+
+// Anything newer than the last visit, not written by this device. Own posts
+// are excluded or the badge would light up for your own bragging.
+function chatUnreadCount(messages, anglers){
+  const since = chatLastSeen();
+  const mine = new Set(myAnglerIds(anglers));
+  return (messages || []).filter(m=>
+    (m.timestamp || 0) > since && !mine.has(m.anglerId)).length;
+}
+
+async function refreshChatBadge(){
+  const badge = document.getElementById('chat-badge');
+  if(!badge) return;
+  const n = chatUnreadCount(await loadMessages(), await loadAnglers());
+  badge.hidden = n === 0;
+  badge.textContent = n > 99 ? '99+' : String(n);
+}
+
+function chatWhen(ts){
+  const d = new Date(ts);
+  const mins = Math.floor((Date.now() - ts) / 60000);
+  if(mins < 1) return 'just now';
+  if(mins < 60) return mins + 'm ago';
+  if(mins < 24*60) return d.toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
+  return d.toLocaleDateString([], { month:'short', day:'numeric' });
+}
+
+// The brag body for a catch message, read from the catch itself rather than
+// copied at post time - so a catch later rejected does not keep boasting.
+function chatBragHtml(msg, catches){
+  const c = catches.find(x=> x.id === msg.catchId);
+  if(!c) return '<div class="chat-brag">That catch is no longer on the board.</div>';
+  return '<div class="chat-brag"><strong>' + lengthHtml(c.length) + '</strong> ' +
+    escapeHtml(c.species) + ' &middot; ' + (c.division === 'team' ? 'Team' : 'Solo') +
+    ' ' + statusHtml(c.status) + '</div>';
+}
+
+function chatItemHtml(msg, ctx, isReply){
+  const angler = ctx.anglerById[msg.anglerId];
+  const mine = ctx.mine.has(msg.anglerId);
+  const canDelete = mine || ctx.isDirector;
+  const body = msg.text
+    ? '<div class="chat-text">' + escapeHtml(msg.text) + '</div>' : '';
+  const brag = msg.kind === 'catch' ? chatBragHtml(msg, ctx.catches) : '';
+  const acts = [];
+  if(!isReply) acts.push('<button class="small" data-chat-act="reply" data-chat-id="'+escapeHtml(msg.id)+'">Reply</button>');
+  if(canDelete) acts.push('<button class="small danger" data-chat-act="delete" data-chat-id="'+escapeHtml(msg.id)+'">Delete</button>');
+
+  const replies = isReply ? [] : (ctx.repliesByParent[msg.id] || []);
+  const replyHtml = replies.length
+    ? '<div class="chat-replies">' + replies.map(r=> chatItemHtml(r, ctx, true)).join('') + '</div>'
+    : '';
+
+  return '<div class="' + (isReply ? 'chat-reply' : 'chat-item') + (mine ? ' chat-mine' : '') + '">' +
+    '<div class="chat-top"><span class="chat-handle">' + escapeHtml(displayHandle(angler)) + '</span>' +
+    '<span class="chat-when">' + escapeHtml(chatWhen(msg.timestamp)) + '</span></div>' +
+    body + brag +
+    '<div class="chat-actions">' + acts.join('') + '</div>' +
+    replyHtml +
+    '</div>';
+}
+
+// Which message a reply is being composed against, or null for a new post.
+let chatReplyTo = null;
+
+async function renderChat(){
+  const messages = await loadMessages();
+  const anglers = await loadAnglers();
+  const catches = await loadCatches();
+  const me = chatAuthor(anglers);
+
+  setText('chat-intro', me
+    ? 'You post as ' + displayHandle(me) + '. Catches you submit show up here automatically, so the field knows.'
+    : 'Register on this device to join in. You can read along either way.');
+
+  const input = document.getElementById('chat-input');
+  const send = document.getElementById('chat-send');
+  if(input) input.disabled = !me;
+  if(send){
+    send.disabled = !me;
+    send.textContent = chatReplyTo ? 'Reply' : 'Post';
+  }
+  if(input && !me) input.placeholder = 'Register to join the chat';
+  else if(input) input.placeholder = chatReplyTo ? 'Your reply…' : 'Say something to the field…';
+
+  const ctx = {
+    anglerById: {},
+    catches,
+    mine: new Set(myAnglerIds(anglers)),
+    isDirector: adminUnlocked || authMode === 'director',
+    repliesByParent: {}
+  };
+  anglers.forEach(a=>{ ctx.anglerById[a.id] = a; });
+  messages.forEach(m=>{
+    if(!m.replyTo) return;
+    (ctx.repliesByParent[m.replyTo] = ctx.repliesByParent[m.replyTo] || []).push(m);
+  });
+  Object.keys(ctx.repliesByParent).forEach(k=>
+    ctx.repliesByParent[k].sort((a,b)=> a.timestamp - b.timestamp));
+
+  // Newest conversation first; replies read oldest-first underneath.
+  const top = messages.filter(m=> !m.replyTo).sort((a,b)=> b.timestamp - a.timestamp);
+  const el = document.getElementById('chat-feed');
+  el.innerHTML = top.length === 0
+    ? '<p class="empty">Nothing said yet. Land a fish and it will announce itself.</p>'
+    : top.map(m=> chatItemHtml(m, ctx, false)).join('');
+
+  wireChatActions();
+  markChatSeen(messages);
+  refreshChatBadge();
+}
+
+function wireChatActions(){
+  document.querySelectorAll('#chat-feed [data-chat-act]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = btn.dataset.chatId;
+      if(btn.dataset.chatAct === 'reply'){
+        chatReplyTo = id;
+        renderChat();
+        const input = document.getElementById('chat-input');
+        if(input) input.focus();
+        return;
+      }
+      const messages = await loadMessages();
+      const msg = messages.find(m=> m.id === id);
+      if(!msg) return;
+      if(!window.confirm('Delete this message? Any replies to it go too.')) return;
+      // A parent takes its replies with it, or they orphan into invisibility.
+      const doomed = new Set([id]);
+      messages.forEach(m=>{ if(m.replyTo === id) doomed.add(m.id); });
+      await saveMessages(messages.filter(m=> !doomed.has(m.id)));
+      renderChat();
+    });
+  });
+}
+
+bindEl('chat-input','input', ()=>{
+  const input = document.getElementById('chat-input');
+  const left = CHAT_MAX - (input.value || '').length;
+  setText('chat-remaining', left <= 40 ? left + ' left' : '');
+});
+
+bindEl('chat-send','click', async ()=>{
+  const errEl = document.getElementById('chat-err');
+  errEl.style.display = 'none';
+  const input = document.getElementById('chat-input');
+  const text = (input.value || '').trim();
+  if(!text) return;
+  if(text.length > CHAT_MAX){
+    errEl.textContent = 'That is longer than ' + CHAT_MAX + ' characters.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const anglers = await loadAnglers();
+  const me = chatAuthor(anglers);
+  if(!me){
+    errEl.textContent = 'Register on this device before posting.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const messages = await loadMessages();
+  messages.push({
+    id: uid(),
+    anglerId: me.id,
+    handle: displayHandle(me),   // denormalised so old posts survive a rename
+    kind: 'chat',
+    text,
+    replyTo: chatReplyTo || null,
+    timestamp: Date.now()
+  });
+  if(!await saveMessages(messages)){
+    errEl.textContent = 'That did not send. Check your signal — it will retry.';
+    errEl.style.display = 'block';
+    return;
+  }
+  input.value = '';
+  setText('chat-remaining', '');
+  chatReplyTo = null;
+  renderChat();
+});
+
+// Called after a catch is filed. Best-effort: a catch is already safely on the
+// board by this point, so a failure here must never look like a failed
+// submission.
+async function announceCatch(catchId, angler){
+  try{
+    const messages = await loadMessages();
+    messages.push({
+      id: uid(),
+      anglerId: angler ? angler.id : null,
+      handle: displayHandle(angler),
+      kind: 'catch',
+      catchId,
+      text: '',
+      replyTo: null,
+      timestamp: Date.now()
+    });
+    await saveMessages(messages);
+  }catch(e){ console.error(e); }
 }
 
 // ---- admin ----

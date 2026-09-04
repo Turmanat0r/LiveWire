@@ -65,6 +65,12 @@ create table if not exists public.donations (
   created_at  timestamptz not null default now()
 );
 
+create table if not exists public.messages (
+  id          text primary key,
+  data        jsonb not null default '{}'::jsonb,
+  created_at  timestamptz not null default now()
+);
+
 create table if not exists public.config (
   id          text primary key,
   data        jsonb not null default '{}'::jsonb,
@@ -87,11 +93,13 @@ create table if not exists public.config (
 alter table public.anglers   enable row level security;
 alter table public.catches   enable row level security;
 alter table public.donations enable row level security;
+alter table public.messages  enable row level security;
 alter table public.config    enable row level security;
 
 drop policy if exists anglers_public_rw   on public.anglers;
 drop policy if exists catches_public_rw   on public.catches;
 drop policy if exists donations_public_rw on public.donations;
+drop policy if exists messages_public_rw  on public.messages;
 drop policy if exists config_public_rw    on public.config;
 
 create policy anglers_public_rw on public.anglers
@@ -103,6 +111,10 @@ create policy catches_public_rw on public.catches
   using (true) with check (true);
 
 create policy donations_public_rw on public.donations
+  for all to anon, authenticated
+  using (true) with check (true);
+
+create policy messages_public_rw on public.messages
   for all to anon, authenticated
   using (true) with check (true);
 
@@ -164,7 +176,7 @@ create policy catch_photos_delete on storage.objects
 select table_name
 from information_schema.tables
 where table_schema = 'public'
-  and table_name in ('anglers','catches','donations','config')
+  and table_name in ('anglers','catches','donations','messages','config')
 order by table_name;
 
 select id, public, file_size_limit
