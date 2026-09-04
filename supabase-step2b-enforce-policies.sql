@@ -139,6 +139,34 @@ create policy messages_delete on public.messages
   using (owner = auth.uid() or (auth.jwt() -> 'app_metadata' ->> 'director') = 'true');
 
 
+-- ---- signals ----
+-- Read is NOT open here. An angler's position is competitive intelligence, so
+-- only the director may read the table; the app filters beacons out of it for
+-- everyone else, and this makes that a rule rather than a convention.
+drop policy if exists signals_public_rw on public.signals;
+drop policy if exists signals_read      on public.signals;
+drop policy if exists signals_insert    on public.signals;
+drop policy if exists signals_update    on public.signals;
+drop policy if exists signals_delete    on public.signals;
+
+create policy signals_read on public.signals
+  for select to authenticated
+  using (owner = auth.uid() or (auth.jwt() -> 'app_metadata' ->> 'director') = 'true');
+
+create policy signals_insert on public.signals
+  for insert to authenticated
+  with check (owner = auth.uid());
+
+create policy signals_update on public.signals
+  for update to authenticated
+  using      (owner = auth.uid())
+  with check (owner = auth.uid());
+
+create policy signals_delete on public.signals
+  for delete to authenticated
+  using (owner = auth.uid() or (auth.jwt() -> 'app_metadata' ->> 'director') = 'true');
+
+
 -- ---- config ----
 -- Every device must READ this - it carries the live event, the target species
 -- and the course boundary. Only the director may write it. Before this, any

@@ -1,7 +1,8 @@
 -- ============================================================================
 -- ##  STOP.  THIS DELETES EVERYTHING.  ##
 --
--- This wipes EVERY angler, EVERY catch, EVERY donation and the whole chat,
+-- This wipes EVERY angler, EVERY catch, EVERY donation, the whole chat and
+-- every recorded position,
 -- for EVERY event,
 -- from the shared tournament database. There is no undo, no recycle bin and no
 -- confirmation prompt. Rows removed here are gone.
@@ -47,6 +48,8 @@ union all
 select 'donations' as table_name, count(*) from public.donations
 union all
 select 'messages'  as table_name, count(*) from public.messages
+union all
+select 'signals'   as table_name, count(*) from public.signals
 order by table_name;
 
 
@@ -61,6 +64,7 @@ order by table_name;
 -- species, the course boundary and the awards budgets - the setup you spent
 -- time on, not test data. To reset that as well, uncomment the last statement.
 -- ---------------------------------------------------------------------------
+delete from public.signals;
 delete from public.messages;
 delete from public.catches;
 delete from public.anglers;
@@ -73,7 +77,7 @@ delete from public.donations;
 
 
 -- ---------------------------------------------------------------------------
--- Confirm it worked. All four counts should be 0.
+-- Confirm it worked. All five counts should be 0.
 -- ---------------------------------------------------------------------------
 select 'anglers'   as table_name, count(*) as remaining from public.anglers
 union all
@@ -82,6 +86,8 @@ union all
 select 'donations' as table_name, count(*) from public.donations
 union all
 select 'messages'  as table_name, count(*) from public.messages
+union all
+select 'signals'   as table_name, count(*) from public.signals
 order by table_name;
 
 

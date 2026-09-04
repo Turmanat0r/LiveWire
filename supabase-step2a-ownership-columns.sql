@@ -24,11 +24,13 @@ alter table public.anglers   add column if not exists owner uuid default auth.ui
 alter table public.catches   add column if not exists owner uuid default auth.uid();
 alter table public.donations add column if not exists owner uuid default auth.uid();
 alter table public.messages  add column if not exists owner uuid default auth.uid();
+alter table public.signals   add column if not exists owner uuid default auth.uid();
 
 create index if not exists anglers_owner_idx   on public.anglers   (owner);
 create index if not exists catches_owner_idx   on public.catches   (owner);
 create index if not exists donations_owner_idx on public.donations (owner);
 create index if not exists messages_owner_idx  on public.messages  (owner);
+create index if not exists signals_owner_idx   on public.signals   (owner);
 
 
 -- ---------------------------------------------------------------------------

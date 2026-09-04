@@ -62,6 +62,10 @@ globalThis.__t = {
   generateHandle, uniqueHandle, displayHandle,
   loadMessages, saveMessages, chatAuthor, chatUnreadCount, chatLastSeen,
   markChatSeen, chatItemHtml, chatBragHtml, announceCatch, CHAT_MAX,
+  loadSignals, saveSignals, publishSignal, activeBeacons, myBeacon,
+  signalAgeMinutes, signalIsFresh, signalAgeText, compassFrom, SIGNAL_STALE_MINUTES,
+  beaconTick, startBeaconTracking, stopBeaconTracking, resumeBeaconTracking,
+  get beaconTimer(){ return beaconTimer; },
   get authMode(){ return authMode; },
   get adminUnlocked(){ return adminUnlocked; }, set adminUnlocked(v){ adminUnlocked = v; },
   loadAwardsBudget, saveAwardsBudget, awardsBudgetMap,
@@ -1213,7 +1217,149 @@ check('and it is the director edit form',
   /anglers\[idx\]\.handle = handle;/.test(appSrc), true);
 
 // ============================================================
-section('35. the page starts up clean');
+section('35. position signals');
+const SIG_ROSTER = [
+  { id:'s1', eventId:E1, name:'Ann Miller', handle:'Salty Bedrock Perch',
+    tournamentId:'MKWO-001', division:'solo', role:'solo', teamId:null },
+  { id:'s2', eventId:E1, name:'Bob Ruiz', handle:'Rogue Basalt Pike',
+    tournamentId:'MKWO-002', division:'solo', role:'solo', teamId:null }
+];
+seed(SIG_ROSTER, [], [], {});
+t.liveCache.signals = [];
+t.loadedIds.signals = null;
+await setEvent(E1);
+t.setMyAnglerId('s1');
+
+const HUB2 = { lat: 46.38917, lng: -111.57556 };
+check('publishing needs a registered device', await t.publishSignal(HUB2), true);
+let sigs = await t.loadSignals();
+check('one row is written', sigs.length, 1);
+check('keyed by the angler id, not a new uid', sigs[0].id, 's1');
+check('carrying the handle', sigs[0].handle, 'Salty Bedrock Perch');
+check('and no beacon by default', sigs[0].beacon, false);
+check('stamped with the event', t.rowEventId(sigs[0]), E1);
+
+// A second fix overwrites rather than appending - this is what keeps the table
+// the size of the field instead of the size of the day.
+await t.publishSignal({ lat: HUB2.lat + 0.01, lng: HUB2.lng });
+sigs = await t.loadSignals();
+check('a second fix overwrites the same row', sigs.length, 1);
+check('with the newer position', sigs[0].lat > HUB2.lat, true);
+
+// Raising and standing down a beacon.
+check('no beacons to start', (await t.activeBeacons()).length, 0);
+await t.publishSignal(HUB2, { beacon: true, note: 'Capsized' });
+check('a beacon shows up', (await t.activeBeacons()).length, 1);
+check('with its note', (await t.activeBeacons())[0].note, 'Capsized');
+check('and findable as mine', (await t.myBeacon()) !== null, true);
+
+// The critical one: an ordinary position update must NOT clear a raised
+// beacon. Someone in trouble who then checks their position would otherwise
+// silently stop asking for help.
+await t.publishSignal({ lat: HUB2.lat + 0.02, lng: HUB2.lng });
+check('a routine fix leaves the beacon up', (await t.activeBeacons()).length, 1);
+check('and keeps the note', (await t.activeBeacons())[0].note, 'Capsized');
+check('while still moving the position', (await t.activeBeacons())[0].lat > HUB2.lat, true);
+
+await t.publishSignal(HUB2, { beacon: false });
+check('standing down clears it', (await t.activeBeacons()).length, 0);
+check('and the row survives for the director', (await t.loadSignals()).length, 1);
+
+// Another angler's device writes its own row, not over yours.
+t.setMyAnglerId('s2');
+await t.publishSignal({ lat: 46.40, lng: -111.60 });
+sigs = await t.loadSignals();
+check('a second angler adds a row', sigs.length, 2);
+check('each keyed to its own angler',
+  sigs.map(x=> x.id).sort(), ['s1','s2']);
+
+// Signals are event-scoped like everything else.
+await setEvent(E2);
+check('another event sees no signals', (await t.loadSignals()).length, 0);
+await setEvent(E1);
+
+// Notes are capped, since they render into the director's alert panel.
+t.setMyAnglerId('s1');
+await t.publishSignal(HUB2, { beacon: true, note: 'x'.repeat(400) });
+check('a long note is truncated', (await t.myBeacon()).note.length, 140);
+await t.publishSignal(HUB2, { beacon: false });
+
+// A device with no registration cannot publish.
+t.setMyAnglerId(null);
+check('an unregistered device publishes nothing', await t.publishSignal(HUB2), false);
+t.setMyAnglerId('s1');
+// Nor can a bad fix.
+check('a fix with no coordinates is refused', await t.publishSignal({ lat: NaN, lng: 1 }), false);
+
+// ============================================================
+section('36. staleness and bearings');
+const now = Date.now();
+check('a fresh fix is fresh', t.signalIsFresh({ at: now - 60000 }), true);
+check('an old one is not', t.signalIsFresh({ at: now - (t.SIGNAL_STALE_MINUTES + 5) * 60000 }), false);
+check('a missing timestamp is never fresh', t.signalIsFresh({}), false);
+check('age reads in minutes', t.signalAgeText({ at: now - 5 * 60000 }), '5 min ago');
+check('and in hours further out', /hour/.test(t.signalAgeText({ at: now - 3 * 3600000 })), true);
+check('a fresh one reads as just now', t.signalAgeText({ at: now - 1000 }), 'just now');
+check('and a missing one says never', t.signalAgeText({}), 'never');
+
+// The compass label is what an angler paddles on, so each octant must be right.
+const at = (dLat, dLng)=> ({ lat: HUB2.lat + dLat, lng: HUB2.lng + dLng });
+check('due north',      t.compassFrom(HUB2, at( 0.05,  0)),     'N');
+check('due south',      t.compassFrom(HUB2, at(-0.05,  0)),     'S');
+check('due east',       t.compassFrom(HUB2, at( 0,     0.05)),  'E');
+check('due west',       t.compassFrom(HUB2, at( 0,    -0.05)),  'W');
+check('north-east',     t.compassFrom(HUB2, at( 0.05,  0.072)), 'NE');
+check('south-west',     t.compassFrom(HUB2, at(-0.05, -0.072)), 'SW');
+
+// ============================================================
+section('37. beacon tracking stops itself');
+// A raised beacon is the only thing in the app allowed to wake the GPS on a
+// timer. If it cannot switch itself off it sits there draining a battery for
+// the rest of the day, which is the failure this whole design avoids.
+seed(SIG_ROSTER, [], [], {});
+t.liveCache.signals = [];
+t.loadedIds.signals = null;
+await setEvent(E1);
+t.setMyAnglerId('s1');
+
+t.stopBeaconTracking();
+check('nothing is running to begin with', t.beaconTimer, null);
+
+t.startBeaconTracking();
+check('raising starts a tracker', t.beaconTimer !== null, true);
+const firstTimer = t.beaconTimer;
+t.startBeaconTracking();
+// Compared as a boolean: a Node Timeout is circular and cannot be stringified.
+check('starting twice does not stack a second', t.beaconTimer === firstTimer, true);
+
+// With no beacon raised, a tick must stand the tracker down by itself.
+check('a tick with no beacon reports it should stop', await t.beaconTick(), false);
+check('and clears the timer', t.beaconTimer, null);
+
+// With one raised, it keeps going - even though this environment has no
+// geolocation at all, so the fix inside the tick fails every time.
+await t.publishSignal({ lat: 46.38917, lng: -111.57556 }, { beacon: true });
+t.startBeaconTracking();
+check('a tick with a beacon up keeps going', await t.beaconTick(), true);
+check('a failed fix does not tear the tracker down', t.beaconTimer !== null, true);
+check('nor does it drop the beacon', (await t.activeBeacons()).length, 1);
+
+// Standing down stops it.
+await t.publishSignal({ lat: 46.38917, lng: -111.57556 }, { beacon: false });
+check('once stood down the next tick stops', await t.beaconTick(), false);
+check('and the timer is gone', t.beaconTimer, null);
+
+// Reload with a beacon still up resumes tracking.
+await t.publishSignal({ lat: 46.38917, lng: -111.57556 }, { beacon: true });
+await t.resumeBeaconTracking();
+check('a reload resumes an active beacon', t.beaconTimer !== null, true);
+t.stopBeaconTracking();
+await t.publishSignal({ lat: 46.38917, lng: -111.57556 }, { beacon: false });
+await t.resumeBeaconTracking();
+check('but not when there is nothing to resume', t.beaconTimer, null);
+
+// ============================================================
+section('38. the page starts up clean');
 // Let the init IIFE's promise chain settle before judging it.
 await new Promise(r => setTimeout(r, 0));
 check('no startup error banner', startupBanners, []);

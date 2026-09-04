@@ -71,6 +71,15 @@ create table if not exists public.messages (
   created_at  timestamptz not null default now()
 );
 
+-- One row per angler, keyed by their angler id: their last known position and
+-- whether they have a beacon raised. Overwritten rather than appended, so this
+-- stays the size of the field.
+create table if not exists public.signals (
+  id          text primary key,
+  data        jsonb not null default '{}'::jsonb,
+  created_at  timestamptz not null default now()
+);
+
 create table if not exists public.config (
   id          text primary key,
   data        jsonb not null default '{}'::jsonb,
@@ -83,7 +92,7 @@ create table if not exists public.config (
 --
 --    READ THIS. The anon key ships inside the page, so anyone who has your
 --    tournament link also has the key. These policies let that key read and
---    write these four tables and nothing else in your project.
+--    write these six tables and nothing else in your project.
 --
 --    For a catch-photo-release tournament where you review and approve every
 --    catch before it scores, that is a reasonable trade: the worst a meddler
@@ -94,12 +103,14 @@ alter table public.anglers   enable row level security;
 alter table public.catches   enable row level security;
 alter table public.donations enable row level security;
 alter table public.messages  enable row level security;
+alter table public.signals   enable row level security;
 alter table public.config    enable row level security;
 
 drop policy if exists anglers_public_rw   on public.anglers;
 drop policy if exists catches_public_rw   on public.catches;
 drop policy if exists donations_public_rw on public.donations;
 drop policy if exists messages_public_rw  on public.messages;
+drop policy if exists signals_public_rw   on public.signals;
 drop policy if exists config_public_rw    on public.config;
 
 create policy anglers_public_rw on public.anglers
@@ -115,6 +126,10 @@ create policy donations_public_rw on public.donations
   using (true) with check (true);
 
 create policy messages_public_rw on public.messages
+  for all to anon, authenticated
+  using (true) with check (true);
+
+create policy signals_public_rw on public.signals
   for all to anon, authenticated
   using (true) with check (true);
 
@@ -171,12 +186,12 @@ create policy catch_photos_delete on storage.objects
 
 -- ---------------------------------------------------------------------------
 -- 5. Check it worked
---    Run these two. The first should list four tables, the second one bucket.
+--    Run these two. The first should list six tables, the second one bucket.
 -- ---------------------------------------------------------------------------
 select table_name
 from information_schema.tables
 where table_schema = 'public'
-  and table_name in ('anglers','catches','donations','messages','config')
+  and table_name in ('anglers','catches','donations','messages','signals','config')
 order by table_name;
 
 select id, public, file_size_limit

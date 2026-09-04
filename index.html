@@ -583,6 +583,58 @@
   }
   nav.tabbar button{position:relative;}
 
+  /* ---- beacons ----
+     A raised beacon has to read as urgent at a glance, in sunlight, on a
+     phone held at arm's length in a moving kayak. */
+  .beacon-card{
+    border:2px solid var(--danger);background:#F1D6D0;
+    padding:12px;margin-bottom:12px;border-radius:4px;
+  }
+  .beacon-card.mine{border-color:#D5A33A;background:#F3E4C4;}
+  .beacon-title{
+    display:flex;align-items:center;gap:8px;
+    font-family:'Oswald',sans-serif;font-size:14px;font-weight:600;
+    letter-spacing:0.04em;text-transform:uppercase;color:var(--danger);
+  }
+  .beacon-card.mine .beacon-title{color:#7A5410;}
+  .beacon-row{
+    display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+    padding:7px 0;border-bottom:1px solid rgba(163,55,42,0.25);
+  }
+  .beacon-row:last-child{border-bottom:0;}
+  .beacon-who{font-family:'Fraunces',serif;font-size:14px;color:var(--ink);}
+  .beacon-dist{font-family:'Space Mono',monospace;font-size:12px;color:var(--danger);flex-shrink:0;}
+  .beacon-note{font-size:12px;color:var(--ink);margin-top:3px;font-style:italic;}
+  .beacon-pulse{
+    width:12px;height:12px;border-radius:50%;background:var(--danger);
+    box-shadow:0 0 0 0 rgba(224,55,37,0.7);animation:beaconPulse 1.8s infinite;
+    flex-shrink:0;
+  }
+  .beacon-card.mine .beacon-pulse{background:#D5A33A;box-shadow:0 0 0 0 rgba(213,163,58,0.7);}
+  @keyframes beaconPulse{
+    0%   { box-shadow:0 0 0 0   rgba(224,55,37,0.7); }
+    70%  { box-shadow:0 0 0 14px rgba(224,55,37,0); }
+    100% { box-shadow:0 0 0 0   rgba(224,55,37,0); }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .beacon-pulse{animation:none;}
+  }
+  /* The map marker. Leaflet divIcons get no styling of their own. */
+  .beacon-marker{
+    width:22px;height:22px;border-radius:50%;
+    background:var(--danger);border:3px solid #fff;
+    box-shadow:0 0 0 0 rgba(224,55,37,0.8);animation:beaconPulse 1.8s infinite;
+  }
+  .beacon-btn{background:var(--danger)!important;color:#fff!important;border-color:var(--danger)!important;}
+  .pos-row{padding:9px 0;border-bottom:1px solid var(--line);}
+  .pos-row:last-child{border-bottom:0;}
+  .pos-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;}
+  .pos-who{font-family:'Fraunces',serif;font-size:14px;color:var(--deep);}
+  .pos-age{font-size:11px;color:var(--steel);flex-shrink:0;}
+  .pos-meta{font-family:'Space Mono',monospace;font-size:11px;color:var(--steel);margin-top:3px;}
+  .pos-row.stale .pos-who{color:var(--steel);}
+  .pos-row.beacon .pos-who{color:var(--danger);font-weight:600;}
+
   /* ---- course map ----
      Leaflet and its tiles both need a network. Everything that decides whether
      a position is in bounds is local maths, so the map is an enhancement laid
@@ -913,7 +965,7 @@
         <p class="hint" id="reg-close-note">Registration closes June 1, 2027. This confirms your spot on the roster &mdash; entry fees and side pot buy-ins are collected separately by PayPal, per the info in your confirmation email.</p>
       </div>
 
-      <div class="card" id="reg-roster-card">
+      <div class="card">
         <h2>Registered anglers</h2>
         <div id="reg-roster"></div>
       </div>
@@ -1136,6 +1188,20 @@
     <!-- PUBLIC GPS STATUS -->
     <section class="screen" id="screen-gps">
       <a class="backlink" data-goto="home" role="button" tabindex="0">&larr; Home</a>
+      <div id="beacon-alerts"></div>
+
+      <div class="card">
+        <h2>Need help?</h2>
+        <p class="hint" style="margin-top:0;">Raising a beacon shares your position with the tournament director <strong>and every other angler on the water</strong>, so whoever is closest can reach you. While it is up your position refreshes about once a minute, for as long as this page stays open &mdash; so keep the app on screen if you can. Use it if you are in trouble, not to mark a spot.</p>
+        <div class="field" id="beacon-note-field">
+          <label for="beacon-note">What is wrong? (optional)</label>
+          <input type="text" id="beacon-note" maxlength="140" placeholder="Capsized, cold, need a tow&hellip;">
+        </div>
+        <div class="err" id="beacon-err" style="display:none;"></div>
+        <button class="secondary beacon-btn" id="beacon-raise">Raise a beacon</button>
+        <button class="secondary" id="beacon-standdown" style="display:none;">Stand down &mdash; I am OK</button>
+      </div>
+
       <div class="card">
         <h2>Where am I?</h2>
         <p class="hint" style="margin-top:0;" id="my-pos-intro"></p>
@@ -1226,10 +1292,23 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19"/><circle cx="10" cy="8" r="3.2"/><path d="M20 19v-1.5a3.5 3.5 0 0 0-2.6-3.4"/><path d="M15.4 5.2a3.2 3.2 0 0 1 0 5.6"/></svg>
             <span class="director-tool-copy"><strong>Contestants</strong><span id="contestants-tool-summary">No anglers yet</span></span>
           </button>
+          <button class="director-tool wide" type="button" data-admin-tool="positions">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/><path d="M4.5 19.5h15"/></svg>
+            <span class="director-tool-copy"><strong>Positions</strong><span id="positions-tool-summary">No positions yet</span></span>
+          </button>
           <button class="director-tool wide" type="button" data-admin-tool="event">
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3.5v3M16 3.5v3"/><path d="m9 14.5 2 2 4-4"/></svg>
             <span class="director-tool-copy"><strong>Event</strong><span id="event-tool-summary">&mdash;</span></span>
           </button>
+        </div>
+
+        <div class="card" id="admin-tool-positions" style="display:none;">
+          <h2>Positions</h2>
+          <p class="hint" style="margin-top:0;">Where each angler's device last reported from. Positions are recorded when the app already had a fix &mdash; submitting a catch, or an angler checking themselves against the boundary &mdash; so nothing here drains a battery, and nothing is live. Read the age next to each one before you act on it.</p>
+          <div id="positions-alerts"></div>
+          <div id="positions-map" class="lw-map tall"></div>
+          <p class="hint">Anglers cannot see each other here. The only position that goes out to the field is a raised beacon.</p>
+          <div id="positions-body"></div>
         </div>
 
         <div class="card" id="admin-tool-event" style="display:none;">
@@ -2161,16 +2240,16 @@ function deepClone(v){
   try{ return JSON.parse(JSON.stringify(v)); }catch(e){ return v; }
 }
 
-const SHARED_COLLECTIONS = ['anglers','catches','donations','messages'];
+const SHARED_COLLECTIONS = ['anglers','catches','donations','messages','signals'];
 let store = null;                 // the active backend, or null for device-only
 let syncState = 'connecting';     // connecting | live | offline | local
 let syncDetail = '';
 let storeFull = false;
-const liveCache = { anglers:null, catches:null, donations:null, messages:null, config:null };
+const liveCache = { anglers:null, catches:null, donations:null, messages:null, signals:null, config:null };
 // Ids as they were when the caller last LOADED. Deleting is scoped to these, so
 // a catch another angler files between one device's load and its save is never
 // mistaken for "the user removed this".
-const loadedIds = { anglers:null, catches:null, donations:null, messages:null };
+const loadedIds = { anglers:null, catches:null, donations:null, messages:null, signals:null };
 
 // ---- which event is live ----
 // Held in the shared config record rather than on the phone, so every device
@@ -2385,7 +2464,7 @@ async function initAuth(){
 function supabaseBackend(){
   const base = SUPABASE_URL.replace(/\/+$/, '');
   const TABLES = { anglers:'anglers', catches:'catches', donations:'donations',
-                   messages:'messages', config:'config' };
+                   messages:'messages', signals:'signals', config:'config' };
   // Built per request, not once: the session token is refreshed in the
   // background, and a header object captured at startup would go stale and
   // start 401ing an hour into the event.
@@ -2807,6 +2886,10 @@ async function saveCatches(list){ return await saveCollection('catches', list); 
 async function loadDonations(){ return cachedRows('donations'); }
 async function loadMessages(){ return cachedRows('messages'); }
 async function saveMessages(list){ return await saveCollection('messages', list); }
+// One row per angler, keyed by their id, so this table stays the size of the
+// field instead of growing with every fix taken.
+async function loadSignals(){ return cachedRows('signals'); }
+async function saveSignals(list){ return await saveCollection('signals', list); }
 async function saveDonations(list){ return await saveCollection('donations', list); }
 
 // ---- config ----
@@ -4288,12 +4371,10 @@ bindEl('sub-submit','click', async ()=>{
     const precheck = await analyzePhoto(photoData, srcWidth, srcHeight);
 
     submitBtn.textContent = 'Checking location…';
-    const location = await getCatchLocation();
+    const catchLocation = await getCatchLocation();
 
     submitBtn.textContent = 'Saving…';
     const catchId = uid();
-    // The photo goes first and on its own. A catch with no evidence behind it is
-    // worse than no catch, so this gates the rest of the write.
     // ORDER MATTERS: the catch record goes in FIRST, then the photo.
     //
     // The storage policy that stops one angler overwriting another's evidence
@@ -4315,7 +4396,7 @@ bindEl('sub-submit','click', async ()=>{
       hasPhoto: true,
       photoUrl: store && store.photoUrlFor ? store.photoUrlFor(catchId) : '',
       precheck,
-      location,
+      location: catchLocation,
       timestamp: Date.now(),
       status: 'pending'
     });
@@ -4344,6 +4425,9 @@ bindEl('sub-submit','click', async ()=>{
     // submission.
     const announce = document.getElementById('sub-announce');
     if(!announce || announce.checked) await announceCatch(catchId, angler);
+    // The catch already carries a fix, so the director's position view stays
+    // current without ever waking the GPS on its own.
+    if(catchLocation) await publishSignal(catchLocation);
 
     document.getElementById('sub-length').value='';
     fileInput.value='';
@@ -4547,6 +4631,138 @@ async function renderBigFish(){
   el.innerHTML = sorted.map((c,i)=>
     '<div class="lbrow"><div class="rank">'+(i+1)+'</div><div class="who"><div class="name">'+escapeHtml(displayHandle(byId[c.anglerId]))+'</div><div class="sub">'+(c.division==='team'?'Team':'Solo')+' division</div></div><div class="len">'+c.length.toFixed(2)+'"</div></div>'
   ).join('');
+}
+
+// ---- position signals ----
+// Two things share one collection, because both are "where a device last was":
+//
+//   1. A position the DIRECTOR can see. Anglers cannot see each other, on
+//      purpose - in a fishing tournament, knowing where someone is fishing is
+//      competitive intelligence, and "where is my friend" and "where is the
+//      leader sitting" are the same feature.
+//   2. A BEACON, which an angler raises deliberately when they need help. That
+//      one goes to the whole field, because the nearest help on a reservoir is
+//      another kayak, not somebody on shore.
+//
+// One row per angler, keyed by their id, so a fix overwrites rather than
+// appends. A row per fix would be tens of thousands of rows by Sunday.
+//
+// Nothing is published on a timer by default. A position is recorded only when
+// the app was already taking a GPS fix for its own reasons - submitting a
+// catch, checking your position, raising a beacon - so this costs no extra
+// battery. Battery is not a side issue here: a flat phone cannot submit a
+// catch, and a tournament day is seven hours long.
+const SIGNAL_STALE_MINUTES = 45;   // past this, a position is history, not a location
+
+function signalAgeMinutes(sig){
+  if(!sig || !sig.at) return Infinity;
+  return Math.max(0, (Date.now() - sig.at) / 60000);
+}
+function signalIsFresh(sig){ return signalAgeMinutes(sig) <= SIGNAL_STALE_MINUTES; }
+function signalAgeText(sig){
+  const mins = signalAgeMinutes(sig);
+  if(!isFinite(mins)) return 'never';
+  if(mins < 1) return 'just now';
+  if(mins < 60) return Math.round(mins) + ' min ago';
+  const hrs = mins / 60;
+  if(hrs < 24) return (hrs < 2 ? '1 hour ago' : Math.round(hrs) + ' hours ago');
+  return 'over a day ago';
+}
+
+// Compass bearing from one point to another, as an eight-point label. Good
+// enough to point a paddle at, which is all it needs to be.
+const COMPASS_POINTS = ['N','NE','E','SE','S','SW','W','NW'];
+function compassFrom(from, to){
+  const rad = bearingFrom(from, to);            // radians from north, +east
+  let deg = (rad * 180 / Math.PI + 360) % 360;
+  return COMPASS_POINTS[Math.round(deg / 45) % 8];
+}
+
+// Records where this device is, against its own angler row. Best-effort by
+// design: every caller has already done its real job by the time this runs, so
+// a failure here must never surface as that job failing.
+async function publishSignal(pos, opts){
+  try{
+    const o = opts || {};
+    const anglers = await loadAnglers();
+    const me = chatAuthor(anglers);
+    if(!me || !pos || !isFinite(pos.lat) || !isFinite(pos.lng)) return false;
+
+    const signals = await loadSignals();
+    const idx = signals.findIndex(x=> x.id === me.id);
+    const prev = idx === -1 ? null : signals[idx];
+    const row = {
+      id: me.id,
+      anglerId: me.id,
+      handle: displayHandle(me),
+      lat: Number(pos.lat),
+      lng: Number(pos.lng),
+      accuracyMiles: isFinite(pos.accuracyMiles) ? Number(pos.accuracyMiles) : null,
+      at: Date.now(),
+      // A beacon stays raised until it is stood down. An ordinary position
+      // update must never quietly clear one.
+      beacon: o.beacon === true ? true : (o.beacon === false ? false : !!(prev && prev.beacon)),
+      beaconAt: o.beacon === true ? Date.now() : (o.beacon === false ? null : (prev ? prev.beaconAt : null)),
+      note: o.note !== undefined ? String(o.note || '').slice(0, 140)
+                                 : (prev ? (prev.note || '') : '')
+    };
+    if(idx === -1) signals.push(row); else signals[idx] = row;
+    return await saveSignals(signals);
+  }catch(e){ console.error(e); return false; }
+}
+
+// Beacons only. This is the one part of the collection every angler may see.
+async function activeBeacons(){
+  return (await loadSignals()).filter(s=> s.beacon === true);
+}
+
+// ---- beacon tracking ----
+// Everywhere else in this app, battery wins: a position is only recorded when
+// the GPS was already awake for something else. A raised beacon is the one
+// case where that trade flips. Somebody is coming to find you, and a position
+// that stopped moving twenty minutes ago sends them to the wrong water.
+//
+// So while a beacon is up - and only then - the position refreshes on a timer.
+// It stops the moment the beacon is stood down.
+const BEACON_REFRESH_MS = 60000;
+let beaconTimer = null;
+
+function stopBeaconTracking(){
+  if(beaconTimer){ clearInterval(beaconTimer); beaconTimer = null; }
+}
+// One pass of the loop, named so it can be exercised directly. Returns whether
+// tracking should continue - a tracker that cannot stop itself would sit there
+// waking the GPS for the rest of the day, which is the whole thing this design
+// is trying to avoid.
+async function beaconTick(){
+  // Stood down from another device, or the angler is no longer registered.
+  if(!await myBeacon()){ stopBeaconTracking(); return false; }
+  try{
+    const pos = await currentPosition(20000);
+    myPosition = Object.assign({ at: Date.now() }, pos);
+    await publishSignal(pos);
+    if(currentScreen === 'gps') await renderPublicGps();
+  }catch(e){
+    // A fix that fails is normal on the water. Keep the last one and try again
+    // next tick rather than tearing the beacon down.
+    console.warn('Beacon refresh could not get a fix.', e);
+  }
+  return true;
+}
+
+function startBeaconTracking(){
+  if(beaconTimer) return;   // never stack a second interval on the first
+  beaconTimer = setInterval(beaconTick, BEACON_REFRESH_MS);
+}
+// Survives a reload: if this device still has a beacon up, resume refreshing.
+async function resumeBeaconTracking(){
+  try{ if(await myBeacon()) startBeaconTracking(); }catch(e){}
+}
+
+async function myBeacon(){
+  const me = chatAuthor(await loadAnglers());
+  if(!me) return null;
+  return (await loadSignals()).find(s=> s.id === me.id && s.beacon === true) || null;
 }
 
 // ---- tournament chat ----
@@ -4786,11 +5002,12 @@ function showAdminTool(name){
   document.querySelectorAll('[data-admin-tool]').forEach(btn=>{
     btn.classList.toggle('active', btn.dataset.adminTool===name);
   });
-  ['gps','payout','contestants','event'].forEach(tool=>{
+  ['gps','payout','contestants','event','positions'].forEach(tool=>{
     document.getElementById('admin-tool-'+tool).style.display = tool===name ? 'block' : 'none';
   });
-  // The map was built inside a hidden card and has no size until now.
+  // Maps built inside a hidden card have no size until now.
   if(name === 'event') renderBoundaryEditor();
+  if(name === 'positions') renderPositionsAdmin();
 }
 
 document.querySelectorAll('[data-admin-tool]').forEach(btn=>{
@@ -4902,6 +5119,8 @@ function myPositionHtml(){
 // The angler's own catches, so the map shows where they have been fishing.
 // Set by renderPublicGps; the position button reuses whatever it last saw.
 let myGpsCatches = [];
+// Raised beacons, the only positions an angler is shown besides their own.
+let myGpsBeacons = [];
 
 function renderCourseMap(){
   const b = courseBoundary();
@@ -4921,6 +5140,17 @@ function renderCourseMap(){
       { permanent:false }).addTo(entry.pins);
   });
 
+  // Beacons go on last so they sit above the catch pins.
+  myGpsBeacons.forEach(b=>{
+    if(!isFinite(b.lat) || !isFinite(b.lng)) return;
+    L.marker([b.lat, b.lng], {
+      icon: L.divIcon({ className:'', html:'<div class="beacon-marker"></div>',
+                        iconSize:[22,22], iconAnchor:[11,11] }),
+      zIndexOffset: 2000, keyboard: false
+    }).bindTooltip(escapeHtml(b.handle || 'Beacon') + ' needs help', { permanent:false })
+      .addTo(entry.pins);
+  });
+
   if(myPosition){
     L.circleMarker([myPosition.lat, myPosition.lng],
       { radius:7, color:'#24404D', fillColor:'#4FD2E8', fillOpacity:1, weight:3 })
@@ -4933,6 +5163,111 @@ function renderCourseMap(){
   }
   refreshMapSize(entry);
 }
+
+// ---- beacons, angler side ----
+async function renderBeacons(){
+  const wrap = document.getElementById('beacon-alerts');
+  const anglers = await loadAnglers();
+  const me = chatAuthor(anglers);
+  const beacons = await activeBeacons();
+  const mineRaised = me ? beacons.find(b=> b.id === me.id) : null;
+
+  const raiseBtn = document.getElementById('beacon-raise');
+  const standBtn = document.getElementById('beacon-standdown');
+  const noteField = document.getElementById('beacon-note-field');
+  if(raiseBtn){
+    raiseBtn.style.display = mineRaised ? 'none' : 'block';
+    raiseBtn.disabled = !me;
+    raiseBtn.textContent = me ? 'Raise a beacon' : 'Register on this device first';
+  }
+  if(standBtn) standBtn.style.display = mineRaised ? 'block' : 'none';
+  if(noteField) noteField.style.display = mineRaised ? 'none' : 'block';
+
+  if(!wrap) return;
+  if(beacons.length === 0){ wrap.innerHTML = ''; return; }
+
+  // Sorted nearest first when we know where we are, because the nearest angler
+  // is the one who can actually do something.
+  const withDistance = beacons.map(b=>{
+    const miles = myPosition ? milesBetween(myPosition.lat, myPosition.lng, b.lat, b.lng) : null;
+    const dir = myPosition ? compassFrom(myPosition, b) : '';
+    return { b, miles, dir };
+  }).sort((x, y)=>{
+    if(x.miles === null && y.miles === null) return (y.b.beaconAt||0) - (x.b.beaconAt||0);
+    if(x.miles === null) return 1;
+    if(y.miles === null) return -1;
+    return x.miles - y.miles;
+  });
+
+  wrap.innerHTML = withDistance.map(({ b, miles, dir })=>{
+    const isMine = !!(me && b.id === me.id);
+    const where = miles === null
+      ? 'Check your position to get a bearing'
+      : miles.toFixed(2) + ' mi ' + dir;
+    return '<div class="beacon-card' + (isMine ? ' mine' : '') + '">' +
+      '<div class="beacon-title"><span class="beacon-pulse"></span>' +
+      (isMine ? 'Your beacon is up' : 'Beacon raised') + '</div>' +
+      '<div class="beacon-row"><span class="beacon-who">' + escapeHtml(b.handle || 'An angler') + '</span>' +
+      '<span class="beacon-dist">' + escapeHtml(isMine ? signalAgeText(b) : where) + '</span></div>' +
+      (b.note ? '<div class="beacon-note">&ldquo;' + escapeHtml(b.note) + '&rdquo;</div>' : '') +
+      '<div class="beacon-note" style="font-style:normal;">' +
+      escapeHtml(isMine
+        ? 'The director and the whole field can see you, and your position refreshes while this page is open. Stand it down when you are safe.'
+        : 'Raised ' + signalAgeText({ at: b.beaconAt }) + ' · position ' + signalAgeText(b)) +
+      '</div></div>';
+  }).join('');
+}
+
+bindEl('beacon-raise','click', async (e)=>{
+  const btn = e.currentTarget;
+  const errEl = document.getElementById('beacon-err');
+  errEl.style.display = 'none';
+  const note = (document.getElementById('beacon-note').value || '').trim();
+  // Deliberately a confirm: this goes to everyone on the water, and a pocket
+  // press should not be able to do that.
+  if(!window.confirm('Raise a beacon?\n\nYour position goes to the tournament director and to every other angler on the water, and refreshes about every minute while this page stays open. It keeps going until you stand it down.')) return;
+
+  const was = btn.textContent;
+  btn.textContent = 'Getting a fix…'; btn.disabled = true;
+  try{
+    const pos = await currentPosition();
+    myPosition = Object.assign({ at: Date.now() }, pos);
+    const ok = await publishSignal(pos, { beacon: true, note });
+    if(ok) startBeaconTracking();
+    if(!ok){
+      errEl.textContent = 'The beacon could not be sent. It is queued and will go out when you have signal — get to safety and try again.';
+      errEl.style.display = 'block';
+    }
+    document.getElementById('beacon-note').value = '';
+    await renderPublicGps();
+  }catch(err){
+    // No fix means no beacon. Say so plainly rather than raising one that
+    // points nowhere.
+    errEl.textContent = err.message + ' A beacon needs a position, so nothing was sent.';
+    errEl.style.display = 'block';
+  }finally{
+    btn.textContent = was; btn.disabled = false;
+  }
+});
+
+bindEl('beacon-standdown','click', async ()=>{
+  if(!window.confirm('Stand down your beacon? The field stops being asked to come and find you.')) return;
+  const pos = myPosition || null;
+  const anglers = await loadAnglers();
+  const me = chatAuthor(anglers);
+  if(!me) return;
+  const signals = await loadSignals();
+  const idx = signals.findIndex(x=> x.id === me.id);
+  if(idx !== -1){
+    signals[idx] = Object.assign({}, signals[idx], { beacon: false, beaconAt: null, note: '' });
+    // Keep the last position rather than clearing it - the director still
+    // wants to know where everyone was.
+    if(pos && isFinite(pos.lat)) Object.assign(signals[idx], { lat: pos.lat, lng: pos.lng, at: Date.now() });
+    await saveSignals(signals);
+  }
+  stopBeaconTracking();
+  await renderPublicGps();
+});
 
 function renderMyPosition(){
   const b = courseBoundary();
@@ -4952,6 +5287,8 @@ bindEl('my-pos-check','click', async (e)=>{
   try{
     const pos = await currentPosition();
     myPosition = Object.assign({ at: Date.now() }, pos);
+    // The fix has already been taken, so telling the director costs nothing.
+    publishSignal(pos);
     renderMyPosition();
     const entry = ensureMap('course-map', boundaryCenter(courseBoundary()));
     if(entry) entry.map.setView([pos.lat, pos.lng], 14);
@@ -4967,6 +5304,8 @@ async function renderPublicGps(){
   const catches = await loadCatches();
   const myAnglerId = getMyAnglerId();
   myGpsCatches = myAnglerId ? catches.filter(c=> c.anglerId === myAnglerId) : [];
+  myGpsBeacons = await activeBeacons();
+  await renderBeacons();
   renderMyPosition();
   // withinBounds is true / false / null - null meaning no boundary was set when
   // the catch was logged. Only an explicit false is out of bounds.
@@ -6002,8 +6341,107 @@ bindEl('bnd-recheck','click', async ()=>{
   renderAdmin();
 });
 
+// ---- positions (director) ----
+// The director sees everyone. This is the safety and headcount view, and it is
+// the reason positions are collected at all - anglers never see this.
+async function renderPositionsAdmin(){
+  const signals = await loadSignals();
+  const anglers = await loadAnglers();
+  const byId = {};
+  anglers.forEach(a=>{ byId[a.id] = a; });
+
+  const beacons = signals.filter(s=> s.beacon === true);
+  const fresh = signals.filter(s=> !s.beacon && signalIsFresh(s));
+  setText('positions-tool-summary', beacons.length
+    ? beacons.length + ' beacon' + (beacons.length===1?'':'s') + ' raised'
+    : (signals.length === 0 ? 'No positions yet'
+        : fresh.length + ' recent of ' + signals.length));
+
+  // Beacons first and loudest.
+  const alerts = document.getElementById('positions-alerts');
+  if(alerts){
+    alerts.innerHTML = beacons.length === 0 ? '' : beacons.map(b=>{
+      const a = byId[b.anglerId];
+      // The director is the one place a real name belongs - if someone is in
+      // trouble, that is who they will be calling about.
+      const who = a ? (a.name + ' · ' + displayHandle(a)) : (b.handle || 'Unknown angler');
+      return '<div class="beacon-card"><div class="beacon-title">' +
+        '<span class="beacon-pulse"></span>Beacon raised</div>' +
+        '<div class="beacon-row"><span class="beacon-who">' + escapeHtml(who) + '</span>' +
+        '<span class="beacon-dist">' + escapeHtml(signalAgeText({ at: b.beaconAt })) + '</span></div>' +
+        (b.note ? '<div class="beacon-note">&ldquo;' + escapeHtml(b.note) + '&rdquo;</div>' : '') +
+        '<div class="beacon-note" style="font-style:normal;">' +
+        escapeHtml(b.lat.toFixed(5) + ', ' + b.lng.toFixed(5) + ' · position ' + signalAgeText(b)) +
+        (a && a.phone ? ' · ' + escapeHtml(a.phone) : '') +
+        '</div></div>';
+    }).join('');
+  }
+
+  // Beacons at the top of the list too, then most recent first.
+  const sorted = signals.slice().sort((x, y)=>{
+    if(!!x.beacon !== !!y.beacon) return x.beacon ? -1 : 1;
+    return (y.at || 0) - (x.at || 0);
+  });
+  const body = document.getElementById('positions-body');
+  if(body){
+    body.innerHTML = sorted.length === 0
+      ? '<p class="empty">No angler has reported a position yet. One is recorded the first time somebody submits a catch or checks themselves against the boundary.</p>'
+      : sorted.map(s=>{
+          const a = byId[s.anglerId];
+          const stale = !signalIsFresh(s);
+          const cls = 'pos-row' + (s.beacon ? ' beacon' : (stale ? ' stale' : ''));
+          const who = a ? (a.name + ' · ' + displayHandle(a)) : (s.handle || 'Unknown angler');
+          const acc = isFinite(s.accuracyMiles) && s.accuracyMiles
+            ? ' · ±' + Math.round(s.accuracyMiles * 5280) + ' ft' : '';
+          const v = evaluateBoundary(s.lat, s.lng);
+          const bounds = v.withinBounds === null ? ''
+            : (v.withinBounds ? ' · in bounds'
+                : ' · ' + v.outsideMiles.toFixed(2) + ' mi outside');
+          return '<div class="' + cls + '"><div class="pos-top">' +
+            '<span class="pos-who">' + escapeHtml(who) + (s.beacon ? ' — BEACON' : '') + '</span>' +
+            '<span class="pos-age">' + escapeHtml(signalAgeText(s)) + '</span></div>' +
+            '<div class="pos-meta">' + escapeHtml(s.lat.toFixed(5) + ', ' + s.lng.toFixed(5) + acc + bounds) + '</div>' +
+            (stale && !s.beacon ? '<div class="pos-meta">Older than ' + SIGNAL_STALE_MINUTES + ' minutes — treat as history.</div>' : '') +
+            '</div>';
+        }).join('');
+  }
+
+  // Map
+  const b = courseBoundary();
+  const entry = ensureMap('positions-map', boundaryCenter(b));
+  if(!entry) return;
+  drawBoundary(entry, b, BOUNDARY_STYLE);
+  entry.pins.clearLayers();
+  sorted.forEach(s=>{
+    if(!isFinite(s.lat) || !isFinite(s.lng)) return;
+    const a = byId[s.anglerId];
+    const label = (a ? a.name : (s.handle || 'Angler')) + ' · ' + signalAgeText(s);
+    if(s.beacon){
+      L.marker([s.lat, s.lng], {
+        icon: L.divIcon({ className:'', html:'<div class="beacon-marker"></div>',
+                          iconSize:[22,22], iconAnchor:[11,11] }),
+        zIndexOffset: 2000, keyboard: false
+      }).bindTooltip(escapeHtml(label) + ' — BEACON', { permanent:false }).addTo(entry.pins);
+      return;
+    }
+    const stale = !signalIsFresh(s);
+    L.circleMarker([s.lat, s.lng], {
+      radius: 6, weight: 2,
+      color: stale ? '#857E70' : '#24404D',
+      fillColor: stale ? '#E4E1D8' : '#4FD2E8',
+      fillOpacity: 1
+    }).bindTooltip(escapeHtml(label), { permanent:false }).addTo(entry.pins);
+  });
+  if(!entry.fittedPositions){
+    entry.fittedPositions = true;
+    if(boundaryIsUsable(b)) fitToBoundary(entry, b);
+  }
+  refreshMapSize(entry);
+}
+
 async function renderAdmin(){
   if(!adminUnlocked) return;
+  await renderPositionsAdmin();
   renderEventAdmin();
   // The list is rebuilt above, so its buttons are new elements each time.
   wireEventListActions();
@@ -6376,14 +6814,14 @@ function wireContestantRows(){
   });
 
   // ---- edit / remove ----
-  const arm = (act, set)=>{
+  const arm = (act, onArm)=>{
     el.querySelectorAll('[data-act="'+act+'"]').forEach(btn=>{
       btn.addEventListener('click', (e)=>{
         e.stopPropagation();
         editContestantId = null;
         removeContestantId = null;
         dqConfirmId = null;
-        if(set) set(btn.dataset.id);
+        if(onArm) onArm(btn.dataset.id);
         renderContestants();
       });
     });
@@ -6529,6 +6967,7 @@ function wireContestantRows(){
     updateSyncUi();
     initStore();          // resolves later; the UI lights up when it does
     startEventClock();
+    resumeBeaconTracking();
     await renderRoster();
     await renderHome();
   }catch(e){

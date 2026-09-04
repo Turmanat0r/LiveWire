@@ -1,11 +1,20 @@
 # Tests
 
 ```
-node test/events.test.mjs
+node test/events.test.mjs   # behaviour
+node test/lint.mjs          # structure
 ```
 
-From the project root. Nothing to install — it needs only Node. Exits `0` when
-everything passes, `1` when anything fails, so CI can use it as-is.
+From the project root. Nothing to install — they need only Node. Both exit `0`
+when clean and `1` on any finding, so CI can use them as-is.
+
+`events.test.mjs` checks what the app *does*. `lint.mjs` checks what a
+single-file app with no build step has nothing else to catch: a
+`getElementById` naming an element nobody added, a `bindEl` on a renamed
+button, an unbalanced tag, a function called but never written, a store
+collection wired into the app but missed in the SQL. Every one of those fails
+silently in a browser — no console error, just a feature that quietly does
+nothing.
 
 To check a copy other than `index.html`:
 
@@ -56,6 +65,20 @@ the top of `events.test.mjs`, then use it as `t.yourFunction()`. Assertions are
 ## Checking the tests still bite
 
 A suite that cannot fail is worse than no suite, because it reads as safety.
-Break something on purpose and confirm it goes red — for example, remove the
-`.filter(isActiveEventRow)` from `cachedRows()` in `index.html` and re-run.
-That should produce 19 failures. Put it back afterwards.
+Break something on purpose and confirm it goes red. Known-good examples:
+
+| Break this | Expect |
+|---|---|
+| Remove `.filter(isActiveEventRow)` from `cachedRows()` | 19 failures |
+| Seed `loadedIds` from `allRows()` instead of the filtered set | 4 failures |
+| Make `saveEventRecord` replace instead of merge | 4 failures |
+| Have a routine fix clear a raised beacon | 1 failure |
+| Trust `user_metadata` for director status | 1 failure |
+| Typo an element id | lint: 2 findings |
+
+Put it back afterwards.
+
+That table exists because it has caught real gaps twice: replacing instead of
+merging produced **no** failures until an assertion was added for it, and the
+same was true of the `Authorization` header. A green run only means as much as
+the last time somebody checked it could go red.
