@@ -167,6 +167,36 @@ create policy signals_delete on public.signals
   using (owner = auth.uid() or (auth.jwt() -> 'app_metadata' ->> 'director') = 'true');
 
 
+-- ---- bets ----
+-- Open to read: a side bet is a public bit of fun. You create and join as
+-- yourself, and remove only your own rows - the director can remove anything,
+-- which is the moderation tool for a bet that stops being funny.
+drop policy if exists bets_public_rw on public.bets;
+drop policy if exists bets_read      on public.bets;
+drop policy if exists bets_insert    on public.bets;
+drop policy if exists bets_update    on public.bets;
+drop policy if exists bets_delete    on public.bets;
+
+create policy bets_read on public.bets
+  for select to anon, authenticated
+  using (true);
+
+create policy bets_insert on public.bets
+  for insert to authenticated
+  with check (owner = auth.uid());
+
+-- Settling a bet writes a winner onto the bet row, so the creator needs update
+-- on their own rows. Nobody else can touch it.
+create policy bets_update on public.bets
+  for update to authenticated
+  using      (owner = auth.uid() or (auth.jwt() -> 'app_metadata' ->> 'director') = 'true')
+  with check (owner = auth.uid() or (auth.jwt() -> 'app_metadata' ->> 'director') = 'true');
+
+create policy bets_delete on public.bets
+  for delete to authenticated
+  using (owner = auth.uid() or (auth.jwt() -> 'app_metadata' ->> 'director') = 'true');
+
+
 -- ---- config ----
 -- Every device must READ this - it carries the live event, the target species
 -- and the course boundary. Only the director may write it. Before this, any

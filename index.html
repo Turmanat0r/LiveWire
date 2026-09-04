@@ -583,6 +583,50 @@
   }
   nav.tabbar button{position:relative;}
 
+  /* ---- disqualification notice ---- */
+  .dq-notice{
+    border:2px solid var(--danger);background:#F1D6D0;
+    padding:13px;border-radius:4px;margin-bottom:12px;
+  }
+  .dq-notice-title{
+    font-family:'Oswald',sans-serif;font-size:15px;font-weight:600;
+    letter-spacing:0.04em;text-transform:uppercase;color:var(--danger);
+  }
+  .dq-notice-reason{
+    font-size:14px;font-style:italic;color:var(--ink);margin-top:6px;
+    padding-left:10px;border-left:3px solid rgba(163,55,42,0.45);
+  }
+  .dq-notice-note{font-size:12px;line-height:1.5;color:var(--ink);margin-top:8px;}
+  .home-profilecard.dq{border-color:var(--danger);}
+  .home-profile-dq{
+    display:inline-block;margin-left:7px;padding:1px 6px;border-radius:3px;
+    background:var(--danger);color:#fff;font-size:9px;font-weight:700;
+    letter-spacing:0.06em;text-transform:uppercase;vertical-align:middle;
+  }
+
+  /* ---- side bets ---- */
+  .bet{padding:12px 0;border-bottom:1px solid var(--line);}
+  .bet:last-child{border-bottom:0;}
+  .bet-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;}
+  .bet-title{font-family:'Fraunces',serif;font-size:15px;color:var(--deep);}
+  .bet-stake{
+    font-family:'Space Mono',monospace;font-size:11px;color:var(--gold-deep);
+    flex-shrink:0;
+  }
+  .bet-meta{font-size:11px;color:var(--steel);margin-top:3px;}
+  .bet-standing{
+    margin-top:8px;padding:8px 10px;background:var(--paper-2);
+    border-left:3px solid var(--olive);font-size:13px;
+  }
+  .bet-standing.settled{border-left-color:var(--gold);}
+  .bet-standing strong{font-family:'Fraunces',serif;color:var(--deep);}
+  .bet-in{
+    display:inline-block;margin-left:6px;padding:1px 6px;border-radius:3px;
+    background:#DDE6D5;color:var(--olive);font-size:9px;font-weight:700;
+    letter-spacing:0.06em;text-transform:uppercase;vertical-align:middle;
+  }
+  .bet-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+
   /* ---- beacons ----
      A raised beacon has to read as urgent at a glance, in sunlight, on a
      phone held at arm's length in a moving kayak. */
@@ -856,6 +900,7 @@
         <button class="home-register" id="home-register-btn" type="button" data-goto="register">Register now</button>
       </section>
 
+      <div id="home-dq-notice"></div>
       <div id="home-profile"></div>
       <div class="event-countdown" id="event-countdown" hidden aria-live="polite">
         <div class="countdown-status">
@@ -894,7 +939,7 @@
         </button>
         <button class="home-tile accent-gold" type="button" data-goto="bigfish">
           <span class="home-tile-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15 8.5c-.8-.7-1.8-1-3-1-1.7 0-3 .9-3 2.2 0 3.4 6 1.3 6 4.5 0 1.3-1.3 2.3-3.1 2.3-1.3 0-2.5-.4-3.4-1.2M12 5.5v13"/></svg></span>
-          <span class="home-tile-copy"><span class="home-tile-label">Big Fish Pot</span><span class="home-tile-sub">Side-pot standings</span></span>
+          <span class="home-tile-copy"><span class="home-tile-label">Side Bets</span><span class="home-tile-sub">Big Fish &amp; angler bets</span></span>
         </button>
       </div>
 
@@ -1182,6 +1227,38 @@
         <h2>Big Fish pot</h2>
         <p class="hint" style="margin-top:0;" id="bigfish-note">Optional $10/angler side pot. Winner take all.</p>
         <div id="bf-list"></div>
+      </div>
+
+      <div class="card">
+        <h2>Angler side bets</h2>
+        <p class="hint" style="margin-top:0;">Bets anglers run among themselves. <strong>The app keeps score, not the money</strong> &mdash; settle up between yourselves like you always have. Smallest, most and first are worked out automatically from approved catches; anything else is called by whoever started it.</p>
+        <div id="bet-list"></div>
+      </div>
+
+      <div class="card" id="bet-new-card">
+        <h2>Start a bet</h2>
+        <div class="field">
+          <label for="bet-title">What is the bet?</label>
+          <input type="text" id="bet-title" maxlength="70" placeholder="Smallest walleye of the day">
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="bet-kind">Who wins?</label>
+            <select id="bet-kind">
+              <option value="smallest">Smallest approved fish</option>
+              <option value="most">Most approved fish</option>
+              <option value="first">First approved fish</option>
+              <option value="manual">I&rsquo;ll decide myself</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="bet-stake">Stake (optional)</label>
+            <input type="text" id="bet-stake" maxlength="40" placeholder="A beer at the ramp">
+          </div>
+        </div>
+        <p class="hint" style="margin-top:0;">Keep it clean and keep it friendly &mdash; the director can remove any bet, and everyone in the tournament can see this.</p>
+        <div class="err" id="bet-err" style="display:none;"></div>
+        <button class="secondary" id="bet-create">Start it</button>
       </div>
     </section>
 
@@ -2240,16 +2317,16 @@ function deepClone(v){
   try{ return JSON.parse(JSON.stringify(v)); }catch(e){ return v; }
 }
 
-const SHARED_COLLECTIONS = ['anglers','catches','donations','messages','signals'];
+const SHARED_COLLECTIONS = ['anglers','catches','donations','messages','signals','bets'];
 let store = null;                 // the active backend, or null for device-only
 let syncState = 'connecting';     // connecting | live | offline | local
 let syncDetail = '';
 let storeFull = false;
-const liveCache = { anglers:null, catches:null, donations:null, messages:null, signals:null, config:null };
+const liveCache = { anglers:null, catches:null, donations:null, messages:null, signals:null, bets:null, config:null };
 // Ids as they were when the caller last LOADED. Deleting is scoped to these, so
 // a catch another angler files between one device's load and its save is never
 // mistaken for "the user removed this".
-const loadedIds = { anglers:null, catches:null, donations:null, messages:null, signals:null };
+const loadedIds = { anglers:null, catches:null, donations:null, messages:null, signals:null, bets:null };
 
 // ---- which event is live ----
 // Held in the shared config record rather than on the phone, so every device
@@ -2464,7 +2541,7 @@ async function initAuth(){
 function supabaseBackend(){
   const base = SUPABASE_URL.replace(/\/+$/, '');
   const TABLES = { anglers:'anglers', catches:'catches', donations:'donations',
-                   messages:'messages', signals:'signals', config:'config' };
+                   messages:'messages', signals:'signals', bets:'bets', config:'config' };
   // Built per request, not once: the session token is refreshed in the
   // background, and a header object captured at startup would go stale and
   // start 401ing an hour into the event.
@@ -2890,6 +2967,8 @@ async function saveMessages(list){ return await saveCollection('messages', list)
 // field instead of growing with every fix taken.
 async function loadSignals(){ return cachedRows('signals'); }
 async function saveSignals(list){ return await saveCollection('signals', list); }
+async function loadBets(){ return cachedRows('bets'); }
+async function saveBets(list){ return await saveCollection('bets', list); }
 async function saveDonations(list){ return await saveCollection('donations', list); }
 
 // ---- config ----
@@ -3675,7 +3754,7 @@ function renderScreen(name){
   if(name==='manage') renderManageScreen();
   if(name==='checkin') renderCheckin();
   if(name==='livewell') renderLivewell();
-  if(name==='bigfish') renderBigFish();
+  if(name==='bigfish'){ renderBigFish(); renderBets(); }
   if(name==='gps') renderPublicGps();
   if(name==='payouts') renderPayoutCalculator();
   if(name==='chat') renderChat();
@@ -3744,6 +3823,33 @@ function renderEventCopy(){
   document.title = 'LiveWire — ' + evt.name;
 }
 
+// ---- disqualification notice ----
+// There is no push, so "notify" means: the next time they open the app, they
+// cannot miss it. It sits above their profile, is not dismissible, and carries
+// the reason the director gave - being dropped from the standings without
+// being told why is the version of this that starts arguments at the ramp.
+function renderDqNotice(me){
+  const el = document.getElementById('home-dq-notice');
+  if(!el) return;
+  if(!me || !me.disqualified){ el.innerHTML = ''; return; }
+  const when = me.dqAt
+    ? new Date(me.dqAt).toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' })
+    : '';
+  el.innerHTML =
+    '<div class="dq-notice">' +
+      '<div class="dq-notice-title">You have been disqualified</div>' +
+      (me.dqReason
+        ? '<div class="dq-notice-reason">&ldquo;' + escapeHtml(me.dqReason) + '&rdquo;</div>'
+        : '<div class="dq-notice-reason">No reason was recorded.</div>') +
+      '<div class="dq-notice-note">' +
+        'You are out of the standings, the Big Fish pot and any payout placing' +
+        (when ? ' as of ' + escapeHtml(when) : '') + '. ' +
+        'Your entry fee stays in the pool and your catches stay on record. ' +
+        'Speak to the tournament director if you think this is wrong &mdash; they can reinstate you.' +
+      '</div>' +
+    '</div>';
+}
+
 async function renderHome(){
   const anglers = await loadAnglers();
   const myId = getMyAnglerId();
@@ -3755,10 +3861,16 @@ async function renderHome(){
   document.getElementById('home-reg-text').textContent = closed ? 'Registration closed' : 'Registration open';
   document.getElementById('home-reg-badge').classList.toggle('closed', closed);
 
+  renderDqNotice(me);
+
   if(me){
     const teamLabel = me.division==='team' ? ('Team with '+escapeHtml(me.partner)) : 'Solo division';
-    const sub = teamLabel + ' &middot; ID ' + me.tournamentId;
-    el.innerHTML = '<div class="home-profilecard"><div class="home-avatar">'+escapeHtml(initials(me.name))+'</div><div class="home-profile-copy"><span class="home-profile-label">Angler profile</span><span class="home-profile-name">'+escapeHtml(me.name)+'</span><span class="home-profile-sub">'+sub+'</span></div></div>';
+    // The handle is what everyone else sees them as, so it belongs on their own
+    // card - otherwise the chat is full of a name they never chose to look at.
+    const sub = escapeHtml(displayHandle(me)) + '<br>' + teamLabel + ' &middot; ID ' + escapeHtml(me.tournamentId);
+    const dqTag = me.disqualified
+      ? '<span class="home-profile-dq">Disqualified</span>' : '';
+    el.innerHTML = '<div class="home-profilecard'+(me.disqualified ? ' dq' : '')+'"><div class="home-avatar">'+escapeHtml(initials(me.name))+'</div><div class="home-profile-copy"><span class="home-profile-label">Angler profile'+dqTag+'</span><span class="home-profile-name">'+escapeHtml(me.name)+'</span><span class="home-profile-sub">'+sub+'</span></div></div>';
     registerBtn.textContent = 'Registration details';
   } else {
     el.innerHTML = '<div class="home-profilecard"><div class="home-avatar">+</div><div class="home-profile-copy"><span class="home-profile-label">Angler profile</span><span class="home-profile-name">Not registered yet</span><span class="home-profile-sub">'+(closed ? 'Registration is closed for this event' : 'Register above to receive your tournament ID')+'</span></div></div>';
@@ -4992,6 +5104,240 @@ async function announceCatch(catchId, angler){
     await saveMessages(messages);
   }catch(e){ console.error(e); }
 }
+
+// ---- side bets ----
+// Bets anglers run among themselves. The app keeps SCORE, never money: entry
+// fees already work that way, and the moment an app starts tracking who owes
+// who a beer it needs to be right about it.
+//
+// One collection, two record shapes, because joining has to be its own row.
+// Holding a list of entrants inside the bet would mean two anglers joining at
+// the same moment write the same record, and last-writer-wins quietly drops
+// one of them - the same trap the store's own notes warn about.
+//
+//   { kind:'bet',  id, title, stake, scoring, creatorId, winnerId, settledAt }
+//   { kind:'join', id, betId, anglerId }
+//
+// Scoring: smallest / most / first are worked out from approved catches, so
+// nobody has to adjudicate. 'manual' is for everything an app cannot see -
+// whoever started it calls the winner.
+const BET_TITLE_MAX = 70;
+const BET_STAKE_MAX = 40;
+const BET_OPEN_MAX = 3;      // per angler, so one person cannot flood the screen
+const BET_SCORING = ['smallest', 'most', 'first', 'manual'];
+
+function betRecords(rows){ return rows.filter(r=> r.kind === 'bet'); }
+function betJoins(rows, betId){ return rows.filter(r=> r.kind === 'join' && r.betId === betId); }
+function betHasJoined(rows, betId, anglerId){
+  return rows.some(r=> r.kind === 'join' && r.betId === betId && r.anglerId === anglerId);
+}
+
+// Who is winning, from approved catches of the scoring species only. Returns
+// null when it cannot be called yet, which is different from a draw.
+function betStanding(bet, rows, catches, anglerById){
+  if(bet.scoring === 'manual') return null;
+  const entrants = betJoins(rows, bet.id).map(j=> j.anglerId);
+  if(entrants.length === 0) return null;
+
+  const eligible = catches.filter(c=>
+    c.status === 'approved' && isScoringSpecies(c.species) &&
+    entrants.indexOf(c.anglerId) !== -1 &&
+    !(anglerById[c.anglerId] && anglerById[c.anglerId].disqualified));
+  if(eligible.length === 0) return null;
+
+  if(bet.scoring === 'most'){
+    const counts = {};
+    eligible.forEach(c=>{ counts[c.anglerId] = (counts[c.anglerId] || 0) + 1; });
+    let bestId = null, best = -1;
+    Object.keys(counts).forEach(id=>{ if(counts[id] > best){ best = counts[id]; bestId = id; } });
+    return { anglerId: bestId, detail: best + ' approved ' + (best === 1 ? 'fish' : 'fish') };
+  }
+  if(bet.scoring === 'first'){
+    const first = eligible.slice().sort((a,b)=> a.timestamp - b.timestamp)[0];
+    return { anglerId: first.anglerId,
+             detail: 'at ' + new Date(first.timestamp).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) };
+  }
+  // smallest
+  const small = eligible.slice().sort((a,b)=> a.length - b.length)[0];
+  return { anglerId: small.anglerId, detail: Number(small.length).toFixed(2) + '"' };
+}
+
+function betCardHtml(bet, rows, catches, ctx){
+  const joins = betJoins(rows, bet.id);
+  const joined = betHasJoined(rows, bet.id, ctx.meId);
+  const mine = bet.creatorId === ctx.meId;
+  const settled = !!bet.winnerId;
+  const standing = settled ? null : betStanding(bet, rows, catches, ctx.anglerById);
+
+  const scoringLabel = {
+    smallest: 'Smallest approved fish',
+    most: 'Most approved fish',
+    first: 'First approved fish',
+    manual: 'Called by ' + escapeHtml(displayHandle(ctx.anglerById[bet.creatorId]))
+  }[bet.scoring] || 'Called by whoever started it';
+
+  let standingHtml = '';
+  if(settled){
+    standingHtml = '<div class="bet-standing settled">Won by <strong>' +
+      escapeHtml(displayHandle(ctx.anglerById[bet.winnerId])) + '</strong></div>';
+  } else if(standing){
+    standingHtml = '<div class="bet-standing">Leading: <strong>' +
+      escapeHtml(displayHandle(ctx.anglerById[standing.anglerId])) + '</strong> &middot; ' +
+      escapeHtml(standing.detail) + '</div>';
+  } else if(bet.scoring !== 'manual' && joins.length > 0){
+    standingHtml = '<div class="bet-standing">No approved catches from anyone in yet.</div>';
+  }
+
+  const acts = [];
+  if(!settled && ctx.meId){
+    acts.push(joined
+      ? '<button class="small" data-bet-act="leave" data-bet-id="'+escapeHtml(bet.id)+'">Leave</button>'
+      : '<button class="small" data-bet-act="join" data-bet-id="'+escapeHtml(bet.id)+'">I&rsquo;m in</button>');
+  }
+  if(!settled && (mine || ctx.isDirector) && joins.length > 0){
+    acts.push('<button class="small" data-bet-act="settle" data-bet-id="'+escapeHtml(bet.id)+'">Call the winner</button>');
+  }
+  if(mine || ctx.isDirector){
+    acts.push('<button class="small danger" data-bet-act="delete" data-bet-id="'+escapeHtml(bet.id)+'">Delete</button>');
+  }
+
+  return '<div class="bet">' +
+    '<div class="bet-top"><span class="bet-title">' + escapeHtml(bet.title) +
+      (joined ? '<span class="bet-in">In</span>' : '') + '</span>' +
+      (bet.stake ? '<span class="bet-stake">' + escapeHtml(bet.stake) + '</span>' : '') + '</div>' +
+    '<div class="bet-meta">' + scoringLabel + ' &middot; ' +
+      joins.length + (joins.length === 1 ? ' angler in' : ' anglers in') + ' &middot; started by ' +
+      escapeHtml(displayHandle(ctx.anglerById[bet.creatorId])) + '</div>' +
+    standingHtml +
+    (acts.length ? '<div class="bet-actions">' + acts.join('') + '</div>' : '') +
+    '</div>';
+}
+
+async function renderBets(){
+  const rows = await loadBets();
+  const anglers = await loadAnglers();
+  const catches = await loadCatches();
+  const me = chatAuthor(anglers);
+  const ctx = {
+    meId: me ? me.id : null,
+    anglerById: {},
+    isDirector: adminUnlocked || authMode === 'director'
+  };
+  anglers.forEach(a=>{ ctx.anglerById[a.id] = a; });
+
+  // Open bets first, then settled ones, newest first within each.
+  const bets = betRecords(rows).sort((a, b)=>{
+    const aSettled = !!a.winnerId, bSettled = !!b.winnerId;
+    if(aSettled !== bSettled) return aSettled ? 1 : -1;
+    return (b.timestamp || 0) - (a.timestamp || 0);
+  });
+
+  const list = document.getElementById('bet-list');
+  if(list){
+    list.innerHTML = bets.length === 0
+      ? '<p class="empty">No side bets yet. Start one below &mdash; smallest fish is a classic.</p>'
+      : bets.map(b=> betCardHtml(b, rows, catches, ctx)).join('');
+  }
+
+  const card = document.getElementById('bet-new-card');
+  if(card) card.style.display = me ? 'block' : 'none';
+  wireBetActions();
+}
+
+function wireBetActions(){
+  document.querySelectorAll('#bet-list [data-bet-act]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = btn.dataset.betId;
+      const act = btn.dataset.betAct;
+      const rows = await loadBets();
+      const anglers = await loadAnglers();
+      const me = chatAuthor(anglers);
+      const bet = betRecords(rows).find(b=> b.id === id);
+      if(!bet || !me) return;
+
+      if(act === 'join'){
+        if(betHasJoined(rows, id, me.id)) return;
+        // Its own record, so two anglers joining at once cannot overwrite
+        // each other.
+        rows.push({ id: uid(), kind:'join', betId: id, anglerId: me.id, timestamp: Date.now() });
+        await saveBets(rows);
+        return renderBets();
+      }
+      if(act === 'leave'){
+        await saveBets(rows.filter(r=>
+          !(r.kind === 'join' && r.betId === id && r.anglerId === me.id)));
+        return renderBets();
+      }
+      if(act === 'settle'){
+        const entrants = betJoins(rows, id).map(j=> j.anglerId);
+        const byId = {};
+        anglers.forEach(a=>{ byId[a.id] = a; });
+        const suggested = betStanding(bet, rows, await loadCatches(), byId);
+        const names = entrants.map((eid, i)=> (i+1) + '. ' + displayHandle(byId[eid])).join('\\n');
+        const pick = window.prompt(
+          'Who won "' + bet.title + '"?\\n\\n' + names +
+          (suggested ? '\\n\\nThe app makes it ' + displayHandle(byId[suggested.anglerId]) + '.' : '') +
+          '\\n\\nType the number:', suggested ? String(entrants.indexOf(suggested.anglerId) + 1) : '');
+        if(pick === null) return;
+        const idx = parseInt(pick, 10) - 1;
+        if(!(idx >= 0 && idx < entrants.length)){ window.alert('That is not one of the numbers listed.'); return; }
+        const at = rows.findIndex(r=> r.id === id);
+        rows[at] = Object.assign({}, rows[at], { winnerId: entrants[idx], settledAt: Date.now() });
+        await saveBets(rows);
+        return renderBets();
+      }
+      if(act === 'delete'){
+        if(!window.confirm('Delete "' + bet.title + '"? Everyone in it is dropped too.')) return;
+        // The bet takes its joins with it, or they linger pointing at nothing.
+        await saveBets(rows.filter(r=>
+          r.id !== id && !(r.kind === 'join' && r.betId === id)));
+        return renderBets();
+      }
+    });
+  });
+}
+
+bindEl('bet-create','click', async ()=>{
+  const errEl = document.getElementById('bet-err');
+  const fail = (msg)=>{ errEl.textContent = msg; errEl.style.display = 'block'; };
+  errEl.style.display = 'none';
+
+  const title = (document.getElementById('bet-title').value || '').trim();
+  const stake = (document.getElementById('bet-stake').value || '').trim();
+  const scoring = document.getElementById('bet-kind').value;
+  if(!title) return fail('Say what the bet is.');
+  if(title.length > BET_TITLE_MAX) return fail('Keep the title under ' + BET_TITLE_MAX + ' characters.');
+  if(stake.length > BET_STAKE_MAX) return fail('Keep the stake under ' + BET_STAKE_MAX + ' characters.');
+  if(BET_SCORING.indexOf(scoring) === -1) return fail('Pick how the winner is decided.');
+
+  const anglers = await loadAnglers();
+  const me = chatAuthor(anglers);
+  if(!me) return fail('Register on this device before starting a bet.');
+
+  const rows = await loadBets();
+  // A cap rather than moderation after the fact: one angler with a sense of
+  // humour should not be able to bury the screen.
+  const openMine = betRecords(rows).filter(b=> b.creatorId === me.id && !b.winnerId).length;
+  if(openMine >= BET_OPEN_MAX){
+    return fail('You already have ' + openMine + ' bets running. Settle or delete one first.');
+  }
+  if(betRecords(rows).some(b=> b.title.toLowerCase() === title.toLowerCase() && !b.winnerId)){
+    return fail('There is already an open bet with that name.');
+  }
+
+  const betId = uid();
+  rows.push({
+    id: betId, kind:'bet', title, stake, scoring,
+    creatorId: me.id, winnerId: null, settledAt: null, timestamp: Date.now()
+  });
+  // Starting a bet puts you in it - nobody starts one to sit it out.
+  rows.push({ id: uid(), kind:'join', betId, anglerId: me.id, timestamp: Date.now() });
+  if(!await saveBets(rows)) return fail('That did not save. Check your signal — it will retry.');
+
+  document.getElementById('bet-title').value = '';
+  document.getElementById('bet-stake').value = '';
+  renderBets();
+});
 
 // ---- admin ----
 let adminUnlocked = false;

@@ -65,6 +65,8 @@ globalThis.__t = {
   loadSignals, saveSignals, publishSignal, activeBeacons, myBeacon,
   signalAgeMinutes, signalIsFresh, signalAgeText, compassFrom, SIGNAL_STALE_MINUTES,
   beaconTick, startBeaconTracking, stopBeaconTracking, resumeBeaconTracking,
+  loadBets, saveBets, betRecords, betJoins, betHasJoined, betStanding, betCardHtml,
+  BET_TITLE_MAX, BET_OPEN_MAX, BET_SCORING, renderDqNotice,
   get beaconTimer(){ return beaconTimer; },
   get authMode(){ return authMode; },
   get adminUnlocked(){ return adminUnlocked; }, set adminUnlocked(v){ adminUnlocked = v; },
@@ -1359,7 +1361,128 @@ await t.resumeBeaconTracking();
 check('but not when there is nothing to resume', t.beaconTimer, null);
 
 // ============================================================
-section('38. the page starts up clean');
+section('38. side bets');
+const BET_ROSTER = [
+  { id:'b1', eventId:E1, name:'Ann', handle:'Salty Perch', division:'solo', role:'solo', teamId:null },
+  { id:'b2', eventId:E1, name:'Bob', handle:'Rogue Pike',  division:'solo', role:'solo', teamId:null },
+  { id:'b3', eventId:E1, name:'Cal', handle:'Jig Walleye', division:'solo', role:'solo', teamId:null }
+];
+const BET_CATCHES = [
+  { id:'k1', eventId:E1, anglerId:'b1', species:'Walleye', status:'approved', division:'solo', length:14.5, timestamp:100 },
+  { id:'k2', eventId:E1, anglerId:'b2', species:'Walleye', status:'approved', division:'solo', length:11.0, timestamp:200 },
+  { id:'k3', eventId:E1, anglerId:'b2', species:'Walleye', status:'approved', division:'solo', length:22.0, timestamp:300 },
+  { id:'k4', eventId:E1, anglerId:'b3', species:'Walleye', status:'pending',  division:'solo', length:5.0,  timestamp:50  },
+  { id:'k5', eventId:E1, anglerId:'b1', species:'Other',   status:'approved', division:'solo', length:2.0,  timestamp:60  }
+];
+seed(BET_ROSTER, BET_CATCHES, [], {});
+t.liveCache.bets = []; t.loadedIds.bets = null;
+await setEvent(E1);
+await t.saveEventSettings({ targetSpecies: 'Walleye' });
+t.setMyAnglerId('b1');
+t.adminUnlocked = false;
+
+const byId = {}; BET_ROSTER.forEach(a => { byId[a.id] = a; });
+const joinsFor = (betId, ids) => ids.map((aid, i) =>
+  ({ id: 'j' + betId + i, eventId: E1, kind: 'join', betId, anglerId: aid }));
+const mkBet = (scoring) => ({ id: 'bet1', eventId: E1, kind: 'bet', title: 'T', scoring, creatorId: 'b1' });
+
+let rows = [mkBet('smallest')].concat(joinsFor('bet1', ['b1', 'b2', 'b3']));
+let st = t.betStanding(rows[0], rows, BET_CATCHES, byId);
+check('smallest picks the shortest approved fish', st.anglerId, 'b2');
+check('and reports its length', st.detail, '11.00"');
+check('a pending catch is ignored', st.anglerId !== 'b3', true);
+
+rows = [mkBet('most')].concat(joinsFor('bet1', ['b1', 'b2']));
+st = t.betStanding(rows[0], rows, BET_CATCHES, byId);
+check('most counts approved catches', st.anglerId, 'b2');
+check('and reports the count', /2 approved/.test(st.detail), true);
+
+rows = [mkBet('first')].concat(joinsFor('bet1', ['b1', 'b2']));
+st = t.betStanding(rows[0], rows, BET_CATCHES, byId);
+check('first goes by timestamp', st.anglerId, 'b1');
+
+// k5 is a 2-inch "Other" - the smallest fish on the board, and it must not win.
+rows = [mkBet('smallest')].concat(joinsFor('bet1', ['b1', 'b2']));
+st = t.betStanding(rows[0], rows, BET_CATCHES, byId);
+check('an out-of-species fish cannot win smallest', st.anglerId, 'b2');
+
+rows = [mkBet('smallest')].concat(joinsFor('bet1', ['b1']));
+st = t.betStanding(rows[0], rows, BET_CATCHES, byId);
+check('someone who never joined cannot win', st.anglerId, 'b1');
+
+const dqById = Object.assign({}, byId, { b2: Object.assign({}, byId.b2, { disqualified: true }) });
+rows = [mkBet('smallest')].concat(joinsFor('bet1', ['b1', 'b2']));
+st = t.betStanding(rows[0], rows, BET_CATCHES, dqById);
+check('a disqualified entrant cannot win', st.anglerId, 'b1');
+
+rows = [mkBet('manual')].concat(joinsFor('bet1', ['b1', 'b2']));
+check('a manual bet has no automatic standing', t.betStanding(rows[0], rows, BET_CATCHES, byId), null);
+check('an empty bet has no standing',
+  t.betStanding(mkBet('smallest'), [mkBet('smallest')], BET_CATCHES, byId), null);
+
+// Joins are their own rows, which is what makes two anglers joining at the
+// same moment safe.
+rows = [mkBet('smallest')].concat(joinsFor('bet1', ['b1', 'b2']));
+check('joins are counted from their own records', t.betJoins(rows, 'bet1').length, 2);
+check('membership is per angler', t.betHasJoined(rows, 'bet1', 'b1'), true);
+check('and false for someone else', t.betHasJoined(rows, 'bet1', 'b3'), false);
+check('bet records are separated from joins', t.betRecords(rows).length, 1);
+
+// Titles and stakes are typed by anglers and render for the whole field.
+const nastyBet = { id: 'bx', kind: 'bet', title: '<img src=x onerror=alert(1)>',
+                   stake: '<script>bad</script>', scoring: 'manual', creatorId: 'b1' };
+const betHtml = t.betCardHtml(nastyBet, [nastyBet], BET_CATCHES,
+  { meId: 'b1', anglerById: byId, isDirector: false });
+check('a bet title creates no element', /<img/.test(betHtml), false);
+check('and is escaped instead', /&lt;img/.test(betHtml), true);
+check('a stake cannot inject either', /<script/.test(betHtml), false);
+
+const otherBet = { id: 'bo', kind: 'bet', title: 'Theirs', scoring: 'manual', creatorId: 'b2' };
+const asAngler = t.betCardHtml(otherBet, [otherBet], BET_CATCHES,
+  { meId: 'b1', anglerById: byId, isDirector: false });
+check('you cannot delete a bet you did not start', /data-bet-act="delete"/.test(asAngler), false);
+const asDirector = t.betCardHtml(otherBet, [otherBet], BET_CATCHES,
+  { meId: 'b1', anglerById: byId, isDirector: true });
+check('the director can delete any bet', /data-bet-act="delete"/.test(asDirector), true);
+const asOwner = t.betCardHtml(mkBet('manual'), [mkBet('manual')], BET_CATCHES,
+  { meId: 'b1', anglerById: byId, isDirector: false });
+check('you can delete your own', /data-bet-act="delete"/.test(asOwner), true);
+
+const settled = { id: 'bs', kind: 'bet', title: 'Done', scoring: 'manual', creatorId: 'b1', winnerId: 'b2' };
+const settledHtml = t.betCardHtml(settled, [settled].concat(joinsFor('bs', ['b1', 'b2'])),
+  BET_CATCHES, { meId: 'b1', anglerById: byId, isDirector: false });
+check('a settled bet names its winner', /Rogue Pike/.test(settledHtml), true);
+check('and cannot be joined', /data-bet-act="join"/.test(settledHtml), false);
+check('nor re-settled', /data-bet-act="settle"/.test(settledHtml), false);
+
+check('the open-bet cap is a real limit', t.BET_OPEN_MAX > 0 && t.BET_OPEN_MAX <= 10, true);
+check('every scoring mode is known', t.BET_SCORING.length, 4);
+
+// ============================================================
+section('39. the disqualification notice');
+const dqEl = elById.get('home-dq-notice');
+t.renderDqNotice({ id: 'b1', name: 'Ann', disqualified: false });
+check('a clear angler sees nothing', dqEl.innerHTML, '');
+t.renderDqNotice(null);
+check('nor does an unregistered device', dqEl.innerHTML, '');
+
+t.renderDqNotice({ id: 'b1', name: 'Ann', disqualified: true,
+                   dqReason: 'Outside the boundary', dqAt: Date.now() });
+check('a disqualified angler is told', /disqualified/i.test(dqEl.innerHTML), true);
+check('and given the reason', /Outside the boundary/.test(dqEl.innerHTML), true);
+check('and told it can be undone', /reinstate/i.test(dqEl.innerHTML), true);
+
+// The reason is typed by the director, but it still renders into a page.
+t.renderDqNotice({ id: 'b1', name: 'Ann', disqualified: true,
+                   dqReason: '<img src=x onerror=alert(1)>' });
+check('the reason is escaped', /<img/.test(dqEl.innerHTML), false);
+check('showing as text instead', /&lt;img/.test(dqEl.innerHTML), true);
+
+t.renderDqNotice({ id: 'b1', name: 'Ann', disqualified: true });
+check('a missing reason still explains itself', /No reason was recorded/.test(dqEl.innerHTML), true);
+
+// ============================================================
+section('40. the page starts up clean');
 // Let the init IIFE's promise chain settle before judging it.
 await new Promise(r => setTimeout(r, 0));
 check('no startup error banner', startupBanners, []);

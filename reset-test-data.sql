@@ -50,6 +50,8 @@ union all
 select 'messages'  as table_name, count(*) from public.messages
 union all
 select 'signals'   as table_name, count(*) from public.signals
+union all
+select 'bets'      as table_name, count(*) from public.bets
 order by table_name;
 
 
@@ -64,6 +66,7 @@ order by table_name;
 -- species, the course boundary and the awards budgets - the setup you spent
 -- time on, not test data. To reset that as well, uncomment the last statement.
 -- ---------------------------------------------------------------------------
+delete from public.bets;
 delete from public.signals;
 delete from public.messages;
 delete from public.catches;
@@ -77,7 +80,7 @@ delete from public.donations;
 
 
 -- ---------------------------------------------------------------------------
--- Confirm it worked. All five counts should be 0.
+-- Confirm it worked. All six counts should be 0.
 -- ---------------------------------------------------------------------------
 select 'anglers'   as table_name, count(*) as remaining from public.anglers
 union all
@@ -88,6 +91,8 @@ union all
 select 'messages'  as table_name, count(*) from public.messages
 union all
 select 'signals'   as table_name, count(*) from public.signals
+union all
+select 'bets'      as table_name, count(*) from public.bets
 order by table_name;
 
 

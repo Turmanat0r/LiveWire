@@ -15,7 +15,7 @@
 --
 -- This returns the database to open access - the state described in
 -- supabase-setup.sql section 2. Anyone with the page's anon key can read and
--- write these six tables. That is the trade the app was built on, and it is
+-- write these seven tables. That is the trade the app was built on, and it is
 -- what you were already running; this is a restore, not a downgrade.
 -- ============================================================================
 
@@ -23,12 +23,12 @@
 -- ---------------------------------------------------------------------------
 -- 1. What is in force right now? Run this first if you want to see the damage.
 --    Under open access you should end up with one *_public_rw row per table,
---    six in all, each cmd = ALL.
+--    seven in all, each cmd = ALL.
 -- ---------------------------------------------------------------------------
 select tablename, policyname, cmd, roles
 from pg_policies
 where schemaname = 'public'
-  and tablename in ('anglers','catches','donations','messages','signals','config')
+  and tablename in ('anglers','catches','donations','messages','signals','bets','config')
 order by tablename, policyname;
 
 
@@ -64,6 +64,12 @@ drop policy if exists signals_insert      on public.signals;
 drop policy if exists signals_update      on public.signals;
 drop policy if exists signals_delete      on public.signals;
 
+drop policy if exists bets_public_rw      on public.bets;
+drop policy if exists bets_read           on public.bets;
+drop policy if exists bets_insert         on public.bets;
+drop policy if exists bets_update         on public.bets;
+drop policy if exists bets_delete         on public.bets;
+
 drop policy if exists config_public_rw    on public.config;
 drop policy if exists config_read         on public.config;
 drop policy if exists config_write        on public.config;
@@ -77,6 +83,7 @@ alter table public.catches   enable row level security;
 alter table public.donations enable row level security;
 alter table public.messages  enable row level security;
 alter table public.signals   enable row level security;
+alter table public.bets      enable row level security;
 alter table public.config    enable row level security;
 
 create policy anglers_public_rw on public.anglers
@@ -96,6 +103,10 @@ create policy messages_public_rw on public.messages
   using (true) with check (true);
 
 create policy signals_public_rw on public.signals
+  for all to anon, authenticated
+  using (true) with check (true);
+
+create policy bets_public_rw on public.bets
   for all to anon, authenticated
   using (true) with check (true);
 
@@ -132,12 +143,12 @@ create policy catch_photos_delete on storage.objects
 
 
 -- ---------------------------------------------------------------------------
--- 5. Confirm. Six rows, all cmd = ALL, roles including anon.
+-- 5. Confirm. Seven rows, all cmd = ALL, roles including anon.
 -- ---------------------------------------------------------------------------
 select tablename, policyname, cmd, roles
 from pg_policies
 where schemaname = 'public'
-  and tablename in ('anglers','catches','donations','messages','signals','config')
+  and tablename in ('anglers','catches','donations','messages','signals','bets','config')
 order by tablename;
 
 -- Then open the app and register a test angler. If that saves, you are back.
