@@ -13,7 +13,8 @@ import { fileURLToPath } from 'url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const handler = require(path.join(HERE, '..', 'api', 'fish-i.js'));
-const { allowedPhotoUrl, clean, normalize, buildPrompt, pickModel, rankModels } = handler.__test;
+const { allowedPhotoUrl, clean, normalize, buildPrompt, pickModel, rankModels,
+        isRetryableModelStatus } = handler.__test;
 
 let pass = 0, fail = 0;
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -172,6 +173,23 @@ check('a malformed entry does not throw',
   pickModel([null, { name: 'models/x' }, M('gemini-2.0-flash')]), 'gemini-2.0-flash');
 check('the models/ prefix is stripped',
   /^models\//.test(pickModel([M('gemini-2.0-flash')])), false);
+
+// ============================================================
+section('6. when to try the next model instead of giving up');
+// The newest flash is the one everybody else picked too, so it returns 503
+// under load. Falling to the next model costs a little quality; not falling
+// costs the director the whole review while four models sit unused.
+check('a model that is not there', isRetryableModelStatus(404), true);
+check('a busy model', isRetryableModelStatus(503), true);
+check('a model that broke', isRetryableModelStatus(500), true);
+
+// These are the same on every model, so walking the list would turn one clear
+// error into several slow ones and end on the wrong message.
+check('a bad request is not retried', isRetryableModelStatus(400), false);
+check('a rejected key is not retried', isRetryableModelStatus(401), false);
+check('a forbidden key is not retried', isRetryableModelStatus(403), false);
+check('a spent quota is not retried', isRetryableModelStatus(429), false);
+check('and success certainly is not', isRetryableModelStatus(200), false);
 
 // ============================================================
 console.log('\n' + (fail === 0 ? 'ALL PASS' : fail + ' FAILED') + '  (' + pass + ' passed)');

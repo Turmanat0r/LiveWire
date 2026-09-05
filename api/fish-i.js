@@ -128,13 +128,40 @@ async function listModels(key) {
   try { return (JSON.parse(raw).models) || []; } catch (e) { return []; }
 }
 
+let cachedRanked = null;
+
+// A status worth trying the next model for. 404 is the model not being
+// callable; 500 and 503 are the flagship being busy, which it will be, because
+// everybody wants the newest one. None of these are a reason to give up while
+// four other models sit unused.
+//
+// 400, 401, 403 and 429 are NOT retryable: a bad request, a bad key, or a
+// quota is the same on every model, and walking the list would turn one clear
+// error into five slow ones.
+function isRetryableModelStatus(status) {
+  return status === 404 || status === 500 || status === 503;
+}
+
+async function resolveRanked(key, force) {
+  if (MODEL_OVERRIDE) return [MODEL_OVERRIDE];
+  if (cachedRanked && !force) return cachedRanked;
+  const ranked = rankModels(await listModels(key));
+  if (!ranked.length) {
+    const err = new Error('This API key has no vision-capable Gemini model available to it.');
+    err.noModel = true;
+    throw err;
+  }
+  cachedRanked = ranked;
+  return ranked;
+}
+
 // Returns the model id to call, or throws with something the director can act
 // on. `force` skips the cache, for the retry after a 404.
 async function resolveModel(key, force) {
   if (MODEL_OVERRIDE) return MODEL_OVERRIDE;
   if (cachedModel && !force) return cachedModel;
 
-  const ranked = rankModels(await listModels(key));
+  const ranked = await resolveRanked(key, force);
   // Only the first few are worth trying. Past that the ranking has run out of
   // anything preferable and the director is waiting on a page load.
   for (const id of ranked.slice(0, 5)) {
@@ -143,9 +170,7 @@ async function resolveModel(key, force) {
       return id;
     }
   }
-  const err = new Error(ranked.length
-    ? 'None of the Gemini models this key offers would answer a call.'
-    : 'This API key has no vision-capable Gemini model available to it.');
+  const err = new Error('None of the Gemini models this key offers would answer a call.');
   err.noModel = true;
   throw err;
 }
@@ -425,24 +450,27 @@ module.exports = async (req, res) => {
 
   let model, upstream;
   try {
-    model = await resolveModel(key, false);
-    upstream = await callModel(model);
-    // A model can pass discovery and still refuse the call - a name the key is
-    // not entitled to, or one retired since this instance warmed up. Throw the
-    // cache away and pick again rather than making the director go and read an
-    // environment variable about it.
-    if (upstream.status === 404 && !MODEL_OVERRIDE) {
-      cachedModel = null;
-      const second = await resolveModel(key, true);
-      if (second !== model) {
-        model = second;
-        upstream = await callModel(model);
-      }
+    // Whichever model was verified goes first; the rest of the ranking is the
+    // queue behind it. A catch is judged by whichever answers, and they are
+    // ranked by preference, so falling down the list costs a little quality
+    // rather than the whole review.
+    const ranked = await resolveRanked(key, false);
+    const order = cachedModel
+      ? [cachedModel].concat(ranked.filter(id => id !== cachedModel))
+      : ranked;
+
+    for (const id of order.slice(0, 3)) {
+      model = id;
+      upstream = await callModel(id);
+      if (!isRetryableModelStatus(upstream.status)) break;
+      // Whatever was cached is not answering; stop preferring it.
+      if (cachedModel === id) cachedModel = null;
     }
   } catch (e) {
     if (e && e.noModel) return send(res, 502, { error: e.message });
     return send(res, 502, { error: 'Could not reach Gemini: ' + (e && e.message ? e.message : 'network error') });
   }
+  if (upstream && upstream.ok) cachedModel = model;
 
   const raw = await upstream.text();
   if (!upstream.ok) {
@@ -452,6 +480,11 @@ module.exports = async (req, res) => {
     }
     if (upstream.status === 429) {
       return send(res, 429, { error: 'The free Gemini quota is used up for now. Wait a minute, then try again.' });
+    }
+    if (upstream.status === 503 || upstream.status === 500) {
+      return send(res, 503, {
+        error: 'Gemini is busy right now - every model this key offers turned the photo away. This clears on its own; try again in a minute.'
+      });
     }
     if (upstream.status === 404) {
       // Google's own words matter here. "Model not found" and "not supported
@@ -506,4 +539,4 @@ module.exports = async (req, res) => {
 
 // Reachable from test/fish-i.test.mjs. Vercel only cares that module.exports
 // is the handler, and it still is - these hang off it.
-module.exports.__test = { allowedPhotoUrl, clean, normalize, buildPrompt, pickModel, rankModels };
+module.exports.__test = { allowedPhotoUrl, clean, normalize, buildPrompt, pickModel, rankModels, isRetryableModelStatus };
