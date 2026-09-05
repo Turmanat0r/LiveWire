@@ -60,6 +60,11 @@ The places where a mistake is silent and expensive:
   importantly, that an angler carrying no flag at all still counts. Reading a
   missing flag as "unconfirmed" would empty the standings of a tournament
   already under way, which is why that case is asserted directly.
+- **Claiming an entry on another device** — that BOTH the board code and the
+  registered phone must match, that neither can be skipped by leaving it blank,
+  and that a server problem is never reported as a bad code. A code alone is
+  four characters and is visible on the board in any photo the angler shows
+  someone.
 - **The roster gate.** `initStore()` is not awaited, so the register form is
   usable before the roster arrives — and a duplicate check against an empty
   roster passes every time. This is how one person registered twice from two
@@ -110,6 +115,9 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Key Fish-I availability off `AI_REVIEW_ENDPOINT` again | 1 failure |
 | Have the page send its own Fish-I prompt | 1 failure |
 | Resolve `/api/fish-i` even on `file://` | 2 failures |
+| Let a claim match on the board code alone | 2 failures |
+| Let a blank board code claim a codeless angler | 1 failure |
+| Report a server error as a bad claim code | 4 failures |
 | Read a missing `pending` flag as unconfirmed | 13 failures |
 | Let an unconfirmed entry into the standings | 1 failure |
 | Let an unconfirmed entry into the Big Fish pot | 2 failures |

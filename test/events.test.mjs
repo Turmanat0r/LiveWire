@@ -69,6 +69,7 @@ globalThis.__t = {
   BET_TITLE_MAX, BET_OPEN_MAX, BET_SCORING, renderDqNotice,
   makeCode, codesInUse, takenCodes, codeBoxHtml, codeNoteHtml, anglerById,
   isConfirmed, normPhone, pendingNoticeHtml, bigFishEntrants, poolCounts,
+  claimEntry, claimErrorText, syncViewportInset,
   CODE_ALPHABET, CODE_LENGTH, duplicateEntryError, rosterIsLoaded, wipeEventData,
   countsSentence, SHARED_COLLECTIONS,
   get rosterLoaded(){ return rosterLoaded; }, set rosterLoaded(v){ rosterLoaded = v; },
@@ -1987,6 +1988,57 @@ check('and told it is the fee, not a mistake they made', /fee/i.test(notice), tr
 check('and told to keep fishing', /still/i.test(notice), true);
 check('a confirmed angler is told nothing', t.pendingNoticeHtml({ name: 'Ann' }), '');
 check('and neither is a legacy one', t.pendingNoticeHtml({}), '');
+
+// ============================================================
+section('48. bringing an entry onto another device');
+// The installed app and the mobile browser are separate storage with separate
+// anonymous sign-ins, so one person is two users to the database. Their entry
+// is invisible in one of them, and registering again is the wrong fix.
+seed([
+  { id: 'x1', eventId: E1, name: 'Ann Miller', phone: '406-555-0100', anglerCode: '7K4M' },
+  { id: 'x2', eventId: E1, name: 'Bob Reyes',  phone: '(406) 555-0199', anglerCode: 'HJ3N' }
+], [], []);
+await setEvent(E1);
+
+// This build has no SUPABASE_URL (the harness blanks it), so claimEntry matches
+// locally. The two checks it applies are the same ones the SQL function applies.
+check('the right code and phone finds the entry',
+  await t.claimEntry('7K4M', '406-555-0100'), 'x1');
+check('the code is case-insensitive', await t.claimEntry('7k4m', '406-555-0100'), 'x1');
+check('and the phone is matched loosely',
+  await t.claimEntry('7K4M', '+1 (406) 555 0100'), 'x1');
+
+// BOTH have to match. A code alone is four characters, and somebody else's code
+// is visible on their board in any photo they show you.
+check('the right code with the wrong phone finds nothing',
+  await t.claimEntry('7K4M', '406-555-0199'), null);
+check('the right phone with the wrong code finds nothing',
+  await t.claimEntry('HJ3N', '406-555-0100'), null);
+check('a code that belongs to nobody finds nothing',
+  await t.claimEntry('ZZZZ', '406-555-0100'), null);
+
+// Neither field may be skipped by leaving it empty.
+check('no code, no claim', await t.claimEntry('', '406-555-0100'), null);
+check('no phone, no claim', await t.claimEntry('7K4M', ''), null);
+check('a short phone is not a phone', await t.claimEntry('7K4M', '5550100'), null);
+check('and neither is nothing at all', await t.claimEntry(null, null), null);
+
+// An angler with no code on record must not be claimable by leaving the box
+// blank - empty matching empty would hand over every legacy entry at once.
+seed([{ id: 'x3', eventId: E1, name: 'Legacy', phone: '406-555-0111' }], [], []);
+await setEvent(E1);
+check('an angler with no board code cannot be claimed with a blank one',
+  await t.claimEntry('', '406-555-0111'), null);
+
+// ---- what the angler is told when it is the SERVER that is wrong ----
+// "No entry found" would send them re-checking a code that was right.
+check('a missing function is not reported as a bad code',
+  /director/.test(t.claimErrorText({ status: 404 })), true);
+check('and says the server is not set up', /set up/.test(t.claimErrorText({ status: 404 })), true);
+check('a not-yet-signed-in device is told to wait',
+  /wait/i.test(t.claimErrorText({ status: 401 })), true);
+check('a network failure reads as a network failure',
+  /signal/.test(t.claimErrorText(new Error('boom'))), true);
 
 // ============================================================
 console.log('\n' + (fail === 0 ? 'ALL PASS' : fail + ' FAILED') + '  (' + pass + ' passed)');

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>LiveWire — Montana Kayak Walleye Open</title>
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/livewire-icon-192.png">
@@ -24,7 +24,17 @@
   }
   *{box-sizing:border-box;}
   body{margin:0;background:var(--paper);color:var(--ink);font-family:'Inter',system-ui,sans-serif;}
-  #app{max-width:520px;margin:0 auto;padding-bottom:96px;min-height:100vh;background:var(--paper);}
+  /* 100vh on a mobile browser is the height with the toolbars HIDDEN, so the
+     page is always taller than what you can see and the bottom of it sits
+     under the browser chrome. dvh is that same measurement done honestly;
+     the vh line stays as the fallback for anything too old to know it. */
+  #app{
+    max-width:520px;margin:0 auto;background:var(--paper);
+    min-height:100vh;
+    min-height:100dvh;
+    padding-bottom:calc(96px + env(safe-area-inset-bottom, 0px));
+    padding-top:env(safe-area-inset-top, 0px);
+  }
 
   header.hero{
     background:var(--deep);
@@ -205,7 +215,16 @@
     /* Above Leaflet, whose controls sit as high as 1000. Without this the map's
        zoom buttons scroll out over the top of the bottom nav. */
     z-index:1200;
-    bottom:14px;left:0;right:0;
+    /* Three things stack up here:
+         14px      the gap it floats at
+         safe-area the home indicator on a notched phone
+         --vv-bottom  however much of the layout viewport the browser's own
+                   toolbar is currently covering, measured in JS below. This
+                   is the one that fixes the nav hiding behind Safari's bar,
+                   because no CSS unit tracks a toolbar that animates. */
+    bottom:calc(14px + env(safe-area-inset-bottom, 0px) + var(--vv-bottom, 0px));
+    left:0;right:0;
+    transition:bottom .12s ease-out;
     max-width:480px;
     margin:0 auto;
     background:var(--deep);
@@ -519,6 +538,15 @@
   .crow-name .pendtag{
     margin-left:6px;font-size:9px;font-weight:700;letter-spacing:.06em;
     background:#F3E3C4;color:var(--gold-deep);padding:2px 5px;border-radius:3px;vertical-align:middle;
+  }
+  /* Below the register button and visually separate from it: this is the road
+     NOT to take unless you have already registered somewhere else. */
+  .claim-block{
+    margin-top:18px;padding-top:14px;border-top:1px solid var(--line);
+  }
+  .claim-block #claim-code{
+    font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
+    font-size:20px;letter-spacing:.14em;text-transform:uppercase;
   }
   .pending-notice{
     border:1px solid var(--gold);border-left-width:4px;background:#F9F3E6;
@@ -1065,6 +1093,30 @@
         <div class="err" id="reg-err" style="display:none;"></div>
         <p class="hint" id="reg-roster-note" style="display:none;margin-top:0;">Loading the roster&hellip; the button opens as soon as it lands, so a second entry cannot slip past the check.</p>
         <button class="primary" id="reg-submit">Complete registration</button>
+
+        <!-- The installed app and the browser are separate storage, so an entry
+             made in one does not show up in the other. This is how you carry it
+             across rather than registering a second time. -->
+        <div class="claim-block">
+          <p class="hint" style="margin:0 0 8px;"><strong>Already registered on another device?</strong> Don&rsquo;t register again &mdash; bring your entry over instead.</p>
+          <button class="small" type="button" id="claim-open">Sign in to my entry</button>
+          <div id="claim-form" style="display:none;margin-top:10px;">
+            <div class="field" style="margin-bottom:8px;">
+              <label for="claim-code">Tournament ID</label>
+              <input type="text" id="claim-code" placeholder="7K4M" autocapitalize="characters" autocomplete="off" maxlength="8">
+            </div>
+            <div class="field" style="margin-bottom:8px;">
+              <label for="claim-phone">Phone you registered with</label>
+              <input type="tel" id="claim-phone" placeholder="406-555-0100">
+            </div>
+            <div class="err" id="claim-err" style="display:none;"></div>
+            <p class="hint" id="claim-ok" style="display:none;margin:0 0 8px;"></p>
+            <div class="actions">
+              <button class="primary" type="button" id="claim-go">Bring my entry over</button>
+              <button class="small" type="button" id="claim-cancel">Cancel</button>
+            </div>
+          </div>
+        </div>
         <p class="hint" id="reg-close-note">Registration closes June 1, 2027. This confirms your spot on the roster &mdash; entry fees and side pot buy-ins are collected separately by PayPal, per the info in your confirmation email.</p>
       </div>
 
@@ -3546,6 +3598,66 @@ function setMyAnglerId(id){
 // guess; the shared config arriving switches the key, not the value.
 async function loadMyAnglerId(){ getMyAnglerId(); }
 
+// ---- bringing an entry onto another device ----
+// The installed home-screen app and the mobile browser are separate storage
+// containers with separate anonymous sign-ins, so the same person is two
+// different users as far as the database is concerned. Their entry is invisible
+// in one and uneditable from the other, and registering again is the wrong fix.
+//
+// claim_entry() (supabase-step3-shared-devices.sql) adds this device to an
+// existing entry after checking two things the angler knows and neither of
+// which is published: the board code, and the phone they registered with.
+async function claimEntry(code, phone){
+  const wantCode = String(code || '').trim().toUpperCase();
+  const wantPhone = normPhone(phone);
+  if(!wantCode || wantPhone.length < 10) return null;
+
+  // Device-only build: no server to ask, so match against what is here and be
+  // honest in the caller that this carries nothing between devices.
+  if(!SUPABASE_URL || !SUPABASE_ANON_KEY){
+    const local = allRows('anglers').find(a=>
+      String(a.anglerCode || '').toUpperCase() === wantCode &&
+      a.phone && normPhone(a.phone) === wantPhone);
+    return local ? local.id : null;
+  }
+
+  const res = await fetch(SUPABASE_URL.replace(/\/+$/, '') + '/rest/v1/rpc/claim_entry', {
+    method: 'POST',
+    headers: {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': 'Bearer ' + bearerToken(),
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ p_code: wantCode, p_phone: wantPhone })
+  });
+  if(!res.ok){
+    let detail = '';
+    try{ detail = (await res.text()).slice(0, 200); }catch(e){}
+    const err = new Error('claim_entry ' + res.status + ' ' + detail);
+    err.status = res.status;
+    throw err;
+  }
+  // A scalar-returning RPC gives back the value itself, or null for no match.
+  const id = await res.json();
+  return (typeof id === 'string' && id) ? id : null;
+}
+
+// The function only exists after step 3 has been run, and a device still on the
+// shared key has the wrong role to call it. Both are worth saying out loud
+// rather than reporting as "no entry found", which sends the angler off
+// re-checking a code that was right all along.
+function claimErrorText(e){
+  if(e && e.status === 404){
+    return 'This tournament server has not been set up for shared devices yet. Ask the director.';
+  }
+  if(e && (e.status === 401 || e.status === 403)){
+    return authMode === 'anon-key'
+      ? 'This device has not finished signing in. Wait a few seconds and try again.'
+      : 'This device is not allowed to claim an entry. Ask the director.';
+  }
+  return 'Could not reach the tournament server. Check your signal and try again.';
+}
+
 // Escapes quotes as well as angle brackets. Several of these strings are
 // interpolated into HTML ATTRIBUTES (value="...") further down, where a bare
 // double quote would close the attribute early and turn the rest of the value
@@ -4239,6 +4351,58 @@ async function refreshPendingHandle(reroll){
   el.textContent = pendingHandle;
 }
 bindEl('reg-handle-reroll','click', ()=> refreshPendingHandle(true));
+
+// ---- claim UI ----
+function showClaimForm(open){
+  const form = document.getElementById('claim-form');
+  const btn = document.getElementById('claim-open');
+  if(!form || !btn) return;
+  form.style.display = open ? 'block' : 'none';
+  btn.style.display = open ? 'none' : '';
+  const err = document.getElementById('claim-err');
+  const ok = document.getElementById('claim-ok');
+  if(err) err.style.display = 'none';
+  if(ok) ok.style.display = 'none';
+}
+bindEl('claim-open','click', ()=> showClaimForm(true));
+bindEl('claim-cancel','click', ()=> showClaimForm(false));
+
+bindEl('claim-go','click', async ()=>{
+  const btn = document.getElementById('claim-go');
+  const errEl = document.getElementById('claim-err');
+  const okEl = document.getElementById('claim-ok');
+  const code = document.getElementById('claim-code').value.trim();
+  const phone = document.getElementById('claim-phone').value.trim();
+  const fail = (m)=>{ errEl.textContent = m; errEl.style.display = 'block'; okEl.style.display = 'none'; };
+  errEl.style.display = 'none';
+  okEl.style.display = 'none';
+
+  if(!code) return fail('Enter your Tournament ID — the four characters on your bump board.');
+  if(normPhone(phone).length < 10) return fail('Enter the phone number you registered with, area code included.');
+
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = 'Checking…';
+  try{
+    const id = await claimEntry(code, phone);
+    if(!id){
+      return fail('No entry matches that Tournament ID and phone number. Check both, or see the director.');
+    }
+    setMyAnglerId(id);
+    // The roster may not hold this angler yet on a device that just opened, so
+    // take whatever the next sync brings rather than asserting it is there.
+    okEl.textContent = 'Found it. Bringing your entry over…';
+    okEl.style.display = 'block';
+    await renderRegisterScreen();
+    await renderHome();
+  }catch(e){
+    console.error(e);
+    fail(claimErrorText(e));
+  }finally{
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+});
 
 // Once this device holds an entry, the form is replaced by that entry. It is
 // also what makes "one per device" honest rather than an error message you only
@@ -7953,11 +8117,41 @@ function wireContestantRows(){
   });
 }
 
+// ---- keeping the tab bar above the browser's own toolbar ----
+// A phone browser's bottom toolbar covers the bottom of the layout viewport,
+// and no CSS unit tracks it while it animates in and out on scroll - which is
+// why the nav looked stuck and half-hidden on the web but fine once installed
+// to the home screen, where there is no toolbar at all.
+//
+// visualViewport is the only thing that knows. The difference between the
+// layout viewport and the visible one IS the covered strip, so the nav is
+// pushed up by exactly that much.
+const KEYBOARD_INSET = 160;   // more than a toolbar; this is a keyboard
+
+function syncViewportInset(){
+  const vv = window.visualViewport;
+  const root = document.documentElement;
+  if(!vv || !root) return;
+  const covered = Math.max(0, root.clientHeight - vv.height - vv.offsetTop);
+  const nav = document.querySelector('nav.tabbar');
+  // A keyboard is not a toolbar. Floating the nav on top of an open keyboard
+  // would put it over the very field being typed into, so it stands down
+  // instead and comes back when the keyboard closes.
+  if(nav) nav.style.visibility = covered > KEYBOARD_INSET ? 'hidden' : '';
+  root.style.setProperty('--vv-bottom', (covered > KEYBOARD_INSET ? 0 : Math.round(covered)) + 'px');
+}
+
+if(window.visualViewport){
+  window.visualViewport.addEventListener('resize', syncViewportInset);
+  window.visualViewport.addEventListener('scroll', syncViewportInset);
+}
+
 // ---- init ----
 (async ()=>{
   try{
     const app = document.getElementById('app');
     if(app) app.dataset.theme = 'home';
+    syncViewportInset();
     await loadMyAnglerId();
     // Paint the event's own name, dates and species before anything else, so the
     // first frame is not last year's copy waiting to be corrected by the sync.
