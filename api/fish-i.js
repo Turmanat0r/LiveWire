@@ -32,10 +32,82 @@
 
 const API_ROOT = 'https://generativelanguage.googleapis.com/v1beta';
 
-// Model names move around. This one is on the free tier and reads images; if
-// Google retires it, set FISHI_MODEL rather than editing this file, and the
-// health check below will tell you plainly whether the name you chose exists.
-const MODEL = process.env.FISHI_MODEL || 'gemini-2.5-flash';
+// Model names move around, and which ones a given key may actually CALL varies
+// with the tier it is on - a name can exist, answer a metadata lookup, and
+// still 404 on generateContent. So nothing is hardcoded: the server asks the
+// key what it can use and picks from that.
+//
+// Set FISHI_MODEL to pin one by hand; it is then used verbatim and no
+// discovery happens.
+const MODEL_OVERRIDE = process.env.FISHI_MODEL || '';
+
+// In preference order. Flash models are the ones on the free tier, and they
+// are quick, which matters when a director is working through a stack of
+// catches. Anything that cannot take an image is filtered out before this.
+const MODEL_PREFERENCE = [
+  /^gemini-2\.5-flash$/,
+  /^gemini-2\.5-flash-lite$/,
+  /^gemini-2\.5-flash-\d/,
+  /^gemini-2\.0-flash$/,
+  /^gemini-2\.0-flash-\d/,
+  /^gemini-[\d.]+-flash/,
+  /^gemini-.*flash/,
+  /^gemini-[\d.]+-pro$/,
+  /^gemini-/
+];
+
+// Models that answer generateContent but cannot help here - they generate
+// images, speak, embed, or stream live - and would fail in confusing ways.
+const MODEL_EXCLUDE = /embedding|aqa|imagen|veo|tts|audio|live|image-generation|computer-use|robotics/i;
+
+// Resolved once per warm instance. Re-resolved when a call 404s, which is what
+// a mid-tournament retirement would look like.
+let cachedModel = null;
+
+function pickModel(models) {
+  const usable = (models || [])
+    .filter(m => m && typeof m.name === 'string')
+    .filter(m => Array.isArray(m.supportedGenerationMethods)
+              && m.supportedGenerationMethods.includes('generateContent'))
+    .map(m => m.name.replace(/^models\//, ''))
+    .filter(id => !MODEL_EXCLUDE.test(id));
+
+  for (const rank of MODEL_PREFERENCE) {
+    // Stable within a rank: -latest and -preview names sort after plain ones,
+    // so a pinned release wins over a moving target when both match.
+    const hits = usable.filter(id => rank.test(id)).sort();
+    if (hits.length) return hits[0];
+  }
+  return null;
+}
+
+async function listModels(key) {
+  const res = await fetch(API_ROOT + '/models?pageSize=200', {
+    headers: { 'x-goog-api-key': key }
+  });
+  const raw = await res.text();
+  if (!res.ok) {
+    const err = new Error(googleMessage(raw) || ('Gemini returned ' + res.status));
+    err.status = res.status;
+    throw err;
+  }
+  try { return (JSON.parse(raw).models) || []; } catch (e) { return []; }
+}
+
+// Returns the model id to call, or throws with something the director can act
+// on. `force` skips the cache, for the retry after a 404.
+async function resolveModel(key, force) {
+  if (MODEL_OVERRIDE) return MODEL_OVERRIDE;
+  if (cachedModel && !force) return cachedModel;
+  const picked = pickModel(await listModels(key));
+  if (!picked) {
+    const err = new Error('This API key has no vision-capable Gemini model available to it.');
+    err.noModel = true;
+    throw err;
+  }
+  cachedModel = picked;
+  return picked;
+}
 
 // Vercel caps a serverless request body at 4.5 MB. The app encodes catch
 // photos to 600 KB at the absolute most (PHOTO_STEPS in index.html), so this
@@ -215,16 +287,15 @@ module.exports = async (req, res) => {
   if (req.method === 'GET') {
     if (!key) return send(res, 200, { ready: false, reason: 'no-api-key' });
     try {
-      const probe = await fetch(API_ROOT + '/models/' + encodeURIComponent(MODEL), {
-        headers: { 'x-goog-api-key': key }
-      });
-      if (probe.ok) return send(res, 200, { ready: true, model: MODEL });
-      const detail = googleMessage(await probe.text());
-      if (probe.status === 400 || probe.status === 401 || probe.status === 403) {
-        return send(res, 200, { ready: false, reason: 'bad-key', detail });
-      }
-      return send(res, 200, { ready: false, reason: 'bad-model', model: MODEL, detail });
+      const model = await resolveModel(key, req.query && req.query.refresh === '1');
+      return send(res, 200, { ready: true, model, pinned: !!MODEL_OVERRIDE });
     } catch (e) {
+      if (e && (e.status === 400 || e.status === 401 || e.status === 403)) {
+        return send(res, 200, { ready: false, reason: 'bad-key', detail: e.message });
+      }
+      if (e && e.noModel) {
+        return send(res, 200, { ready: false, reason: 'bad-model', detail: e.message });
+      }
       return send(res, 200, { ready: false, reason: 'unreachable' });
     }
   }
@@ -275,25 +346,46 @@ module.exports = async (req, res) => {
   const scoring = body.scoring !== false;
   const prompt = buildPrompt(target, water, claimedSpecies, claimedLength, scoring);
 
-  let upstream;
-  try {
-    upstream = await fetch(API_ROOT + '/models/' + encodeURIComponent(MODEL) + ':generateContent', {
+  const payload = JSON.stringify({
+    contents: [{
+      role: 'user',
+      parts: [{ inline_data: image }, { text: prompt }]
+    }],
+    generationConfig: {
+      temperature: 0,
+      maxOutputTokens: 1024,
+      responseMimeType: 'application/json',
+      responseSchema: RESPONSE_SCHEMA
+    }
+  });
+
+  const callModel = (model) => fetch(
+    API_ROOT + '/models/' + encodeURIComponent(model) + ':generateContent',
+    {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({
-        contents: [{
-          role: 'user',
-          parts: [{ inline_data: image }, { text: prompt }]
-        }],
-        generationConfig: {
-          temperature: 0,
-          maxOutputTokens: 1024,
-          responseMimeType: 'application/json',
-          responseSchema: RESPONSE_SCHEMA
-        }
-      })
-    });
+      body: payload
+    }
+  );
+
+  let model, upstream;
+  try {
+    model = await resolveModel(key, false);
+    upstream = await callModel(model);
+    // A model can pass discovery and still refuse the call - a name the key is
+    // not entitled to, or one retired since this instance warmed up. Throw the
+    // cache away and pick again rather than making the director go and read an
+    // environment variable about it.
+    if (upstream.status === 404 && !MODEL_OVERRIDE) {
+      cachedModel = null;
+      const second = await resolveModel(key, true);
+      if (second !== model) {
+        model = second;
+        upstream = await callModel(model);
+      }
+    }
   } catch (e) {
+    if (e && e.noModel) return send(res, 502, { error: e.message });
     return send(res, 502, { error: 'Could not reach Gemini: ' + (e && e.message ? e.message : 'network error') });
   }
 
@@ -307,7 +399,11 @@ module.exports = async (req, res) => {
       return send(res, 429, { error: 'The free Gemini quota is used up for now. Wait a minute, then try again.' });
     }
     if (upstream.status === 404) {
-      return send(res, 502, { error: 'Gemini has no model named "' + MODEL + '". Set FISHI_MODEL in Vercel to a current one.' });
+      return send(res, 502, {
+        error: MODEL_OVERRIDE
+          ? 'This key cannot use the model "' + model + '" pinned in FISHI_MODEL. Clear that variable to let the server pick one.'
+          : 'This key cannot call "' + model + '", and no other usable model was offered.'
+      });
     }
     return send(res, 502, { error: 'Gemini returned ' + upstream.status + (detail ? ': ' + detail : '') });
   }
@@ -352,4 +448,4 @@ module.exports = async (req, res) => {
 
 // Reachable from test/fish-i.test.mjs. Vercel only cares that module.exports
 // is the handler, and it still is - these hang off it.
-module.exports.__test = { allowedPhotoUrl, clean, normalize, buildPrompt, MODEL };
+module.exports.__test = { allowedPhotoUrl, clean, normalize, buildPrompt, pickModel };

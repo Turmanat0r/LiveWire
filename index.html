@@ -3674,7 +3674,7 @@ function fishIStatusText(){
     case 'ready-no-image-limit':return 'ready, though this view did not report photo support.';
     case 'endpoint-no-key':     return 'the server has no Gemini API key. Add GEMINI_API_KEY in Vercel \u2192 Settings \u2192 Environment Variables, then redeploy.';
     case 'endpoint-bad-key':    return 'the server\u2019s Gemini API key was rejected. Check GEMINI_API_KEY in Vercel, then redeploy.';
-    case 'endpoint-bad-model':  return 'the vision model this deployment asks for no longer exists. Set FISHI_MODEL in Vercel to a current one.';
+    case 'endpoint-bad-model':  return 'this API key has no vision model available to it. Check the key in Google AI Studio, or pin one with FISHI_MODEL in Vercel.';
     case 'endpoint-not-ready':  return 'the server reports Fish-I as unavailable.';
     case 'endpoint-unreachable':return 'the server did not answer. It may still be deploying \u2014 wait a moment, then retry.';
     default:

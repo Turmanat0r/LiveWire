@@ -13,7 +13,7 @@ import { fileURLToPath } from 'url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const handler = require(path.join(HERE, '..', 'api', 'fish-i.js'));
-const { allowedPhotoUrl, clean, normalize, buildPrompt } = handler.__test;
+const { allowedPhotoUrl, clean, normalize, buildPrompt, pickModel } = handler.__test;
 
 let pass = 0, fail = 0;
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -107,6 +107,44 @@ check('and cannot go negative', normalize({ speciesConfidence: -2 }).speciesConf
 check('a missing concerns list is an empty one, not undefined',
   normalize({ species: 'x' }).concerns, []);
 check('an empty answer does not throw', typeof normalize({}), 'object');
+
+// ============================================================
+section('5. picking a model the key can actually use');
+// The first version of this hardcoded gemini-2.5-flash. The name passed a
+// metadata lookup and then 404'd on the real call, because existing and being
+// callable by a given key are two different things. So the server asks.
+const M = (name, methods) => ({ name: 'models/' + name, supportedGenerationMethods: methods || ['generateContent'] });
+
+check('nothing offered means nothing picked', pickModel([]), null);
+check('and neither does undefined', pickModel(undefined), null);
+
+check('the preferred flash model wins',
+  pickModel([M('gemini-2.0-flash'), M('gemini-2.5-flash'), M('gemini-1.5-pro')]), 'gemini-2.5-flash');
+check('order in the list does not matter',
+  pickModel([M('gemini-2.5-flash'), M('gemini-2.0-flash')]), 'gemini-2.5-flash');
+check('it falls back down the ranks',
+  pickModel([M('gemini-2.0-flash'), M('gemini-1.5-pro')]), 'gemini-2.0-flash');
+check('an unknown future gemini is still usable',
+  pickModel([M('gemini-9.9-wildcard')]), 'gemini-9.9-wildcard');
+check('a plain name beats a preview of the same rank',
+  pickModel([M('gemini-2.5-flash-preview-01'), M('gemini-2.5-flash')]), 'gemini-2.5-flash');
+
+// The filters. Each of these answers generateContent and would fail in a way
+// that reads as "Fish-I is broken" rather than "wrong tool".
+check('a model that cannot generateContent is skipped',
+  pickModel([M('gemini-2.5-flash', ['countTokens']), M('gemini-2.0-flash')]), 'gemini-2.0-flash');
+check('embedding models are skipped',
+  pickModel([M('gemini-embedding-001'), M('gemini-2.0-flash')]), 'gemini-2.0-flash');
+check('image generators are skipped',
+  pickModel([M('gemini-2.5-flash-image-generation'), M('gemini-2.0-flash')]), 'gemini-2.0-flash');
+check('speech and live models are skipped',
+  pickModel([M('gemini-2.5-flash-tts'), M('gemini-live-2.5-flash'), M('gemini-2.0-flash')]), 'gemini-2.0-flash');
+check('a list of nothing usable picks nothing',
+  pickModel([M('gemini-embedding-001'), M('imagen-4.0')]), null);
+check('a malformed entry does not throw',
+  pickModel([null, { name: 'models/x' }, M('gemini-2.0-flash')]), 'gemini-2.0-flash');
+check('the models/ prefix is stripped',
+  /^models\//.test(pickModel([M('gemini-2.0-flash')])), false);
 
 // ============================================================
 console.log('\n' + (fail === 0 ? 'ALL PASS' : fail + ' FAILED') + '  (' + pass + ' passed)');
