@@ -23,7 +23,26 @@
     --white:#FBF9F3;
   }
   *{box-sizing:border-box;}
-  body{margin:0;background:var(--paper);color:var(--ink);font-family:'Inter',system-ui,sans-serif;}
+  html{
+    /* Stops Safari inflating text by itself on rotate, which reflows the page
+       to a width it then has to be zoomed out of. */
+    -webkit-text-size-adjust:100%;
+    text-size-adjust:100%;
+  }
+  body{
+    margin:0;background:var(--paper);color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;
+    /* A safety net, not a fix: one element wider than the screen makes the
+       whole page horizontally scrollable and the zoom feel broken everywhere.
+       Anything genuinely wide - a table, a code block - scrolls inside its own
+       container instead. */
+    overflow-x:hidden;
+    max-width:100%;
+  }
+  /* Long unbroken text - a pasted link in the chat, a handle with no spaces -
+     is the usual thing that pushes a card past the screen edge. */
+  body, input, select, textarea, button{ overflow-wrap:anywhere; }
+  img, canvas, svg, video{ max-width:100%; }
   /* 100vh on a mobile browser is the height with the toolbars HIDDEN, so the
      page is always taller than what you can see and the bottom of it sits
      under the browser chrome. dvh is that same measurement done honestly;
@@ -34,6 +53,8 @@
     min-height:100dvh;
     padding-bottom:calc(96px + env(safe-area-inset-bottom, 0px));
     padding-top:env(safe-area-inset-top, 0px);
+    padding-left:env(safe-area-inset-left, 0px);
+    padding-right:env(safe-area-inset-right, 0px);
   }
 
   header.hero{
@@ -81,13 +102,17 @@
     padding:10px 11px;
     border:1px solid var(--line);
     border-radius:4px;
-    font-size:15px;
+    /* 16px is not a style choice. iOS Safari zooms the whole page in whenever
+       a focused field's text is smaller than this, and nothing zooms it back -
+       the reader has to pinch out, and until they do, scrolling and the fixed
+       nav are both wrong. Every field in this file is 16px for that reason. */
+    font-size:16px;
     background:var(--paper);
     color:var(--ink);
     font-family:inherit;
   }
   .field input:focus,.field select:focus,.field textarea:focus{outline:2px solid var(--gold);outline-offset:1px;}
-  .field textarea{resize:vertical;font-family:'Space Mono',monospace;font-size:12px;line-height:1.5;}
+  .field textarea{resize:vertical;font-family:'Space Mono',monospace;font-size:16px;line-height:1.5;}
   .row2{display:flex;gap:10px;}
   .row2 > div{flex:1;}
 
@@ -208,7 +233,9 @@
   .status.approved{background:#DDE6D5;color:var(--olive);}
   .status.rejected{background:#F1D6D0;color:var(--danger);}
   .actions{display:flex;gap:6px;margin-top:6px;}
-  .catchcard .edit-len{width:70px;padding:6px 8px;font-size:13px;border:1px solid var(--line);border-radius:4px;background:var(--paper);}
+  /* 16px like every other field - see .field input. Wider to match, since a
+     bigger glyph in the same 70px box would clip a three-digit length. */
+  .catchcard .edit-len{width:84px;padding:6px 8px;font-size:16px;border:1px solid var(--line);border-radius:4px;background:var(--paper);}
 
   nav.tabbar{
     position:fixed;
@@ -270,7 +297,7 @@
     padding:10px 11px;
     border:1px solid var(--line);
     border-radius:4px;
-    font-size:15px;
+    font-size:16px;   /* see .field input - anything less zooms iOS in */
     background:var(--paper);
     color:var(--ink);
     font-family:inherit;
@@ -568,7 +595,7 @@
   .cdq{margin-top:10px;padding:10px;border:1px solid var(--danger);background:#F9EEEB;}
   .cdq-warn{font-size:11px;color:var(--danger);font-weight:600;line-height:1.45;margin-bottom:8px;}
   .cdq input[type=text]{
-    width:100%;padding:8px;font-size:12px;font-family:inherit;margin-bottom:8px;
+    width:100%;padding:8px;font-size:16px;font-family:inherit;margin-bottom:8px;
     border:1px solid var(--line);border-radius:4px;background:var(--white);color:var(--ink);
   }
   .cdq-actions{display:flex;gap:6px;}
@@ -630,7 +657,7 @@
   .chat-compose{display:flex;gap:8px;align-items:flex-end;margin-bottom:14px;}
   .chat-compose textarea{
     flex:1;min-height:44px;max-height:120px;padding:10px 11px;border:1px solid var(--line);
-    border-radius:4px;font-family:inherit;font-size:14px;background:var(--paper);
+    border-radius:4px;font-family:inherit;font-size:16px;background:var(--paper);
     color:var(--ink);resize:vertical;
   }
   .chat-compose button{width:auto;flex-shrink:0;padding:11px 16px;}

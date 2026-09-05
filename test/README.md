@@ -16,7 +16,7 @@ single-file app with no build step has nothing else to catch: a
 `getElementById` naming an element nobody added, a `bindEl` on a renamed
 button, an unbalanced tag, a function called but never written, a store
 collection wired into the app but missed in the SQL, a `/api/...` call with no
-function in `api/` to answer it. Every one of those fails silently in a
+function in `api/` to answer it, a form field under 16px. Every one of those fails silently in a
 browser — no console error, just a feature that quietly does nothing.
 
 To check a copy other than `index.html`:
@@ -88,9 +88,19 @@ The places where a mistake is silent and expensive:
   URL it is handed can be pointed at addresses only it can reach. The allowlist
   in `allowedPhotoUrl()` is the whole defence, so it is tested like one.
 
+## The 16px rule
+
+`lint.mjs` fails any `input`, `select` or `textarea` styled below 16px,
+including ones whose selector is only a class (`.edit-len`). This is not a
+taste question: **iOS Safari zooms the whole page in when a focused field's
+text is smaller than 16px**, and nothing zooms it back — the reader has to
+pinch out, and until they do, scrolling and the fixed nav are both wrong. It
+presents as "I have to zoom out to make it scroll right", which does not sound
+like a font-size problem, which is why it is checked mechanically.
+
 ## What it does NOT cover
 
-**Anything visual.** There is no browser here, so the map, the drag handles, the
+**Anything visual** — beyond that one rule. There is no browser here, so the map, the drag handles, the
 camera and every screen layout are unverified by this file. After changing any
 of those, open the app and look at it.
 
@@ -137,6 +147,7 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Shorten a board code to 3 characters | 1 failure |
 | Render a missing board code as blank | 1 failure |
 | Stop escaping board codes | 2 failures |
+| Set any form field's font-size under 16px | lint: 1 finding |
 | Typo an element id | lint: 2 findings |
 | Delete `api/fish-i.js` | lint: 1 finding |
 

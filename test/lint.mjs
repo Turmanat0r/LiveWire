@@ -163,6 +163,41 @@ for (const file of SQL) {
   }
 }
 
+// ------------------------------------------------------------- input zoom
+// iOS Safari zooms the entire page in whenever a focused field's text is
+// smaller than 16px, and nothing zooms it back - the reader has to pinch out,
+// and until they do, scrolling and the fixed nav are both wrong. It is a
+// platform rule with no warning attached, and it cost a round of "why do I
+// have to zoom out" before it was found, so it is checked here.
+const style = (src.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || '';
+if (!style) note('css', 'no <style> block found');
+
+// Classes that sit on a real field somewhere in the file, markup or JS-built.
+// Without these, a rule like `.edit-len { font-size: 13px }` reads as ordinary
+// text styling because its selector never says "input".
+const fieldClasses = new Set();
+for (const m of src.matchAll(/<(?:input|select|textarea)\b[^>]*class="([^"]+)"/g)) {
+  for (const c of m[1].split(/\s+/)) if (c) fieldClasses.add(c);
+}
+
+for (const rule of style.split('}')) {
+  const selector = (rule.split('{')[0] || '').trim().replace(/\s+/g, ' ');
+  const body = rule.split('{')[1];
+  if (!selector || !body) continue;
+  const size = /font-size:\s*(\d+(?:\.\d+)?)px/.exec(body);
+  if (!size) continue;
+
+  const namesAField = /\b(?:input|select|textarea)\b/.test(selector) ||
+    [...fieldClasses].some((c) => selector.includes('.' + c));
+  if (!namesAField) continue;
+  // A hidden field cannot be focused, so it cannot trigger the zoom.
+  if (/display:\s*none/.test(body)) continue;
+
+  if (Number(size[1]) < 16) {
+    note('input-zoom', `${selector} sets font-size:${size[1]}px — under 16px, so iOS zooms the page when it is focused`);
+  }
+}
+
 // ------------------------------------------------------- serverless functions
 // A relative endpoint the page calls has to exist as a file in api/, or the
 // deploy goes out and the feature 404s with nothing in the console to explain
