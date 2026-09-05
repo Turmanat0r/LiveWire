@@ -1,5 +1,5 @@
-   .env
-   supabase/.env
-   supabase/.temp/
-   *.bak
-   
+.env
+.env.*
+supabase/.env
+supabase/.temp/
+*.bak

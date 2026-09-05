@@ -67,6 +67,12 @@ globalThis.__t = {
   beaconTick, startBeaconTracking, stopBeaconTracking, resumeBeaconTracking,
   loadBets, saveBets, betRecords, betJoins, betHasJoined, betStanding, betCardHtml,
   BET_TITLE_MAX, BET_OPEN_MAX, BET_SCORING, renderDqNotice,
+  aiReviewEndpoint, probeFishIEndpoint, fishIVisionAvailable, fishIStatusText,
+  requestAiVisionReview, AI_REVIEW_ENDPOINT,
+  get appWindow(){ return window; },
+  get fishIStatus(){ return fishIStatus; }, set fishIStatus(v){ fishIStatus = v; },
+  get fishIEndpointOk(){ return fishIEndpointOk; }, set fishIEndpointOk(v){ fishIEndpointOk = v; },
+  get fishISampler(){ return fishISampler; }, set fishISampler(v){ fishISampler = v; },
   get beaconTimer(){ return beaconTimer; },
   get authMode(){ return authMode; },
   get adminUnlocked(){ return adminUnlocked; }, set adminUnlocked(v){ adminUnlocked = v; },
@@ -1488,6 +1494,116 @@ await new Promise(r => setTimeout(r, 0));
 check('no startup error banner', startupBanners, []);
 check('nothing thrown during load',
   bootErrors.filter(e => /ReferenceError|TypeError|is not defined|before initialization/.test(e)), []);
+
+// ============================================================
+section('41. the Fish-I vision pass finds a server');
+// This whole section exists because the feature was dead on the hosted site
+// for as long as it was deployed and nothing said so. It only ever looked for
+// a Claude viewer that is not there once the app lives on its own domain.
+
+// --- which endpoint, if any, this copy of the page should call
+const savedLocation = t.appWindow.location;
+try{
+  delete t.appWindow.location;
+  check('opened straight off the disk there is no endpoint to call', t.aiReviewEndpoint(), '');
+  t.appWindow.location = { protocol: 'file:' };
+  check('and a file: page does not invent a relative one', t.aiReviewEndpoint(), '');
+  t.appWindow.location = { protocol: 'https:' };
+  check('a hosted page calls its own sibling function', t.aiReviewEndpoint(), '/api/fish-i');
+  t.appWindow.location = { protocol: 'http:' };
+  check('local dev over http works the same way', t.aiReviewEndpoint(), '/api/fish-i');
+
+  // --- the health probe, and what the director is told
+  const savedStatus = t.fishIStatus;
+  const realFetch2 = globalThis.fetch;
+  let reply = null;
+  globalThis.fetch = async () => {
+    if (reply instanceof Error) throw reply;
+    return reply;
+  };
+  try{
+    t.fishISampler = null;
+
+    t.fishIEndpointOk = false;
+    reply = { ok:true, status:200, async json(){ return { ready:true, model:'claude-sonnet-5' }; } };
+    await t.probeFishIEndpoint();
+    check('a configured server reports ready', t.fishIStatus, 'ready-endpoint');
+    check('and the vision button appears', t.fishIVisionAvailable(), true);
+
+    t.fishIEndpointOk = false;
+    reply = { ok:true, status:200, async json(){ return { ready:false, reason:'no-api-key' }; } };
+    await t.probeFishIEndpoint();
+    check('a server with no API key says so', t.fishIStatus, 'endpoint-no-key');
+    check('and the button stays hidden', t.fishIVisionAvailable(), false);
+    check('and the director is told which variable to set',
+      /ANTHROPIC_API_KEY/.test(t.fishIStatusText()), true);
+
+    t.fishIEndpointOk = false;
+    reply = { ok:false, status:404, async json(){ return {}; } };
+    await t.probeFishIEndpoint();
+    check('a deploy missing the function is named as such',
+      /api\/fish-i\.js/.test(t.fishIStatusText()), true);
+
+    t.fishIEndpointOk = false;
+    reply = new Error('offline');
+    await t.probeFishIEndpoint();
+    check('an unreachable server is not reported as a missing key',
+      t.fishIStatus, 'endpoint-unreachable');
+    check('and the button stays hidden there too', t.fishIVisionAvailable(), false);
+
+    // The old copy blamed the Claude viewer for every failure, which sent the
+    // director looking in entirely the wrong place.
+    const hosted = ['ready-endpoint','endpoint-no-key','endpoint-unreachable','endpoint-http:404'];
+    check('no hosted status blames the Claude viewer',
+      hosted.filter(s => { t.fishIStatus = s; return /Claude viewer/.test(t.fishIStatusText()); }), []);
+
+    // --- what actually goes on the wire
+    // The endpoint builds the prompt itself. If the page ever started sending
+    // one, anybody who read the source - and the source ships to every phone -
+    // would have a general-purpose Claude proxy on the director's API key.
+    let sentBody = null;
+    globalThis.fetch = async (url, init) => {
+      sentBody = JSON.parse(init.body);
+      return { ok:true, status:200, async json(){ return { species:'walleye' }; } };
+    };
+    await setEvent(E1);
+    const photo = 'data:image/jpeg;base64,AAAA';
+    await t.requestAiVisionReview({ id:'c9', species:'Walleye', length:22 }, photo);
+    check('the request carries no prompt', 'prompt' in sentBody, false);
+    check('it names the event\'s target species', sentBody.targetSpecies, t.targetSpecies());
+    check('it names the water', typeof sentBody.water === 'string' && sentBody.water.length > 0, true);
+    check('it sends the photo', sentBody.photo, photo);
+    check('a scoring fish is flagged as scoring', sentBody.scoring, true);
+
+    await t.requestAiVisionReview({ id:'c9', species:t.OTHER_SPECIES, length:22 }, photo);
+    check('an Other fish is not', sentBody.scoring, false);
+
+    // A 503 reading "the key is missing" is far more use to the director than
+    // "Review service returned 503".
+    globalThis.fetch = async () => ({
+      ok:false, status:503,
+      async json(){ return { error:'ANTHROPIC_API_KEY is not set.' }; }
+    });
+    let msg = '';
+    try{ await t.requestAiVisionReview({ id:'c9', species:'Walleye', length:22 }, photo); }
+    catch(e){ msg = e.message; }
+    check('the server\'s own explanation reaches the director', msg, 'ANTHROPIC_API_KEY is not set.');
+
+    globalThis.fetch = async () => ({ ok:false, status:500, async json(){ throw new Error('not json'); } });
+    msg = '';
+    try{ await t.requestAiVisionReview({ id:'c9', species:'Walleye', length:22 }, photo); }
+    catch(e){ msg = e.message; }
+    check('a server with nothing to say still reports the status',
+      msg, 'Review service returned 500');
+  } finally {
+    globalThis.fetch = realFetch2;
+    t.fishIStatus = savedStatus;
+    t.fishIEndpointOk = false;
+  }
+} finally {
+  if (savedLocation === undefined) delete t.appWindow.location;
+  else t.appWindow.location = savedLocation;
+}
 
 // ============================================================
 console.log('\n' + (fail === 0 ? 'ALL PASS' : fail + ' FAILED') + '  (' + pass + ' passed)');

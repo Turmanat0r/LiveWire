@@ -163,6 +163,18 @@ for (const file of SQL) {
   }
 }
 
+// ------------------------------------------------------- serverless functions
+// A relative endpoint the page calls has to exist as a file in api/, or the
+// deploy goes out and the feature 404s with nothing in the console to explain
+// it. This is the failure that left Fish-I dead on the hosted site.
+for (const m of script.matchAll(/'(\/api\/[a-z0-9-]+)'/g)) {
+  const name = m[1].replace('/api/', '');
+  const candidates = ['js', 'mjs', 'ts'].map((ext) => path.join(HERE, '..', 'api', name + '.' + ext));
+  if (!candidates.some((p) => fs.existsSync(p))) {
+    note('api', `the page calls ${m[1]} but there is no api/${name}.js to answer it`);
+  }
+}
+
 // ------------------------------------------------------------------- report
 if (problems.length === 0) { console.log('lint: clean'); process.exit(0); }
 const byKind = {};

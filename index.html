@@ -1769,9 +1769,14 @@ async function deleteEventRecord(id){
 
 // ---- automated first-pass review ----
 // Endpoint on YOUR server that holds the Anthropic API key and calls Claude's
-// vision API. Leave blank and the app stays fully self-contained: the local
-// checks below still run, the Fish-I vision pass is simply reported as unconfigured.
-// NEVER put an API key in this file - it ships to every angler's phone.
+// vision API. NEVER put an API key in this file - it ships to every angler's
+// phone, which is the whole reason the endpoint exists.
+//
+// Leave this blank and the app finds api/fish-i.js on its own origin, which is
+// what runs on Vercel and needs no configuration here. Set it only to point at
+// a different host. Opened as a plain file:// there is no server to call, so
+// the vision pass reports itself unconfigured and the local checks - blur,
+// resolution, duplicates, boundary, plausible length - carry on alone.
 const AI_REVIEW_ENDPOINT = '';
 
 const PRECHECK_MIN_SOURCE_EDGE = 640;   // shortest edge of the original photo, in px
@@ -3360,7 +3365,7 @@ function resizeImage(file){
 // ---- photo analysis (runs entirely in the browser, no network, no API key) ----
 // These are deterministic image measurements, not AI. They are the signals that
 // are genuinely reliable to compute locally; the judgement calls that need a
-// vision model (species, is the nose actually on the pin) go to AI_REVIEW_ENDPOINT.
+// vision model (species, is the nose actually on the pin) go to the Fish-I pass.
 
 function greyscaleFrom(img, w, h){
   const canvas = document.createElement('canvas');
@@ -3570,28 +3575,67 @@ function evaluateFirstPass(c, allCatches, dupCorpus){
 }
 
 // ---- Fish-I vision pass ----
-// Two ways to run it. Hosted on claude.ai the page asks Claude directly, so
-// there is nothing to install and no API key anywhere. Self-hosted, it falls
-// back to AI_REVIEW_ENDPOINT (see ai-review-server.ts).
+// Two ways to run it. Opened inside the Claude viewer the page asks Claude
+// directly, so there is nothing to install and no API key anywhere. Hosted
+// anywhere else - Vercel, in our case - there is no Claude in the page to ask,
+// and it goes through the server endpoint instead (see api/fish-i.js).
 let fishISampler = null;      // resolved Claude sampler, or null in this view
 let fishIImagesOk = false;    // whether this view reports photo support
+let fishIEndpointOk = false;  // whether the server endpoint answered "ready"
 let fishIStatus = 'starting'; // why it is or isn't ready - shown to the director
+
+// Blank unless self-hosting elsewhere, in which case the endpoint is a sibling
+// of the page. Read through window so a test harness without a location - and
+// a page opened straight off the disk - both fall through to "no endpoint"
+// rather than throwing on the way past.
+function aiReviewEndpoint(){
+  if(AI_REVIEW_ENDPOINT) return AI_REVIEW_ENDPOINT;
+  try{
+    const proto = window.location && window.location.protocol;
+    return (proto === 'http:' || proto === 'https:') ? '/api/fish-i' : '';
+  }catch(e){ return ''; }
+}
 
 function fishIRefresh(){
   try{ if(adminUnlocked) renderAdmin(); }catch(e){}
 }
 
+// The endpoint answers GET with whether it holds an API key. Asking up front
+// means the director is told WHY it is unavailable, instead of finding out by
+// pressing the button and waiting for a failure.
+async function probeFishIEndpoint(){
+  const url = aiReviewEndpoint();
+  if(!url){ fishIStatus = 'no-runtime'; return; }
+  try{
+    const res = await fetch(url, { method:'GET' });
+    if(!res.ok){ fishIStatus = 'endpoint-http:' + res.status; return; }
+    const info = await res.json();
+    if(info && info.ready){
+      fishIEndpointOk = true;
+      fishIStatus = 'ready-endpoint';
+    } else {
+      fishIStatus = (info && info.reason === 'no-api-key') ? 'endpoint-no-key' : 'endpoint-not-ready';
+    }
+  }catch(e){
+    fishIStatus = 'endpoint-unreachable';
+  }
+}
+
 async function initFishI(){
   fishIStatus = 'starting';
+  fishIEndpointOk = false;
   try{
     if(typeof claude === 'undefined' || !claude || typeof claude.use !== 'function'){
-      fishIStatus = 'no-runtime';
+      await probeFishIEndpoint();
       fishIRefresh();
       return;
     }
     const s = await claude.use('sample');
     if(!s){
-      fishIStatus = 'use-returned-null';
+      // The viewer is here but would not hand over sampling. The server
+      // endpoint is still worth a try before giving up on the feature.
+      await probeFishIEndpoint();
+      if(!fishIEndpointOk) fishIStatus = 'use-returned-null';
       fishIRefresh();
       return;
     }
@@ -3618,11 +3662,23 @@ initFishI();
 function fishIStatusText(){
   switch(fishIStatus){
     case 'starting':            return 'still starting up \u2014 give it a few seconds, then retry.';
-    case 'no-runtime':          return 'this copy of the page is not running inside the Claude viewer.';
+    case 'no-runtime':          return 'this copy of the page is open straight off the disk, so there is no server to ask. Open it at its real web address.';
     case 'use-returned-null':   return 'the Claude viewer did not grant the sampling capability to this view.';
     case 'ready':               return 'ready.';
+    case 'ready-endpoint':      return 'ready \u2014 running through this site\u2019s own server.';
     case 'ready-no-image-limit':return 'ready, though this view did not report photo support.';
-    default:                    return fishIStatus;
+    case 'endpoint-no-key':     return 'the server has no Anthropic API key. Add ANTHROPIC_API_KEY in Vercel \u2192 Settings \u2192 Environment Variables, then redeploy.';
+    case 'endpoint-not-ready':  return 'the server reports Fish-I as unavailable.';
+    case 'endpoint-unreachable':return 'the server did not answer. It may still be deploying \u2014 wait a moment, then retry.';
+    default:
+      if(fishIStatus.indexOf('endpoint-http:') === 0){
+        // 404 is the one worth naming: it means the deploy went out without
+        // api/fish-i.js, not that anything is misconfigured.
+        return fishIStatus === 'endpoint-http:404'
+          ? 'this deployment does not include api/fish-i.js.'
+          : 'the server answered ' + fishIStatus.slice(14) + '.';
+      }
+      return fishIStatus;
   }
 }
 
@@ -3646,7 +3702,7 @@ function dataUrlToBlob(dataUrl){
 }
 
 function fishIVisionAvailable(){
-  return !!fishISampler || !!AI_REVIEW_ENDPOINT;
+  return !!fishISampler || fishIEndpointOk;
 }
 
 // Built per call: the target species and the water are both event settings now,
@@ -3701,18 +3757,34 @@ async function requestAiVisionReview(c, photoDataUrl){
     return await fishISampler.json(prompt, { images: blob, modelTier: 'complex' });
   }
 
-  // Self-hosted fallback.
-  if(AI_REVIEW_ENDPOINT){
-    const res = await fetch(AI_REVIEW_ENDPOINT, {
+  // Server endpoint - the path every hosted copy takes.
+  //
+  // Note what is NOT sent: the prompt. The server builds it from the event's
+  // species and water, which are passed as plain values below. An endpoint
+  // that accepted a prompt from the page would be an open Claude proxy the
+  // moment somebody read the source, and the source ships to every phone.
+  const endpoint = aiReviewEndpoint();
+  if(endpoint){
+    const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         catchId: c.id, photo: photoDataUrl,
-        claimedSpecies: c.species, claimedLength: c.length
+        claimedSpecies: c.species, claimedLength: c.length,
+        targetSpecies: targetSpecies(),
+        water: activeEvent().courseLabelLong || 'the tournament water',
+        scoring: isScoringSpecies(c.species)
       })
     });
-    if(!res.ok) throw new Error('Review service returned '+res.status);
-    return await res.json();
+    // The endpoint explains its own failures - a missing API key reads very
+    // differently from a rate limit - so use its words when it gives any.
+    let payload = null;
+    try{ payload = await res.json(); }catch(e){}
+    if(!res.ok){
+      throw new Error((payload && payload.error) || ('Review service returned ' + res.status));
+    }
+    if(payload && payload.error) throw new Error(payload.error);
+    return payload;
   }
 
   throw new Error('Fish-I vision is not available in this view.');

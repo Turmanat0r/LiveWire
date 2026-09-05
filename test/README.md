@@ -12,9 +12,9 @@ when clean and `1` on any finding, so CI can use them as-is.
 single-file app with no build step has nothing else to catch: a
 `getElementById` naming an element nobody added, a `bindEl` on a renamed
 button, an unbalanced tag, a function called but never written, a store
-collection wired into the app but missed in the SQL. Every one of those fails
-silently in a browser — no console error, just a feature that quietly does
-nothing.
+collection wired into the app but missed in the SQL, a `/api/...` call with no
+function in `api/` to answer it. Every one of those fails silently in a
+browser — no console error, just a feature that quietly does nothing.
 
 To check a copy other than `index.html`:
 
@@ -49,6 +49,12 @@ The places where a mistake is silent and expensive:
 - **Species scoring** — that the target species is per-event and that changing
   it re-ranks the leaderboard.
 - **Clean startup** — that the page's init does not throw.
+- **The Fish-I vision pass** — that a hosted copy finds the server endpoint at
+  all (it did not, for the whole time it was deployed), that the button stays
+  hidden until the server says it holds an API key, that the director is told
+  *which* thing is wrong, and that the page never sends its own prompt — an
+  endpoint that took one would be a free Claude proxy on the director's key,
+  since the page's source ships to every phone.
 
 ## What it does NOT cover
 
@@ -74,7 +80,11 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Make `saveEventRecord` replace instead of merge | 4 failures |
 | Have a routine fix clear a raised beacon | 1 failure |
 | Trust `user_metadata` for director status | 1 failure |
+| Key Fish-I availability off `AI_REVIEW_ENDPOINT` again | 1 failure |
+| Have the page send its own Fish-I prompt | 1 failure |
+| Resolve `/api/fish-i` even on `file://` | 2 failures |
 | Typo an element id | lint: 2 findings |
+| Delete `api/fish-i.js` | lint: 1 finding |
 
 Put it back afterwards.
 
