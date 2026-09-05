@@ -155,7 +155,7 @@ const SQL = ['supabase-setup.sql', 'supabase-rollback-open-access.sql',
              'supabase-step2a-ownership-columns.sql', 'supabase-step2b-enforce-policies.sql',
              'reset-test-data.sql'];
 for (const file of SQL) {
-  const p = path.join(HERE, '..', file);
+  const p = path.join(HERE, '..', 'sql', file);
   if (!fs.existsSync(p)) { note('sql', `${file} is missing`); continue; }
   const sql = fs.readFileSync(p, 'utf8');
   for (const c of collections) {

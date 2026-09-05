@@ -3,3 +3,5 @@
 supabase/.env
 supabase/.temp/
 *.bak
+.DS_Store
+Thumbs.db
