@@ -1,19 +1,26 @@
 // Fish-I vision pass - the server half.
 //
 // WHY THIS FILE EXISTS
-// index.html ships to every angler's phone, so it can never hold an Anthropic
-// API key. Opened inside the Claude viewer the page asks Claude directly and
-// this file goes unused. Hosted anywhere else - Vercel, in our case - there is
-// no Claude to ask, which is why the director was seeing "this copy of the page
-// is not running inside the Claude viewer". This endpoint is the other way in:
-// the phone talks only to this, and the key stays here in an environment
+// index.html ships to every angler's phone, so it can never hold an API key.
+// Opened inside the Claude viewer the page asks Claude directly and this file
+// goes unused. Hosted anywhere else - Vercel, in our case - there is no Claude
+// in the page to ask, which is why the director was seeing "this copy of the
+// page is not running inside the Claude viewer". This endpoint is the other way
+// in: the phone talks only to this, and the key stays here in an environment
 // variable that never leaves the server.
 //
+// WHICH MODEL
+// Google's Gemini, because its free tier covers a tournament comfortably and
+// there is no bill to set up. The limits are per-minute and per-day on a
+// handful of requests each; a director reviewing catches as they come in will
+// not go near them.
+//
 // SETUP - once, and it is the only step
-//   Vercel -> your project -> Settings -> Environment Variables
-//     Name:  ANTHROPIC_API_KEY
-//     Value: your key from console.anthropic.com
-//   Save, then redeploy.
+//   1. aistudio.google.com/apikey -> Create API key. No card, no billing.
+//   2. Vercel -> your project -> Settings -> Environment Variables
+//        Name:  GEMINI_API_KEY
+//        Value: the key from step 1
+//   3. Save, then redeploy (env vars only reach a build at build time).
 //
 // Without that key this reports itself unconfigured and the director sees
 // Fish-I listed as unavailable, which is exactly where the app already was.
@@ -23,17 +30,22 @@
 //   GET  -> { ready, reason }   health check the page runs on startup
 //   POST -> the review object   { species, speciesConfidence, concerns, ... }
 
-const MODEL = process.env.FISHI_MODEL || 'claude-sonnet-5';
-const ANTHROPIC_VERSION = '2023-06-01';
+const API_ROOT = 'https://generativelanguage.googleapis.com/v1beta';
+
+// Model names move around. This one is on the free tier and reads images; if
+// Google retires it, set FISHI_MODEL rather than editing this file, and the
+// health check below will tell you plainly whether the name you chose exists.
+const MODEL = process.env.FISHI_MODEL || 'gemini-2.5-flash';
 
 // Vercel caps a serverless request body at 4.5 MB. The app encodes catch
 // photos to 600 KB at the absolute most (PHOTO_STEPS in index.html), so this
 // is headroom rather than a limit any real catch will meet.
 const MAX_PHOTO_CHARS = 4000000;
+const MAX_FETCHED_BYTES = 6000000;
 
 // Counted per warm instance, so this is a speed bump and not a wall. It is
-// still the difference between someone burning a few dollars of your key and
-// someone burning the whole month of it while you are on the water.
+// still the difference between someone quietly burning the free quota and the
+// director finding Fish-I rate-limited in the middle of an event.
 const RATE_MAX = 20;
 const RATE_WINDOW_MS = 60 * 1000;
 const hits = new Map();
@@ -50,7 +62,7 @@ function rateLimited(ip) {
 // Anything the client sends ends up inside a prompt, so it is clamped to
 // something short and printable first. The prompt itself is assembled HERE and
 // is never accepted from the page - otherwise this endpoint would be an open
-// Claude proxy wearing a fish costume.
+// Gemini proxy wearing a fish costume.
 function clean(v, max) {
   return String(v == null ? '' : v).replace(/[^\w \-'().,/]/g, '').trim().slice(0, max);
 }
@@ -89,44 +101,80 @@ function buildPrompt(target, water, claimedSpecies, claimedLength, scoring) {
     'Be conservative. Raise a concern only if a reasonable director would want a second ' +
     'look; an ordinary well-shot photo returns an empty concerns array.\n\n' +
     claimLine + '\n\n' +
-    'Reply with only a JSON object of this shape:\n' +
-    '{"species":"' + low + '","speciesConfidence":0.9,"matchesClaim":true,"boardVisible":true,' +
-    '"fishFlat":true,"noseAtStop":true,"tailInFrame":true,"handBlocking":false,' +
-    '"concerns":["short specific concern"],"notes":"one short sentence"}'
+    'notes is one short sentence. concerns is a list of short specific concerns, empty ' +
+    'when there are none.'
   );
 }
 
+// Pins the shape of the reply, so the director's screen cannot be handed a
+// string where it expects a boolean. This is why there is no JSON to salvage
+// out of prose further down - the model is not free to write any.
+const RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    species:           { type: 'STRING' },
+    speciesConfidence: { type: 'NUMBER' },
+    matchesClaim:      { type: 'BOOLEAN' },
+    boardVisible:      { type: 'BOOLEAN' },
+    fishFlat:          { type: 'BOOLEAN' },
+    noseAtStop:        { type: 'BOOLEAN' },
+    tailInFrame:       { type: 'BOOLEAN' },
+    handBlocking:      { type: 'BOOLEAN' },
+    concerns:          { type: 'ARRAY', items: { type: 'STRING' } },
+    notes:             { type: 'STRING' }
+  },
+  required: ['species', 'speciesConfidence', 'matchesClaim', 'boardVisible',
+             'fishFlat', 'noseAtStop', 'tailInFrame', 'handBlocking', 'concerns', 'notes']
+};
+
+// Only this project's own photo bucket. Gemini needs the bytes rather than a
+// link, so this server has to do the fetching - and a server that fetches
+// whatever URL it is handed will happily fetch addresses only it can reach.
+// The allowlist is what keeps that from being a way in.
+function allowedPhotoUrl(u) {
+  let parsed;
+  try { parsed = new URL(u); } catch (e) { return false; }
+  if (parsed.protocol !== 'https:') return false;
+  const base = process.env.SUPABASE_URL;
+  if (base) {
+    let expect;
+    try { expect = new URL(base).hostname; } catch (e) { expect = ''; }
+    if (expect && parsed.hostname !== expect) return false;
+  } else if (!/^[a-z0-9-]+\.supabase\.co$/.test(parsed.hostname)) {
+    return false;
+  }
+  return parsed.pathname.startsWith('/storage/v1/object/public/');
+}
+
 // A stored photo is a data: URL while it is still on the angler's phone and an
-// https: URL once it has reached Supabase storage. Both have to work.
-function imageSource(photo) {
+// https: URL once it has reached Supabase storage. Both have to end up as
+// base64 bytes, because inline_data is the only image input that takes a photo
+// the Files API has never seen.
+async function inlineImage(photo) {
   const p = String(photo || '');
   const m = /^data:(image\/(?:jpeg|jpg|png|webp|gif));base64,([A-Za-z0-9+/=\s]+)$/.exec(p);
   if (m) {
     return {
-      type: 'base64',
-      media_type: m[1] === 'image/jpg' ? 'image/jpeg' : m[1],
+      mime_type: m[1] === 'image/jpg' ? 'image/jpeg' : m[1],
       data: m[2].replace(/\s+/g, '')
     };
   }
-  // Handing the URL to Anthropic rather than fetching it here is deliberate:
-  // a fetch on this side is a server that can be talked into requesting any
-  // address you can reach, including ones only this server can see.
-  if (/^https:\/\/[^\s]+$/.test(p)) return { type: 'url', url: p };
-  return null;
+  if (!allowedPhotoUrl(p)) return null;
+
+  const res = await fetch(p);
+  if (!res.ok) throw new Error('Could not fetch the catch photo (' + res.status + ')');
+  const type = (res.headers.get('content-type') || '').split(';')[0].trim();
+  if (!/^image\/(jpeg|png|webp|gif)$/.test(type)) {
+    throw new Error('The stored photo is not an image Fish-I can read.');
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length > MAX_FETCHED_BYTES) throw new Error('That photo is too large to send.');
+  return { mime_type: type, data: buf.toString('base64') };
 }
 
-// The model is asked for JSON, so it usually returns JSON - but "usually" is
-// not a contract. The assistant turn is prefilled with "{" so there is nothing
-// to strip, and this still trims anything that follows the closing brace.
-function parseReview(text) {
-  const end = text.lastIndexOf('}');
-  if (end === -1) return null;
-  try { return JSON.parse(text.slice(0, end + 1)); } catch (e) { return null; }
-}
-
-// Keep only the fields the director's screen actually renders, in the types it
-// expects. A stray field cannot reach the page, and a string where a boolean
-// belongs cannot make a check read as passed.
+// Keep only the fields the director's screen renders, in the types it expects.
+// The schema above should already guarantee this; belt and braces, because a
+// string where a boolean belongs would make a failed check read as passed.
 function normalize(raw) {
   const bool = v => (v === true ? true : v === false ? false : undefined);
   const out = {};
@@ -139,7 +187,7 @@ function normalize(raw) {
     if (v !== undefined) out[k] = v;
   }
   out.concerns = Array.isArray(raw.concerns)
-    ? raw.concerns.slice(0, 8).map(c => String(c).slice(0, 200))
+    ? raw.concerns.slice(0, 8).map(c => String(c).slice(0, 200)).filter(Boolean)
     : [];
   if (raw.notes != null) out.notes = String(raw.notes).slice(0, 400);
   return out;
@@ -151,15 +199,34 @@ function send(res, status, payload) {
   res.status(status).send(JSON.stringify(payload));
 }
 
+function googleMessage(raw) {
+  try { return (JSON.parse(raw).error || {}).message || ''; } catch (e) { return ''; }
+}
+
 module.exports = async (req, res) => {
-  const key = process.env.ANTHROPIC_API_KEY;
+  const key = process.env.GEMINI_API_KEY;
 
   // Health check. The page calls this on startup so the director is told why
   // Fish-I is unavailable instead of finding out by pressing the button.
+  //
+  // It confirms the MODEL NAME too. Model names get retired, and the failure
+  // that causes is a 404 in the middle of judging a catch - which reads as
+  // "Fish-I is broken" rather than "that model no longer exists".
   if (req.method === 'GET') {
-    return send(res, 200, key
-      ? { ready: true, model: MODEL }
-      : { ready: false, reason: 'no-api-key' });
+    if (!key) return send(res, 200, { ready: false, reason: 'no-api-key' });
+    try {
+      const probe = await fetch(API_ROOT + '/models/' + encodeURIComponent(MODEL), {
+        headers: { 'x-goog-api-key': key }
+      });
+      if (probe.ok) return send(res, 200, { ready: true, model: MODEL });
+      const detail = googleMessage(await probe.text());
+      if (probe.status === 400 || probe.status === 401 || probe.status === 403) {
+        return send(res, 200, { ready: false, reason: 'bad-key', detail });
+      }
+      return send(res, 200, { ready: false, reason: 'bad-model', model: MODEL, detail });
+    } catch (e) {
+      return send(res, 200, { ready: false, reason: 'unreachable' });
+    }
   }
 
   if (req.method !== 'POST') {
@@ -168,7 +235,7 @@ module.exports = async (req, res) => {
   }
   if (!key) {
     return send(res, 503, {
-      error: 'Fish-I is not configured on the server: ANTHROPIC_API_KEY is not set.'
+      error: 'Fish-I is not configured on the server: GEMINI_API_KEY is not set.'
     });
   }
 
@@ -190,8 +257,14 @@ module.exports = async (req, res) => {
   if (photo.length > MAX_PHOTO_CHARS) {
     return send(res, 413, { error: 'That photo is too large to send.' });
   }
-  const source = imageSource(photo);
-  if (!source) {
+
+  let image;
+  try {
+    image = await inlineImage(photo);
+  } catch (e) {
+    return send(res, 502, { error: e && e.message ? e.message : 'Could not read the catch photo.' });
+  }
+  if (!image) {
     return send(res, 400, { error: 'That photo is not in a format Fish-I can read.' });
   }
 
@@ -204,56 +277,79 @@ module.exports = async (req, res) => {
 
   let upstream;
   try {
-    upstream = await fetch('https://api.anthropic.com/v1/messages', {
+    upstream = await fetch(API_ROOT + '/models/' + encodeURIComponent(MODEL) + ':generateContent', {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': ANTHROPIC_VERSION
-      },
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
       body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 1024,
-        messages: [
-          { role: 'user', content: [{ type: 'image', source }, { type: 'text', text: prompt }] },
-          // Prefilling the reply with an open brace is what makes the JSON
-          // reliable: there is no prose to strip because the turn is already
-          // mid-object.
-          { role: 'assistant', content: '{' }
-        ]
+        contents: [{
+          role: 'user',
+          parts: [{ inline_data: image }, { text: prompt }]
+        }],
+        generationConfig: {
+          temperature: 0,
+          maxOutputTokens: 1024,
+          responseMimeType: 'application/json',
+          responseSchema: RESPONSE_SCHEMA
+        }
       })
     });
   } catch (e) {
-    return send(res, 502, { error: 'Could not reach Claude: ' + (e && e.message ? e.message : 'network error') });
+    return send(res, 502, { error: 'Could not reach Gemini: ' + (e && e.message ? e.message : 'network error') });
   }
 
   const raw = await upstream.text();
   if (!upstream.ok) {
-    let detail = '';
-    try { detail = (JSON.parse(raw).error || {}).message || ''; } catch (e) {}
+    const detail = googleMessage(raw);
     if (upstream.status === 401 || upstream.status === 403) {
-      return send(res, 502, { error: 'The server\'s Anthropic API key was rejected. Check ANTHROPIC_API_KEY in Vercel.' });
+      return send(res, 502, { error: 'The server\'s Gemini API key was rejected. Check GEMINI_API_KEY in Vercel.' });
     }
     if (upstream.status === 429) {
-      return send(res, 429, { error: 'Claude is rate limiting this key. Wait a moment, then try again.' });
+      return send(res, 429, { error: 'The free Gemini quota is used up for now. Wait a minute, then try again.' });
     }
-    return send(res, 502, { error: 'Claude returned ' + upstream.status + (detail ? ': ' + detail : '') });
+    if (upstream.status === 404) {
+      return send(res, 502, { error: 'Gemini has no model named "' + MODEL + '". Set FISHI_MODEL in Vercel to a current one.' });
+    }
+    return send(res, 502, { error: 'Gemini returned ' + upstream.status + (detail ? ': ' + detail : '') });
   }
 
   let data;
   try { data = JSON.parse(raw); } catch (e) {
-    return send(res, 502, { error: 'Claude returned an unreadable response.' });
-  }
-  if (data.stop_reason === 'refusal') {
-    return send(res, 502, { error: 'Claude declined to review this image. Review it manually.' });
+    return send(res, 502, { error: 'Gemini returned an unreadable response.' });
   }
 
-  const text = '{' + (data.content || [])
-    .filter(b => b && b.type === 'text')
-    .map(b => b.text)
+  const cand = (data.candidates || [])[0];
+  if (!cand) {
+    // A prompt blocked outright comes back with no candidate at all, and the
+    // reason lives somewhere else entirely.
+    const blocked = data.promptFeedback && data.promptFeedback.blockReason;
+    return send(res, 502, {
+      error: blocked
+        ? 'Gemini declined to review this image (' + blocked + '). Review it manually.'
+        : 'Gemini returned no answer. Try again.'
+    });
+  }
+  if (cand.finishReason && cand.finishReason !== 'STOP') {
+    if (cand.finishReason === 'SAFETY' || cand.finishReason === 'PROHIBITED_CONTENT') {
+      return send(res, 502, { error: 'Gemini declined to review this image. Review it manually.' });
+    }
+    if (cand.finishReason === 'MAX_TOKENS') {
+      return send(res, 502, { error: 'Gemini ran out of room mid-answer. Try again.' });
+    }
+  }
+
+  const text = ((cand.content && cand.content.parts) || [])
+    .map(p => p && p.text)
+    .filter(Boolean)
     .join('');
-  const parsed = parseReview(text);
-  if (!parsed) return send(res, 502, { error: 'Fish-I gave an unreadable answer. Try again.' });
+  let parsed;
+  try { parsed = JSON.parse(text); } catch (e) { parsed = null; }
+  if (!parsed || typeof parsed !== 'object') {
+    return send(res, 502, { error: 'Fish-I gave an unreadable answer. Try again.' });
+  }
 
   return send(res, 200, normalize(parsed));
 };
+
+// Reachable from test/fish-i.test.mjs. Vercel only cares that module.exports
+// is the handler, and it still is - these hang off it.
+module.exports.__test = { allowedPhotoUrl, clean, normalize, buildPrompt, MODEL };

@@ -2,13 +2,16 @@
 
 ```
 node test/events.test.mjs   # behaviour
+node test/fish-i.test.mjs   # the serverless endpoint
 node test/lint.mjs          # structure
 ```
 
 From the project root. Nothing to install — they need only Node. Both exit `0`
 when clean and `1` on any finding, so CI can use them as-is.
 
-`events.test.mjs` checks what the app *does*. `lint.mjs` checks what a
+`events.test.mjs` checks what the app *does*. `fish-i.test.mjs` covers
+`api/fish-i.js`, which the other two cannot reach — it runs on Vercel, not in
+the page. `lint.mjs` checks what a
 single-file app with no build step has nothing else to catch: a
 `getElementById` naming an element nobody added, a `bindEl` on a renamed
 button, an unbalanced tag, a function called but never written, a store
@@ -53,8 +56,12 @@ The places where a mistake is silent and expensive:
   all (it did not, for the whole time it was deployed), that the button stays
   hidden until the server says it holds an API key, that the director is told
   *which* thing is wrong, and that the page never sends its own prompt — an
-  endpoint that took one would be a free Claude proxy on the director's key,
+  endpoint that took one would be a free model proxy on the director's key,
   since the page's source ships to every phone.
+- **Which URLs the endpoint will fetch.** Gemini wants image bytes rather than
+  a link, so the server does the fetching, and a server that fetches whatever
+  URL it is handed can be pointed at addresses only it can reach. The allowlist
+  in `allowedPhotoUrl()` is the whole defence, so it is tested like one.
 
 ## What it does NOT cover
 
@@ -85,6 +92,18 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Resolve `/api/fish-i` even on `file://` | 2 failures |
 | Typo an element id | lint: 2 findings |
 | Delete `api/fish-i.js` | lint: 1 finding |
+
+And in `fish-i.test.mjs`, all of which weaken the photo-URL allowlist or the
+prompt clamp:
+
+| Break this | Expect |
+|---|---|
+| Match the photo host with `endsWith` instead of `===` | 2 failures |
+| Drop the `/storage/v1/object/public/` path check | 1 failure |
+| Allow any host when `SUPABASE_URL` is unset | 5 failures |
+| Allow `http:` as well as `https:` | 1 failure |
+| Stop stripping punctuation out of prompt input | 3 failures |
+| Let `normalize()` pass unknown fields through | 2 failures |
 
 Put it back afterwards.
 

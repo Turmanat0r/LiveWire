@@ -1536,7 +1536,27 @@ try{
     check('a server with no API key says so', t.fishIStatus, 'endpoint-no-key');
     check('and the button stays hidden', t.fishIVisionAvailable(), false);
     check('and the director is told which variable to set',
-      /ANTHROPIC_API_KEY/.test(t.fishIStatusText()), true);
+      /GEMINI_API_KEY/.test(t.fishIStatusText()), true);
+
+    // Three different problems that all used to read as "unavailable". Each
+    // one sends the director somewhere different, so each has to say so.
+    t.fishIEndpointOk = false;
+    reply = { ok:true, status:200, async json(){ return { ready:false, reason:'bad-key' }; } };
+    await t.probeFishIEndpoint();
+    check('a rejected key is not confused with a missing one',
+      t.fishIStatus, 'endpoint-bad-key');
+
+    t.fishIEndpointOk = false;
+    reply = { ok:true, status:200, async json(){ return { ready:false, reason:'bad-model' }; } };
+    await t.probeFishIEndpoint();
+    check('a retired model name is named as the problem', t.fishIStatus, 'endpoint-bad-model');
+    check('and points at the override', /FISHI_MODEL/.test(t.fishIStatusText()), true);
+
+    t.fishIEndpointOk = false;
+    reply = { ok:true, status:200, async json(){ return { ready:false, reason:'something-new' }; } };
+    await t.probeFishIEndpoint();
+    check('an unrecognised reason still fails closed', t.fishIStatus, 'endpoint-not-ready');
+    check('and does not open the button', t.fishIVisionAvailable(), false);
 
     t.fishIEndpointOk = false;
     reply = { ok:false, status:404, async json(){ return {}; } };
@@ -1553,7 +1573,8 @@ try{
 
     // The old copy blamed the Claude viewer for every failure, which sent the
     // director looking in entirely the wrong place.
-    const hosted = ['ready-endpoint','endpoint-no-key','endpoint-unreachable','endpoint-http:404'];
+    const hosted = ['ready-endpoint','endpoint-no-key','endpoint-bad-key','endpoint-bad-model',
+                    'endpoint-not-ready','endpoint-unreachable','endpoint-http:404'];
     check('no hosted status blames the Claude viewer',
       hosted.filter(s => { t.fishIStatus = s; return /Claude viewer/.test(t.fishIStatusText()); }), []);
 
@@ -1582,12 +1603,12 @@ try{
     // "Review service returned 503".
     globalThis.fetch = async () => ({
       ok:false, status:503,
-      async json(){ return { error:'ANTHROPIC_API_KEY is not set.' }; }
+      async json(){ return { error:'GEMINI_API_KEY is not set.' }; }
     });
     let msg = '';
     try{ await t.requestAiVisionReview({ id:'c9', species:'Walleye', length:22 }, photo); }
     catch(e){ msg = e.message; }
-    check('the server\'s own explanation reaches the director', msg, 'ANTHROPIC_API_KEY is not set.');
+    check('the server\'s own explanation reaches the director', msg, 'GEMINI_API_KEY is not set.');
 
     globalThis.fetch = async () => ({ ok:false, status:500, async json(){ throw new Error('not json'); } });
     msg = '';

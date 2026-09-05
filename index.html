@@ -3614,7 +3614,12 @@ async function probeFishIEndpoint(){
       fishIEndpointOk = true;
       fishIStatus = 'ready-endpoint';
     } else {
-      fishIStatus = (info && info.reason === 'no-api-key') ? 'endpoint-no-key' : 'endpoint-not-ready';
+      // The endpoint distinguishes its own failures - no key, a rejected key,
+      // a retired model - and each one sends the director somewhere different.
+      // Collapsing them into "unavailable" is what makes a five-minute fix
+      // take an afternoon.
+      const known = { 'no-api-key':'endpoint-no-key', 'bad-key':'endpoint-bad-key', 'bad-model':'endpoint-bad-model' };
+      fishIStatus = (info && known[info.reason]) || 'endpoint-not-ready';
     }
   }catch(e){
     fishIStatus = 'endpoint-unreachable';
@@ -3667,7 +3672,9 @@ function fishIStatusText(){
     case 'ready':               return 'ready.';
     case 'ready-endpoint':      return 'ready \u2014 running through this site\u2019s own server.';
     case 'ready-no-image-limit':return 'ready, though this view did not report photo support.';
-    case 'endpoint-no-key':     return 'the server has no Anthropic API key. Add ANTHROPIC_API_KEY in Vercel \u2192 Settings \u2192 Environment Variables, then redeploy.';
+    case 'endpoint-no-key':     return 'the server has no Gemini API key. Add GEMINI_API_KEY in Vercel \u2192 Settings \u2192 Environment Variables, then redeploy.';
+    case 'endpoint-bad-key':    return 'the server\u2019s Gemini API key was rejected. Check GEMINI_API_KEY in Vercel, then redeploy.';
+    case 'endpoint-bad-model':  return 'the vision model this deployment asks for no longer exists. Set FISHI_MODEL in Vercel to a current one.';
     case 'endpoint-not-ready':  return 'the server reports Fish-I as unavailable.';
     case 'endpoint-unreachable':return 'the server did not answer. It may still be deploying \u2014 wait a moment, then retry.';
     default:
