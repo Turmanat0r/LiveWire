@@ -287,6 +287,19 @@ module.exports = async (req, res) => {
   if (req.method === 'GET') {
     if (!key) return send(res, 200, { ready: false, reason: 'no-api-key' });
     try {
+      // ?models=1 lists what this key was actually offered. No secret is in
+      // it, and when a model is refused despite being listed it is the only
+      // way to see the difference between the two from outside.
+      if (req.query && req.query.models === '1') {
+        const all = await listModels(key);
+        return send(res, 200, {
+          chose: pickModel(all),
+          offered: all
+            .filter(m => m && Array.isArray(m.supportedGenerationMethods))
+            .map(m => m.name.replace(/^models\//, '') +
+                      ' [' + m.supportedGenerationMethods.join(',') + ']')
+        });
+      }
       const model = await resolveModel(key, req.query && req.query.refresh === '1');
       return send(res, 200, { ready: true, model, pinned: !!MODEL_OVERRIDE });
     } catch (e) {
@@ -399,10 +412,13 @@ module.exports = async (req, res) => {
       return send(res, 429, { error: 'The free Gemini quota is used up for now. Wait a minute, then try again.' });
     }
     if (upstream.status === 404) {
+      // Google's own words matter here. "Model not found" and "not supported
+      // for generateContent" and "API version" are three different problems
+      // that all arrive as a 404, and they do not share a fix.
       return send(res, 502, {
-        error: MODEL_OVERRIDE
+        error: (MODEL_OVERRIDE
           ? 'This key cannot use the model "' + model + '" pinned in FISHI_MODEL. Clear that variable to let the server pick one.'
-          : 'This key cannot call "' + model + '", and no other usable model was offered.'
+          : 'This key cannot call "' + model + '".') + (detail ? ' Google says: ' + detail : '')
       });
     }
     return send(res, 502, { error: 'Gemini returned ' + upstream.status + (detail ? ': ' + detail : '') });
