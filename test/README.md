@@ -51,6 +51,10 @@ The places where a mistake is silent and expensive:
   drag-handle offset/bearing round-trip.
 - **Species scoring** — that the target species is per-event and that changing
   it re-ranks the leaderboard.
+- **Board codes** — that a four-digit code is never issued twice, across every
+  event rather than just the live one, and that team and personal codes share
+  one pool. A duplicate looks like nothing at the time; it surfaces when two
+  anglers claim the same fish and the photo cannot settle it.
 - **Clean startup** — that the page's init does not throw.
 - **The Fish-I vision pass** — that a hosted copy finds the server endpoint at
   all (it did not, for the whole time it was deployed), that the button stays
@@ -90,6 +94,12 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Key Fish-I availability off `AI_REVIEW_ENDPOINT` again | 1 failure |
 | Have the page send its own Fish-I prompt | 1 failure |
 | Resolve `/api/fish-i` even on `file://` | 2 failures |
+| Check board codes against one event instead of all | 1 failure |
+| Let `makeCode` hand out a code without reserving it | 2 failures |
+| Leave team codes out of the code pool | 2 failures |
+| Allow leading zeros in a board code | 2 failures |
+| Render a missing board code as blank | 1 failure |
+| Stop escaping board codes | 2 failures |
 | Typo an element id | lint: 2 findings |
 | Delete `api/fish-i.js` | lint: 1 finding |
 

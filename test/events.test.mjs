@@ -67,6 +67,8 @@ globalThis.__t = {
   beaconTick, startBeaconTracking, stopBeaconTracking, resumeBeaconTracking,
   loadBets, saveBets, betRecords, betJoins, betHasJoined, betStanding, betCardHtml,
   BET_TITLE_MAX, BET_OPEN_MAX, BET_SCORING, renderDqNotice,
+  makeCode, codesInUse, takenCodes, codeBoxHtml, codeNoteHtml, anglerById,
+  CODE_MIN, CODE_MAX,
   aiReviewEndpoint, probeFishIEndpoint, fishIVisionAvailable, fishIStatusText,
   requestAiVisionReview, AI_REVIEW_ENDPOINT,
   get appWindow(){ return window; },
@@ -1625,6 +1627,90 @@ try{
   if (savedLocation === undefined) delete t.appWindow.location;
   else t.appWindow.location = savedLocation;
 }
+
+// ============================================================
+section('42. board codes');
+// These get written on a bump board and read back out of a photo. Two anglers
+// sharing one makes a catch unattributable, and nothing about it would look
+// wrong at the time - it only surfaces when two people claim the same fish.
+
+const oneCode = t.makeCode(new Set());
+check('a code is four digits', /^\d{4}$/.test(oneCode), true);
+check('and never starts with a zero', oneCode[0] !== '0', true);
+check('the range has no leading-zero values', [t.CODE_MIN, t.CODE_MAX], [1000, 9999]);
+
+// A leading zero is the digit that gets dropped copying a number onto a board.
+const many = [];
+const pool0 = new Set();
+for (let i = 0; i < 800; i++) many.push(t.makeCode(pool0));
+check('800 codes are all four digits', many.every(c => /^\d{4}$/.test(c)), true);
+check('and none of them collide', new Set(many).size, 800);
+check('the pool is mutated as it goes, not just read', pool0.size, 800);
+
+const taken = new Set(['1234']);
+const avoided = [];
+for (let i = 0; i < 200; i++) avoided.push(t.makeCode(taken));
+check('a taken code is never handed out', avoided.includes('1234'), false);
+
+// One pool for both kinds, so a number on a board is never ambiguous.
+check('codesInUse collects personal and team codes alike',
+  [...t.codesInUse([
+    { anglerCode: '1111', teamCode: '2222' },
+    { anglerCode: '3333' },
+    { teamCode: '2222' },
+    null
+  ])].sort(),
+  ['1111', '2222', '3333']);
+check('and copes with anglers who have neither', t.codesInUse([{ name: 'x' }]).size, 0);
+
+// Uniqueness spans events. A code read off a board in a photo must not belong
+// to one angler this year and a different one last year.
+seed(
+  [{ id: 'a1', eventId: E1, name: 'Ann', anglerCode: '4001', teamCode: '4002' },
+   { id: 'a2', eventId: E2, name: 'Bob', anglerCode: '4003' }],
+  [], []
+);
+await setEvent(E1);
+check('only one angler is visible under this event', (await t.loadAnglers()).length, 1);
+const spanning = t.takenCodes();
+check('but the code pool sees every event', [...spanning].sort(), ['4001', '4002', '4003']);
+const nextCode = t.makeCode(t.takenCodes());
+check('so a new code cannot repeat another event\'s',
+  ['4001', '4002', '4003'].includes(nextCode), false);
+
+// ---- what the angler is shown ----
+const soloBox = t.codeBoxHtml({ anglerCode: '5150' });
+check('a solo angler is shown one code', (soloBox.match(/codechip/g) || []).length, 1);
+check('labelled Tournament ID', /Tournament ID/.test(soloBox), true);
+check('and told to write it on the board', /bump board/.test(t.codeNoteHtml({ anglerCode: '5150' })), true);
+
+const teamBox = t.codeBoxHtml({ anglerCode: '5150', teamCode: '7007' });
+check('a team angler is shown two', (teamBox.match(/codechip/g) || []).length, 2);
+check('the team code is marked as such', /codechip team/.test(teamBox), true);
+check('and both numbers are present', /7007/.test(teamBox) && /5150/.test(teamBox), true);
+check('they are told to write BOTH', /both/i.test(t.codeNoteHtml({ anglerCode: '5150', teamCode: '7007' })), true);
+
+// An angler from before codes existed must be told, not shown a blank.
+check('a missing code is not rendered as empty',
+  /—/.test(t.codeBoxHtml({ name: 'Old Timer' })), true);
+check('and says to see the director',
+  /director/.test(t.codeNoteHtml({ name: 'Old Timer' })), true);
+check('nothing at all renders nothing', t.codeBoxHtml(null), '');
+
+// Codes come off records that a director can edit, so they are escaped like
+// everything else that reaches innerHTML.
+check('a code is escaped on the way out',
+  /&lt;script&gt;/.test(t.codeBoxHtml({ anglerCode: '<script>' })), true);
+check('and the raw tag never survives',
+  /<script>/.test(t.codeBoxHtml({ anglerCode: '<script>' })), false);
+
+// ---- the camera overlay reads the SELECTED angler ----
+seed([{ id: 'a1', eventId: E1, name: 'Ann', anglerCode: '6001' },
+      { id: 'a2', eventId: E1, name: 'Bob', anglerCode: '6002', teamCode: '6003' }], [], []);
+await setEvent(E1);
+await t.loadAnglers();
+check('an angler is found by id', t.anglerById('a2').anglerCode, '6002');
+check('and a stranger is not invented', t.anglerById('nope'), null);
 
 // ============================================================
 console.log('\n' + (fail === 0 ? 'ALL PASS' : fail + ' FAILED') + '  (' + pass + ' passed)');

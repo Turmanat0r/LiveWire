@@ -545,12 +545,48 @@
   .gps-row-meta{font-size:11px;color:var(--steel);}
 
   /* ---- handle + chat ---- */
+  /* Sits directly above Complete Registration, so it has to read as a choice
+     rather than as one more label on the way to the button. */
+  .handle-field{
+    border:2px solid var(--deep);border-radius:5px;padding:12px;
+    background:var(--paper-2);margin-bottom:16px;
+  }
+  .handle-field label{color:var(--deep);letter-spacing:.06em;text-transform:uppercase;}
   .handle-pick{
     display:flex;align-items:center;justify-content:space-between;gap:10px;
-    padding:11px;border:1px solid var(--line);background:var(--paper-2);border-radius:4px;
+    padding:12px;border:1px solid var(--line);background:var(--paper);border-radius:4px;
   }
-  .handle-pick span{font-family:'Fraunces',serif;font-size:15px;color:var(--deep);line-height:1.3;}
+  .handle-pick span{font-family:'Fraunces',serif;font-size:19px;color:var(--deep);line-height:1.25;}
   .handle-pick button{flex-shrink:0;}
+
+  /* Board codes. Monospaced and wide-tracked because these get copied onto a
+     bump board with a marker, and 0/O and 1/7 are what get miscopied. */
+  .codebox{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 0;}
+  .codechip{
+    flex:1 1 90px;border:1px solid var(--line);border-radius:4px;
+    padding:8px 10px;background:var(--paper-2);
+  }
+  .codechip .k{
+    display:block;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--steel);margin-bottom:2px;
+  }
+  .codechip .v{
+    display:block;font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
+    font-size:20px;font-weight:600;letter-spacing:.08em;color:var(--deep);
+  }
+  .codechip.team .v{color:var(--olive);}
+  /* Over the live camera, so it has to survive a bright sky behind it.
+     Top RIGHT: the auto-capture badge already owns the top left corner. */
+  .vf-codes{
+    position:absolute;top:8px;right:8px;z-index:3;max-width:58%;
+    display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;pointer-events:none;
+  }
+  .vf-codes span{
+    background:rgba(10,26,32,0.72);color:#fff;border-radius:3px;
+    padding:3px 8px;font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
+    font-size:12px;letter-spacing:.08em;
+  }
+  .vf-codes span b{color:#4FD2E8;font-weight:600;}
   .chat-compose{display:flex;gap:8px;align-items:flex-end;margin-bottom:14px;}
   .chat-compose textarea{
     flex:1;min-height:44px;max-height:120px;padding:10px 11px;border:1px solid var(--line);
@@ -997,13 +1033,18 @@
             Enter Big Fish side pot &mdash; $10/angler ($20 for a team entry), winner take all
           </label>
         </div>
-        <div class="field">
-          <label>Your competitor handle</label>
+        <!-- Last thing before the button on purpose. It was easy to scroll past
+             on a phone when it looked like every other field, and a handle you
+             never looked at is fixed the moment you register. -->
+        <div class="field handle-field">
+          <!-- No `for`: it would point at the Reroll button, and clicking the
+               label would then silently reroll the handle you just settled on. -->
+          <label style="font-size:13px;">Pick your competitor handle</label>
           <div class="handle-pick">
             <span id="reg-handle"></span>
             <button class="small" type="button" id="reg-handle-reroll">Reroll</button>
           </div>
-          <p class="hint" style="margin:6px 0 0;">This is the name you show up as in the tournament chat. Reroll until you like it &mdash; it is fixed once you register. Standings and payouts use your real name.</p>
+          <p class="hint" style="margin:8px 0 0;"><strong>This is the name everyone else sees you as.</strong> Reroll until you like it &mdash; it is fixed once you register, and only the director can change it afterwards. Standings and payouts still use your real name.</p>
         </div>
         <div class="err" id="reg-err" style="display:none;"></div>
         <button class="primary" id="reg-submit">Complete registration</button>
@@ -1134,6 +1175,10 @@
             </div>
             <div class="vf-count" id="vf-count" style="display:none;"><span id="vf-count-num">3</span></div>
 
+            <!-- Filled from the selected angler. Checking the board against
+                 this while the fish is still on it is the only moment a
+                 miscopied code can still be fixed. -->
+            <div class="vf-codes" id="vf-codes" style="display:none;"></div>
             <div class="vf-hint" id="vf-hint">Align the fish along the guide, then capture</div>
           </div>
 
@@ -2245,6 +2290,85 @@ function uniqueHandle(anglers){
   return base + ' ' + uid().slice(-4);
 }
 
+// ---- board codes ----
+// Every angler carries three identifiers, and they do different jobs:
+//
+//   tournamentId  MKWO-001    the entry on the roster. Sequential, so it says
+//                             what order people signed up in. Labelled "User
+//                             ID" in the app.
+//   anglerCode    4 digits    this person, and only this person. Written on
+//                             the bump board, so the photo carries proof of
+//                             who shot it. Labelled "Tournament ID".
+//   teamCode      4 digits    shared by a team's two anglers. Team entries
+//                             only; a solo angler has no team code.
+//
+// A team member therefore writes two numbers on their board - the team's and
+// their own - which is what separates two people fishing one entry. Without
+// the personal code a partner could shoot both anglers' fish.
+//
+// 1000-9999 rather than 0000-9999. A leading zero is exactly the digit that
+// gets dropped when a number is copied onto a board with a wet marker.
+const CODE_MIN = 1000, CODE_MAX = 9999;
+
+// Personal and team codes share ONE pool, so a number written on a board is
+// never ambiguous about which kind it is.
+function codesInUse(anglers){
+  const taken = new Set();
+  for(const a of (anglers || [])){
+    if(a && a.anglerCode) taken.add(String(a.anglerCode));
+    if(a && a.teamCode)   taken.add(String(a.teamCode));
+  }
+  return taken;
+}
+
+// `taken` is mutated, so successive calls in one registration cannot collide
+// with each other before anything has been saved.
+function makeCode(taken){
+  const span = CODE_MAX - CODE_MIN + 1;
+  for(let i = 0; i < 4000; i++){
+    const c = String(CODE_MIN + Math.floor(Math.random() * span));
+    if(!taken.has(c)){ taken.add(c); return c; }
+  }
+  // 9000 codes gone. Sweep rather than keep rolling, so a full pool fails
+  // honestly instead of hanging.
+  for(let c = CODE_MIN; c <= CODE_MAX; c++){
+    if(!taken.has(String(c))){ taken.add(String(c)); return String(c); }
+  }
+  return null;
+}
+
+// Codes are checked against EVERY event, not just the live one. They cost
+// nothing to keep unique across seasons, and it means a code found on a board
+// in a photo can never belong to two different anglers.
+function takenCodes(){
+  return codesInUse(allRows('anglers'));
+}
+
+// Shown wherever an angler needs to read their own codes off a screen and copy
+// them onto a board. Anglers registered before codes existed have none until
+// the director assigns them, and are told that rather than shown a blank.
+function codeBoxHtml(a){
+  if(!a) return '';
+  const chip = (label, value, cls) =>
+    '<div class="codechip'+(cls ? ' '+cls : '')+'"><span class="k">'+escapeHtml(label)+'</span>'+
+    '<span class="v">'+escapeHtml(value || '—')+'</span></div>';
+  let html = '<div class="codebox">';
+  if(a.teamCode) html += chip('Team code', a.teamCode, 'team');
+  html += chip('Tournament ID', a.anglerCode);
+  html += '</div>';
+  return html;
+}
+
+function codeNoteHtml(a){
+  if(!a) return '';
+  if(!a.anglerCode){
+    return '<p class="hint" style="margin:8px 0 0;">No board code has been issued yet &mdash; ask the director before you fish.</p>';
+  }
+  return a.teamCode
+    ? '<p class="hint" style="margin:8px 0 0;">Write <strong>both</strong> numbers on your bump board. The team code is shared with your partner; the Tournament ID is yours alone, and is what tells your fish apart from theirs.</p>'
+    : '<p class="hint" style="margin:8px 0 0;">Write this number on your bump board so it is readable in every catch photo.</p>';
+}
+
 // The ONLY identity the field is shown: the handle. Anyone who registered
 // before handles existed falls back to their entry ID, never their real name -
 // real names and phone numbers are the director's business alone.
@@ -3102,6 +3226,14 @@ function catchById(id){
   return null;
 }
 
+// Synchronous on purpose: the camera overlay repaints from updateGuide(), and
+// awaiting a load there would let the guide render a frame behind the picker.
+function anglerById(id){
+  const rows = liveCache.anglers || [];
+  for(let i=0;i<rows.length;i++){ if(rows[i].id === id) return rows[i]; }
+  return null;
+}
+
 // Returns something usable directly as an <img> src: a data: URL from this
 // device, or an https: URL from object storage.
 async function loadPhoto(catchId){
@@ -3946,7 +4078,14 @@ async function renderHome(){
     const teamLabel = me.division==='team' ? ('Team with '+escapeHtml(me.partner)) : 'Solo division';
     // The handle is what everyone else sees them as, so it belongs on their own
     // card - otherwise the chat is full of a name they never chose to look at.
-    const sub = escapeHtml(displayHandle(me)) + '<br>' + teamLabel + ' &middot; ID ' + escapeHtml(me.tournamentId);
+    // Both codes belong here too - this card is the fastest thing to reach on
+    // the water when someone cannot remember what to write on the board.
+    const codeLine = me.anglerCode
+      ? '<br>' + (me.teamCode ? 'Team ' + escapeHtml(me.teamCode) + ' &middot; ' : '') +
+        'Tournament ID ' + escapeHtml(me.anglerCode)
+      : '';
+    const sub = escapeHtml(displayHandle(me)) + '<br>' + teamLabel +
+      ' &middot; ' + escapeHtml(me.tournamentId) + codeLine;
     const dqTag = me.disqualified
       ? '<span class="home-profile-dq">Disqualified</span>' : '';
     el.innerHTML = '<div class="home-profilecard'+(me.disqualified ? ' dq' : '')+'"><div class="home-avatar">'+escapeHtml(initials(me.name))+'</div><div class="home-profile-copy"><span class="home-profile-label">Angler profile'+dqTag+'</span><span class="home-profile-name">'+escapeHtml(me.name)+'</span><span class="home-profile-sub">'+sub+'</span></div></div>';
@@ -3995,15 +4134,17 @@ async function renderRegisteredCard(){
   const rows = [
     ['Name', me.name],
     ['Handle', displayHandle(me)],
-    ['Entry ID', me.tournamentId],
+    ['User ID', me.tournamentId],
     ['Division', me.division === 'team' ? 'Team' : 'Solo']
   ];
   if(mate) rows.push(['Partner', mate.name + ' (' + displayHandle(mate) + ')']);
   rows.push(['Big Fish pot', me.bigfish ? 'Entered' : 'Not entered']);
 
-  document.getElementById('reg-already-body').innerHTML = rows.map(r=>
-    '<div class="lbrow"><div class="who"><div class="name">'+escapeHtml(r[0])+'</div></div>'+
-    '<div class="len" style="font-size:13px;">'+escapeHtml(String(r[1]))+'</div></div>').join('');
+  document.getElementById('reg-already-body').innerHTML =
+    rows.map(r=>
+      '<div class="lbrow"><div class="who"><div class="name">'+escapeHtml(r[0])+'</div></div>'+
+      '<div class="len" style="font-size:13px;">'+escapeHtml(String(r[1]))+'</div></div>').join('') +
+    codeBoxHtml(me) + codeNoteHtml(me);
 }
 
 async function renderRegisterScreen(){
@@ -4080,10 +4221,16 @@ bindEl('reg-submit','click', async ()=>{
   const tournamentId = activeEvent().prefix + '-' + pad3(entryNumber);
   const freshCheckins = ()=>({ day1:{in:null,out:null}, day2:{in:null,out:null} });
 
+  // One pool for the whole registration, so the captain's code, the partner's
+  // and the team's cannot collide with each other before any of them is saved.
+  const codePool = takenCodes();
+  const teamCode = division === 'team' ? makeCode(codePool) : '';
+
   const captainId = uid();
   const captain = {
     id: captainId, name, phone, division, partner: division==='team'?partnerName:'', bigfish,
     tournamentId, role: division==='team' ? 'captain' : 'solo', teamId: null,
+    anglerCode: makeCode(codePool), teamCode,
     handle: pendingHandle || uniqueHandle(anglers),
     registeredAt: Date.now(), checkins: freshCheckins()
   };
@@ -4098,6 +4245,9 @@ bindEl('reg-submit','click', async ()=>{
     anglers.push({
       id: uid(), name: partnerName, phone: '', division: 'team', partner: name, bigfish,
       tournamentId: tournamentId+'P', role: 'partner', teamId,
+      // Same team code, different personal code. That difference is the whole
+      // point: it is what tells two anglers fishing one entry apart on a board.
+      anglerCode: makeCode(codePool), teamCode,
       // Rolled against the list including the captain just pushed, so
       // teammates can never land on the same handle as each other.
       handle: uniqueHandle(anglers),
@@ -4309,8 +4459,25 @@ function updateGuide(){
     : (fishOutline
         ? 'Fish flat on the blue outline, nose to the stop \u2014 keep hands out of the red'
         : 'Fish flat on the board, nose to the stop \u2014 keep hands out of the red');
+  updateGuideCodes();
 }
 bindEl('sub-species','change', updateGuide);
+
+// The codes the SELECTED angler should have on their board - not the device
+// owner's. A captain shooting their partner's fish picks the partner here, and
+// showing the captain's code then would be worse than showing none.
+function updateGuideCodes(){
+  const box = document.getElementById('vf-codes');
+  if(!box) return;
+  const sel = document.getElementById('sub-angler');
+  const a = sel && sel.value ? anglerById(sel.value) : null;
+  if(!a || !a.anglerCode){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.innerHTML =
+    (a.teamCode ? '<span>TEAM <b>'+escapeHtml(a.teamCode)+'</b></span>' : '') +
+    '<span>ID <b>'+escapeHtml(a.anglerCode)+'</b></span>';
+  box.style.display = 'flex';
+}
+bindEl('sub-angler','change', updateGuideCodes);
 
 async function startCamera(){
   const errEl = document.getElementById('vf-cam-err');
@@ -7041,13 +7208,30 @@ async function renderContestants(){
     ? 'No anglers yet'
     : anglers.length+' angler'+(anglers.length===1?'':'s')+(dqCount?' \u00b7 '+dqCount+' DQ':'');
 
+  // Anyone who registered before board codes existed has none. Offered rather
+  // than done silently: it is a write to every one of those records, and the
+  // director should be the one who decides when that happens.
+  const missing = anglers.filter(a=> !a.anglerCode);
+  const banner = missing.length
+    ? '<div class="fp level-review" style="margin-bottom:12px;">'+
+        '<div class="fp-head"><span class="fp-title">Board codes missing</span></div>'+
+        '<div class="fp-item"><span class="fp-dot level-review"></span><span>'+
+          missing.length+' angler'+(missing.length===1?' has':'s have')+' no board code. '+
+          'They registered before codes existed, and cannot write one on a bump board until they have it.'+
+        '</span></div>'+
+        '<div class="actions" style="margin-top:8px;">'+
+          '<button class="small" data-act="assign-codes">Issue codes to '+missing.length+' angler'+(missing.length===1?'':'s')+'</button>'+
+        '</div>'+
+      '</div>'
+    : '';
+
   let list = anglers.slice();
   if(contestantFilter==='solo') list = list.filter(a=>a.division==='solo');
   else if(contestantFilter==='team') list = list.filter(a=>a.division==='team');
   else if(contestantFilter==='dq') list = list.filter(a=>a.disqualified);
 
   if(list.length===0){
-    el.innerHTML = '<p class="empty">'+(anglers.length===0
+    el.innerHTML = banner + '<p class="empty">'+(anglers.length===0
       ? 'No anglers registered yet.'
       : 'No anglers match this filter.')+'</p>';
     return;
@@ -7074,7 +7258,7 @@ async function renderContestants(){
     return x.angler.name.localeCompare(y.angler.name);
   });
 
-  el.innerHTML = decorated.map(d=>contestantRowHtml(d, catches)).join('');
+  el.innerHTML = banner + decorated.map(d=>contestantRowHtml(d, catches)).join('');
   wireContestantRows();
 }
 
@@ -7101,6 +7285,14 @@ function contestantRowHtml(d, catches){
           (a.disqualified ? '<span class="dqtag">DQ</span>' : '')+'</div>'+
         '<div class="crow-sub">'+a.tournamentId+' \u00b7 '+teamLabel+
           (a.bigfish ? ' \u00b7 Big Fish' : '')+'</div>'+
+        // The codes are how you match a number on a board in a photo back to a
+        // person, so they belong on the row you are already looking at.
+        '<div class="crow-sub">'+
+          (a.teamCode ? 'Team '+escapeHtml(a.teamCode)+' \u00b7 ' : '')+
+          (a.anglerCode
+            ? 'ID '+escapeHtml(a.anglerCode)
+            : '<strong style="color:var(--danger);">no board code</strong>')+
+        '</div>'+
         '<div class="crow-sub">'+checked+'</div>'+
       '</div>'+
       '<div class="crow-best">'+
@@ -7225,6 +7417,32 @@ function contestantRowHtml(d, catches){
 
 function wireContestantRows(){
   const el = document.getElementById('contestants-body');
+
+  // Issues a code to everyone who lacks one. Teammates are given a SHARED team
+  // code, matched on teamId, or two people on one entry would end up with two
+  // different team numbers on their boards.
+  el.querySelectorAll('[data-act="assign-codes"]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      btn.disabled = true;
+      btn.textContent = 'Issuing…';
+      const anglers = await loadAnglers();
+      const pool = takenCodes();
+      const teamCodes = {};
+      // Seed from any team code already issued, so a half-filled team keeps
+      // the number its other half is already carrying.
+      for(const a of anglers){ if(a.teamId && a.teamCode) teamCodes[a.teamId] = a.teamCode; }
+      for(const a of anglers){
+        if(!a.anglerCode) a.anglerCode = makeCode(pool);
+        if(a.teamId && !a.teamCode){
+          if(!teamCodes[a.teamId]) teamCodes[a.teamId] = makeCode(pool);
+          a.teamCode = teamCodes[a.teamId];
+        }
+      }
+      await saveAnglers(anglers);
+      renderContestants();
+    });
+  });
 
   el.querySelectorAll('[data-act="c-toggle"]').forEach(node=>{
     node.addEventListener('click', ()=>{
