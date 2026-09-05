@@ -513,6 +513,18 @@
     margin-left:6px;font-size:9px;font-weight:700;letter-spacing:.06em;
     background:#F1D6D0;color:var(--danger);padding:2px 5px;border-radius:3px;vertical-align:middle;
   }
+  /* Amber, not red: unconfirmed is "not in yet", which is a different thing
+     from disqualified and must not read like a punishment. */
+  .crow.unconfirmed{border-left-color:var(--gold);background:#F7F1E4;}
+  .crow-name .pendtag{
+    margin-left:6px;font-size:9px;font-weight:700;letter-spacing:.06em;
+    background:#F3E3C4;color:var(--gold-deep);padding:2px 5px;border-radius:3px;vertical-align:middle;
+  }
+  .pending-notice{
+    border:1px solid var(--gold);border-left-width:4px;background:#F9F3E6;
+    border-radius:4px;padding:12px;margin-bottom:14px;
+  }
+  .pending-notice strong{display:block;color:var(--gold-deep);margin-bottom:4px;}
   .crow-sub{font-size:11px;color:var(--steel);margin-top:2px;}
   .crow-best{text-align:right;flex-shrink:0;}
   .crow-best strong{display:block;font-family:'Fraunces',serif;font-size:15px;color:var(--deep);}
@@ -1013,8 +1025,9 @@
           <input type="text" id="reg-name" placeholder="First and last name">
         </div>
         <div class="field">
-          <label for="reg-phone">Phone (optional)</label>
+          <label for="reg-phone">Phone</label>
           <input type="tel" id="reg-phone" placeholder="406-555-0100">
+          <p class="hint" style="margin:6px 0 0;">One entry per number. The director uses this to reach you if you are late back to the ramp &mdash; nobody else on the water ever sees it.</p>
         </div>
         <div class="field">
           <label>Division</label>
@@ -1026,6 +1039,9 @@
         <div class="field" id="reg-partner-field" style="display:none;">
           <label for="reg-partner">Partner name</label>
           <input type="text" id="reg-partner" placeholder="Partner's first and last name">
+          <label for="reg-partner-phone" style="margin-top:10px;">Partner phone (optional)</label>
+          <input type="tel" id="reg-partner-phone" placeholder="406-555-0101">
+          <p class="hint" style="margin:6px 0 0;">Worth adding &mdash; you two may not stay within sight of each other, and it is the only way the director can reach your partner directly.</p>
         </div>
         <div class="field">
           <label style="display:flex;align-items:center;gap:8px;font-weight:400;">
@@ -1572,6 +1588,7 @@
             <button class="active" data-cfilter="all">All</button>
             <button data-cfilter="solo">Solo</button>
             <button data-cfilter="team">Team</button>
+            <button data-cfilter="unconfirmed">Unconfirmed</button>
             <button data-cfilter="dq">Disqualified</button>
           </div>
           <div id="contestants-body"></div>
@@ -2291,6 +2308,31 @@ function uniqueHandle(anglers){
   return base + ' ' + uid().slice(-4);
 }
 
+// ---- confirmed entries ----
+// Registering is not entering. The entry fee is, and it is collected outside
+// this app, so an entry stays PENDING until the director confirms the money
+// landed. A pending entry does not score, does not join the Big Fish pot and
+// does not count toward a pool.
+//
+// It is also the only real answer to one person taking two entries under two
+// names: a browser can be swapped, a name can be invented, a PayPal receipt
+// cannot.
+//
+// Absence means confirmed, deliberately. Every angler who registered before
+// this existed carries no flag, and reading a missing flag as "pending" would
+// empty the standings of a tournament already under way.
+function isConfirmed(a){ return !(a && a.pending); }
+
+// Digits only, last ten. Two people are the same person here if their numbers
+// match once punctuation and a country code are off - 406-555-0100,
+// (406) 555 0100 and +1 4065550100 are one angler.
+//
+// Last ten rather than anything cleverer because every entrant is dialling a
+// North American number. An international field would need more than this.
+function normPhone(v){
+  return String(v == null ? '' : v).replace(/\D/g, '').slice(-10);
+}
+
 // ---- board codes ----
 // Every angler carries three identifiers, and they do different jobs:
 //
@@ -2383,6 +2425,21 @@ function codeBoxHtml(a){
   html += chip('Tournament ID', a.anglerCode);
   html += '</div>';
   return html;
+}
+
+// Shown on the angler's own registration card. They need to know their entry
+// is not live yet, and they need to know it is not a mistake they made - the
+// director simply has not ticked it off against the fee.
+function pendingNoticeHtml(a){
+  if(isConfirmed(a)) return '';
+  return '<div class="pending-notice">'+
+    '<strong>Entry received — not confirmed yet</strong>'+
+    'The director confirms entries as fees come in. Until yours is confirmed you '+
+    'will not appear in the standings, the Big Fish pot or the payout split.<br><br>'+
+    'You can still check in, log catches and use the chat, and everything you log '+
+    'counts the moment the entry is confirmed. Nothing is lost by fishing in the '+
+    'meantime — see the director if it has not cleared by the rules meeting.'+
+  '</div>';
 }
 
 function codeNoteHtml(a){
@@ -4150,12 +4207,13 @@ async function renderHome(){
     // card - otherwise the chat is full of a name they never chose to look at.
     // Both codes belong here too - this card is the fastest thing to reach on
     // the water when someone cannot remember what to write on the board.
+    const statusLine = isConfirmed(me) ? '' : '<br><strong>Entry not confirmed yet</strong>';
     const codeLine = me.anglerCode
       ? '<br>' + (me.teamCode ? 'Team ' + escapeHtml(me.teamCode) + ' &middot; ' : '') +
         'Tournament ID ' + escapeHtml(me.anglerCode)
       : '';
     const sub = escapeHtml(displayHandle(me)) + '<br>' + teamLabel +
-      ' &middot; ' + escapeHtml(me.tournamentId) + codeLine;
+      ' &middot; ' + escapeHtml(me.tournamentId) + codeLine + statusLine;
     const dqTag = me.disqualified
       ? '<span class="home-profile-dq">Disqualified</span>' : '';
     el.innerHTML = '<div class="home-profilecard'+(me.disqualified ? ' dq' : '')+'"><div class="home-avatar">'+escapeHtml(initials(me.name))+'</div><div class="home-profile-copy"><span class="home-profile-label">Angler profile'+dqTag+'</span><span class="home-profile-name">'+escapeHtml(me.name)+'</span><span class="home-profile-sub">'+sub+'</span></div></div>';
@@ -4205,12 +4263,14 @@ async function renderRegisteredCard(){
     ['Name', me.name],
     ['Handle', displayHandle(me)],
     ['User ID', me.tournamentId],
-    ['Division', me.division === 'team' ? 'Team' : 'Solo']
+    ['Division', me.division === 'team' ? 'Team' : 'Solo'],
+    ['Status', isConfirmed(me) ? 'Confirmed' : 'Waiting on the director']
   ];
   if(mate) rows.push(['Partner', mate.name + ' (' + displayHandle(mate) + ')']);
   rows.push(['Big Fish pot', me.bigfish ? 'Entered' : 'Not entered']);
 
   document.getElementById('reg-already-body').innerHTML =
+    pendingNoticeHtml(me) +
     rows.map(r=>
       '<div class="lbrow"><div class="who"><div class="name">'+escapeHtml(r[0])+'</div></div>'+
       '<div class="len" style="font-size:13px;">'+escapeHtml(String(r[1]))+'</div></div>').join('') +
@@ -4258,6 +4318,7 @@ bindEl('reg-submit','click', async ()=>{
   const phone = document.getElementById('reg-phone').value.trim();
   const division = document.querySelector('#reg-division label.active').dataset.val;
   const partnerName = document.getElementById('reg-partner').value.trim();
+  const partnerPhone = document.getElementById('reg-partner-phone').value.trim();
   const bigfish = document.getElementById('reg-bigfish').checked;
   const errEl = document.getElementById('reg-err');
 
@@ -4265,7 +4326,19 @@ bindEl('reg-submit','click', async ()=>{
 
   if(isRegistrationClosed()) return fail('Registration is closed for this event.');
   if(!name) return fail('Enter your name to register.');
+  if(!phone) return fail('Enter a phone number. It is how the director reaches you, and it is what keeps one person to one entry.');
+  // Ten digits after punctuation and a country code. Short enough to catch a
+  // typo, loose enough not to argue about formatting at the ramp.
+  if(normPhone(phone).length < 10){
+    return fail('That does not look like a complete phone number. Include the area code.');
+  }
   if(division==='team' && !partnerName) return fail("Enter your partner's name for a team entry.");
+  if(division==='team' && partnerPhone && normPhone(partnerPhone).length < 10){
+    return fail("That partner phone number looks incomplete. Include the area code, or leave it blank.");
+  }
+  if(division==='team' && partnerPhone && normPhone(partnerPhone) === normPhone(phone)){
+    return fail('A team needs two different phone numbers — or leave your partner\'s blank.');
+  }
   errEl.style.display='none';
 
   // ---- the roster has to be here before it can be checked against ----
@@ -4307,6 +4380,25 @@ bindEl('reg-submit','click', async ()=>{
         '. Each angler can only be entered once.');
     }
   }
+
+  // ---- one entry per phone number ----
+  // A name can be invented and a browser can be swapped; a phone number is
+  // something a person only has so many of. This is the check that survives
+  // someone registering again under a different name from another browser.
+  const myPhone = normPhone(phone);
+  const phoneClash = anglers.find(a=> a.phone && normPhone(a.phone) === myPhone);
+  if(phoneClash){
+    return fail('That phone number is already on the roster for this event, as ' +
+      phoneClash.tournamentId + '. One entry per person — see the director if that is not you.');
+  }
+  if(division === 'team' && partnerPhone){
+    const pPhone = normPhone(partnerPhone);
+    const partnerPhoneClash = anglers.find(a=> a.phone && normPhone(a.phone) === pPhone);
+    if(partnerPhoneClash){
+      return fail("Your partner's phone number is already on the roster, as " +
+        partnerPhoneClash.tournamentId + '. Each angler can only be entered once.');
+    }
+  }
   // Number registrations (teams count as one entry), not individual anglers.
   const entryNumber = anglers.filter(a=>a.role!=='partner').length + 1;
   // Prefixed per event, so MKWO-001 and MKWO28-001 are different anglers even
@@ -4324,6 +4416,8 @@ bindEl('reg-submit','click', async ()=>{
     id: captainId, name, phone, division, partner: division==='team'?partnerName:'', bigfish,
     tournamentId, role: division==='team' ? 'captain' : 'solo', teamId: null,
     anglerCode: makeCode(codePool), teamCode,
+    // Pending until the director confirms the fee arrived. See isConfirmed().
+    pending: true,
     handle: pendingHandle || uniqueHandle(anglers),
     registeredAt: Date.now(), checkins: freshCheckins()
   };
@@ -4336,8 +4430,10 @@ bindEl('reg-submit','click', async ()=>{
     const teamId = uid();
     captain.teamId = teamId;
     anglers.push({
-      id: uid(), name: partnerName, phone: '', division: 'team', partner: name, bigfish,
+      id: uid(), name: partnerName, phone: partnerPhone, division: 'team', partner: name, bigfish,
       tournamentId: tournamentId+'P', role: 'partner', teamId,
+      // Confirmed or not, a team moves as one - the captain paid for both.
+      pending: true,
       // Same team code, different personal code. That difference is the whole
       // point: it is what tells two anglers fishing one entry apart on a board.
       anglerCode: makeCode(codePool), teamCode,
@@ -4374,6 +4470,7 @@ bindEl('reg-submit','click', async ()=>{
   document.getElementById('reg-name').value='';
   document.getElementById('reg-phone').value='';
   document.getElementById('reg-partner').value='';
+  document.getElementById('reg-partner-phone').value='';
   document.getElementById('reg-bigfish').checked=false;
   const soloLabel = document.querySelector('#reg-division label[data-val="solo"]');
   if(soloLabel){
@@ -4400,7 +4497,7 @@ async function renderRoster(){
       ? escapeHtml(displayHandle(a)) + ' &amp; ' + escapeHtml(mate ? displayHandle(mate) : 'partner')
       : escapeHtml(displayHandle(a));
     const sub = (a.division==='team' ? 'Team' : 'Solo') + ' &middot; ' + a.tournamentId;
-    return '<div class="lbrow"><div class="who"><div class="name">'+displayName+'</div><div class="sub">'+sub+(a.bigfish?' &middot; Big Fish pot':'')+'</div></div></div>';
+    return '<div class="lbrow"><div class="who"><div class="name">'+displayName+'</div><div class="sub">'+sub+(a.bigfish?' &middot; Big Fish pot':'')+(isConfirmed(a)?'':' &middot; unconfirmed')+'</div></div></div>';
   }).join('');
 }
 
@@ -5023,7 +5120,9 @@ function standingsFor(division, catches, anglers){
   const eligible = catches.filter(c=>{
     if(c.status!=='approved' || !isScoringSpecies(c.species) || c.division!==division) return false;
     const a = anglerById[c.anglerId];
-    return !(a && a.disqualified);
+    // Pending as well as disqualified: an unconfirmed entry has not paid in,
+    // so it cannot take a placement from someone who has.
+    return !(a && (a.disqualified || !isConfirmed(a)));
   });
 
   const groups = {};
@@ -5081,9 +5180,16 @@ async function renderLeaderboard(){
 }
 
 // ---- big fish ----
+// Who is actually in the pot: bought in, still eligible, and confirmed. Split
+// out of the render so the rule is testable without a browser - a pot that
+// quietly included an unpaid entry would only show up in a payout dispute.
+function bigFishEntrants(anglers){
+  return (anglers || []).filter(a=> a.bigfish && !a.disqualified && isConfirmed(a));
+}
+
 async function renderBigFish(){
   const anglers = await loadAnglers();
-  const inPot = new Set(anglers.filter(a=>a.bigfish && !a.disqualified).map(a=>a.id));
+  const inPot = new Set(bigFishEntrants(anglers).map(a=>a.id));
   const catches = (await loadCatches()).filter(c=>c.status==='approved' && isScoringSpecies(c.species) && inPot.has(c.anglerId));
   const byId = {};
   anglers.forEach(a=>{ byId[a.id] = a; });
@@ -6034,16 +6140,32 @@ async function renderPublicGps(){
   }).join('');
 }
 
+// What each pool is built from. A pool is money that actually arrived, so an
+// unconfirmed entry must never inflate what the field thinks it is playing for.
+// Split out of the render for the same reason as bigFishEntrants().
+function poolCounts(anglers){
+  const confirmed = (anglers || []).filter(isConfirmed);
+  return {
+    solo:    confirmed.filter(a=> a.division === 'solo').length,
+    // A team is one entry fee, so the partner record is not counted again.
+    teams:   confirmed.filter(a=> a.division === 'team' && a.role !== 'partner').length,
+    // Big Fish is per angler, and both halves of a team have their own record.
+    bigfish: confirmed.filter(a=> a.bigfish).length
+  };
+}
+
 async function renderPayoutCalculator(){
   const anglers = await loadAnglers();
   const donations = await loadDonations();
-  const solo = anglers.filter(a=>a.division==='solo');
+  const counts = poolCounts(anglers);
+  const confirmed = anglers.filter(isConfirmed);
+  const solo = confirmed.filter(a=>a.division==='solo');
   // Team registrations now carry a real record for each partner (role: 'captain'/'partner'),
   // so the $50 team entry fee is charged once per team, not once per person.
-  const teamEntries = anglers.filter(a=>a.division==='team' && a.role!=='partner');
+  const teamEntries = confirmed.filter(a=>a.division==='team' && a.role!=='partner');
   // Big Fish is $10/angler; both team members have their own record, so this
   // already counts each real person once with no special-casing needed.
-  const bigfishAnglerCount = anglers.filter(a=>a.bigfish).length;
+  const bigfishAnglerCount = counts.bigfish;
 
   function donatedTo(target){
     return donations.filter(d=>d.target===target).reduce((s,d)=>s+d.amount, 0);
@@ -7388,9 +7510,11 @@ async function renderContestants(){
   if(!el) return;
 
   const dqCount = anglers.filter(a=>a.disqualified).length;
+  const waiting = anglers.filter(a=>!isConfirmed(a)).length;
   document.getElementById('contestants-tool-summary').textContent = anglers.length===0
     ? 'No anglers yet'
-    : anglers.length+' angler'+(anglers.length===1?'':'s')+(dqCount?' \u00b7 '+dqCount+' DQ':'');
+    : anglers.length+' angler'+(anglers.length===1?'':'s')+
+      (waiting?' \u00b7 '+waiting+' unconfirmed':'')+(dqCount?' \u00b7 '+dqCount+' DQ':'');
 
   // Anyone who registered before board codes existed has none. Offered rather
   // than done silently: it is a write to every one of those records, and the
@@ -7413,6 +7537,7 @@ async function renderContestants(){
   if(contestantFilter==='solo') list = list.filter(a=>a.division==='solo');
   else if(contestantFilter==='team') list = list.filter(a=>a.division==='team');
   else if(contestantFilter==='dq') list = list.filter(a=>a.disqualified);
+  else if(contestantFilter==='unconfirmed') list = list.filter(a=>!isConfirmed(a));
 
   if(list.length===0){
     el.innerHTML = banner + '<p class="empty">'+(anglers.length===0
@@ -7449,7 +7574,7 @@ async function renderContestants(){
 function contestantRowHtml(d, catches){
   const a = d.angler;
   const open = a.id === expandedContestantId;
-  const cls = 'crow' + (a.disqualified ? ' dq' : (d.rank===1 ? ' leader' : ''));
+  const cls = 'crow' + (a.disqualified ? ' dq' : (!isConfirmed(a) ? ' unconfirmed' : (d.rank===1 ? ' leader' : '')));
 
   const teamLabel = a.division==='team'
     ? 'Team with '+escapeHtml(a.partner || '\u2014')+(a.role==='partner' ? ' (partner)' : '')
@@ -7466,7 +7591,8 @@ function contestantRowHtml(d, catches){
       '<div class="crow-rank">'+(a.disqualified ? '\u2014' : (d.rank || '\u2014'))+'</div>'+
       '<div class="crow-id">'+
         '<div class="crow-name">'+escapeHtml(a.name)+
-          (a.disqualified ? '<span class="dqtag">DQ</span>' : '')+'</div>'+
+          (a.disqualified ? '<span class="dqtag">DQ</span>' : '')+
+          (isConfirmed(a) ? '' : '<span class="pendtag">Unconfirmed</span>')+'</div>'+
         '<div class="crow-sub">'+a.tournamentId+' \u00b7 '+teamLabel+
           (a.bigfish ? ' \u00b7 Big Fish' : '')+'</div>'+
         // The codes are how you match a number on a board in a photo back to a
@@ -7504,6 +7630,30 @@ function contestantRowHtml(d, catches){
         '<span class="st">'+escapeHtml(c.status)+' \u00b7 '+
         new Date(c.timestamp).toLocaleDateString([], {month:'short',day:'numeric'})+'</span></div>'
       ).join('');
+
+  // Confirmation sits above the DQ controls because it is the first decision:
+  // an unconfirmed entry has not paid, so it is not in the tournament yet and
+  // disqualifying it would be a category error.
+  let confirmArea;
+  if(!isConfirmed(a)){
+    confirmArea =
+      '<div class="cdq">'+
+        '<div class="cdq-warn">'+escapeHtml(a.name)+' is not confirmed yet.<br>'+
+          'They do not score, do not enter the Big Fish pot and do not count toward a pool ' +
+          'until you confirm the entry fee arrived.' +
+          (a.phone ? '<br>Phone on file: '+escapeHtml(a.phone) : '') +
+        '</div>'+
+        '<div class="cdq-actions">'+
+          '<button class="small" data-act="c-confirm" data-id="'+a.id+'">Confirm entry</button>'+
+          '<button class="small danger" data-act="c-remove" data-id="'+a.id+'">Reject</button>'+
+        '</div>'+
+      '</div>';
+  } else {
+    confirmArea =
+      '<div class="actions" style="margin-top:8px;">'+
+        '<button class="small" data-act="c-unconfirm" data-id="'+a.id+'">Mark unconfirmed</button>'+
+      '</div>';
+  }
 
   let dqArea;
   if(dqConfirmId === a.id){
@@ -7596,7 +7746,7 @@ function contestantRowHtml(d, catches){
     '</div>';
 
   return '<div class="'+cls+'">'+head+'<div class="crow-body">'+
-    stats+fish+dqArea+manageArea+editArea+removeArea+'</div></div>';
+    stats+fish+confirmArea+dqArea+manageArea+editArea+removeArea+'</div></div>';
 }
 
 function wireContestantRows(){
@@ -7653,6 +7803,27 @@ function wireContestantRows(){
       });
     });
   };
+  // Confirming and un-confirming are one-tap and reversible either way, so
+  // neither needs an armed confirmation step the way a DQ or a removal does.
+  el.querySelectorAll('[data-act="c-confirm"],[data-act="c-unconfirm"]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const confirming = btn.dataset.act === 'c-confirm';
+      const anglers = await loadAnglers();
+      const a = anglers.find(x=> x.id === btn.dataset.id);
+      if(!a) return;
+      // A team paid one fee, so both halves of it move together - confirming
+      // only the captain would leave the partner unable to score.
+      const group = a.teamId ? anglers.filter(x=> x.teamId === a.teamId) : [a];
+      group.forEach(x=>{
+        if(confirming) delete x.pending;      // absence IS confirmed - see isConfirmed()
+        else x.pending = true;
+      });
+      await saveAnglers(anglers);
+      renderContestants();
+    });
+  });
+
   arm('c-edit',          (id)=>{ editContestantId = id; });
   arm('c-edit-cancel',   null);
   arm('c-remove',        (id)=>{ removeContestantId = id; });

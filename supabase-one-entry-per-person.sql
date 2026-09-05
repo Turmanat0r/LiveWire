@@ -13,9 +13,13 @@
 --
 -- HOW TO RUN
 --   1. Run section 1 FIRST. If it returns any rows, fix those before going on -
---      creating the index will fail while duplicates exist, and it will tell
---      you so rather than doing anything destructive.
---   2. Then run section 2.
+--      creating an index will fail while duplicates exist, and it will tell
+--      you so rather than doing anything destructive. Section 1b does the same
+--      for phone numbers.
+--   2. Then run sections 2, 2b and 2c.
+--
+-- Safe to re-run whole. Every index is "create if not exists", so running this
+-- again after new sections were added only adds what is missing.
 --
 -- Nothing here deletes anything, and section 3 undoes it.
 -- ============================================================================
@@ -81,13 +85,54 @@ create unique index if not exists anglers_unique_angler_code
 
 
 -- ---------------------------------------------------------------------------
--- 3. Check it took. Two rows.
+-- 2c. One entry per phone number.
+--
+--     The name index stops the same person registering twice under the same
+--     name. It does nothing about the same person registering twice under two
+--     DIFFERENT names, which is the easier thing to do and the harder thing to
+--     spot. A phone number is something a person only has so many of.
+--
+--     Compared the way the app compares them: digits only, last ten, so
+--     406-555-0100, (406) 555 0100 and +1 4065550100 are one angler. Last ten
+--     assumes a North American field; an international one would need more.
+--
+--     Blank phones are skipped - a team partner's number is optional, and
+--     anglers entered before the field was required have none.
+--
+--     RUN SECTION 1b FIRST if you have a roster already.
+-- ---------------------------------------------------------------------------
+
+-- 1b. Existing phone duplicates. Expect zero rows.
+--
+-- select coalesce(data->>'eventId', 'mkwo-2027')                     as event,
+--        right(regexp_replace(data->>'phone', '\D', '', 'g'), 10)    as phone,
+--        count(*)                                                     as entries,
+--        array_agg(data->>'name')                                     as names
+-- from public.anglers
+-- where coalesce(data->>'phone', '') <> ''
+--   and length(regexp_replace(data->>'phone', '\D', '', 'g')) >= 10
+-- group by 1, 2
+-- having count(*) > 1
+-- order by 1, 2;
+
+create unique index if not exists anglers_one_entry_per_phone
+  on public.anglers (
+    coalesce(data->>'eventId', 'mkwo-2027'),
+    right(regexp_replace(data->>'phone', '\D', '', 'g'), 10)
+  )
+  where coalesce(data->>'phone', '') <> ''
+    and length(regexp_replace(data->>'phone', '\D', '', 'g')) >= 10;
+
+
+-- ---------------------------------------------------------------------------
+-- 3. Check it took. Three rows.
 -- ---------------------------------------------------------------------------
 select indexname
 from pg_indexes
 where schemaname = 'public'
   and tablename = 'anglers'
-  and indexname in ('anglers_one_entry_per_person', 'anglers_unique_angler_code')
+  and indexname in ('anglers_one_entry_per_person', 'anglers_unique_angler_code',
+                    'anglers_one_entry_per_phone')
 order by indexname;
 
 
@@ -97,6 +142,7 @@ order by indexname;
 --
 -- drop index if exists public.anglers_one_entry_per_person;
 -- drop index if exists public.anglers_unique_angler_code;
+-- drop index if exists public.anglers_one_entry_per_phone;
 --
 --    The app's own check still runs either way, so dropping these puts you
 --    back where you were - guarded, not enforced.

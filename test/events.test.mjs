@@ -68,6 +68,7 @@ globalThis.__t = {
   loadBets, saveBets, betRecords, betJoins, betHasJoined, betStanding, betCardHtml,
   BET_TITLE_MAX, BET_OPEN_MAX, BET_SCORING, renderDqNotice,
   makeCode, codesInUse, takenCodes, codeBoxHtml, codeNoteHtml, anglerById,
+  isConfirmed, normPhone, pendingNoticeHtml, bigFishEntrants, poolCounts,
   CODE_ALPHABET, CODE_LENGTH, duplicateEntryError, rosterIsLoaded, wipeEventData,
   countsSentence, SHARED_COLLECTIONS,
   get rosterLoaded(){ return rosterLoaded; }, set rosterLoaded(v){ rosterLoaded = v; },
@@ -1871,6 +1872,121 @@ try{
 } finally {
   t.store = savedStore;
 }
+
+// ============================================================
+section('46. one entry per phone number');
+// A name can be invented and a browser can be swapped. A phone number is the
+// thing a person only has so many of, which makes it the check that survives
+// someone registering again under a different name.
+check('punctuation is ignored', t.normPhone('406-555-0100'), '4065550100');
+check('so are spaces and brackets', t.normPhone('(406) 555 0100'), '4065550100');
+check('and a country code', t.normPhone('+1 406 555 0100'), '4065550100');
+check('all three are the same person',
+  new Set(['406-555-0100', '(406) 555 0100', '+1 406 555 0100'].map(t.normPhone)).size, 1);
+check('two real numbers stay different',
+  t.normPhone('406-555-0100') === t.normPhone('406-555-0101'), false);
+check('nothing normalises to nothing', t.normPhone(''), '');
+check('and so does null', t.normPhone(null), '');
+check('letters are not digits', t.normPhone('call me'), '');
+
+// ============================================================
+section('47. an entry does not count until the director confirms it');
+// Registering is not entering - the fee is, and it is collected outside the
+// app. Until the director ticks it off, an entry must not score, must not join
+// the Big Fish pot and must not inflate a pool.
+check('a new entry is pending', t.isConfirmed({ pending: true }), false);
+check('a confirmed one is not', t.isConfirmed({ pending: false }), true);
+check('confirming deletes the flag rather than setting it false',
+  t.isConfirmed({ name: 'Ann' }), true);
+
+// THE compatibility property. Every angler registered before this existed
+// carries no flag, and reading a missing flag as pending would empty the
+// standings of a tournament already under way.
+check('an angler from before this existed still counts', t.isConfirmed({ id: 'old' }), true);
+check('and so does one that is nothing at all', t.isConfirmed(undefined), true);
+
+// ---- what confirmation actually gates ----
+seed(
+  [{ id: 'ok', eventId: E1, name: 'Paid Up', handle: 'Paid Handle', division: 'solo', bigfish: true },
+   { id: 'no', eventId: E1, name: 'Not Yet', handle: 'Pending Handle', division: 'solo', bigfish: true, pending: true },
+   { id: 'old', eventId: E1, name: 'Legacy', handle: 'Legacy Handle', division: 'solo', bigfish: true }],
+  [{ id: 'c1', eventId: E1, anglerId: 'ok',  status: 'approved', species: 'Walleye', division: 'solo', length: 20, timestamp: 1 },
+   { id: 'c2', eventId: E1, anglerId: 'no',  status: 'approved', species: 'Walleye', division: 'solo', length: 30, timestamp: 2 },
+   { id: 'c3', eventId: E1, anglerId: 'old', status: 'approved', species: 'Walleye', division: 'solo', length: 25, timestamp: 3 }],
+  []
+);
+await setEvent(E1);
+const cAll = await t.loadCatches(), aAll = await t.loadAnglers();
+
+// The pending angler has the biggest fish, so if the gate is missing they win.
+const confirmBoard = t.standingsFor('solo', cAll, aAll);
+check('an unconfirmed entry does not rank', confirmBoard.map(r => r.name),
+  ['Legacy Handle', 'Paid Handle']);
+check('even though its fish is the longest',
+  Math.max.apply(null, cAll.map(c => c.length)), 30);
+check('and the legacy angler still ranks',
+  confirmBoard.some(r => r.name === 'Legacy Handle'), true);
+
+// ---- what it must NOT gate ----
+// Blocking a pending angler from fishing would strand anyone whose fee has not
+// cleared by the ramp. They log catches; the catches count on confirmation.
+check('a pending angler is still on the roster', aAll.map(a => a.id).sort(), ['no', 'ok', 'old']);
+check('and their catch is still stored', cAll.some(c => c.anglerId === 'no'), true);
+
+// ---- the Big Fish pot ----
+// $10 a head, winner take all. An unconfirmed entry in here is somebody
+// collecting a pot they never paid into.
+const potRoster = [
+  { id: 'p1', bigfish: true },
+  { id: 'p2', bigfish: true, pending: true },
+  { id: 'p3', bigfish: true, disqualified: true },
+  { id: 'p4', bigfish: false },
+  { id: 'p5', bigfish: true }                       // legacy, no flag
+];
+check('the pot takes confirmed buy-ins only',
+  t.bigFishEntrants(potRoster).map(a => a.id), ['p1', 'p5']);
+check('an unconfirmed buy-in is out',
+  t.bigFishEntrants(potRoster).some(a => a.id === 'p2'), false);
+check('a disqualified one is out too',
+  t.bigFishEntrants(potRoster).some(a => a.id === 'p3'), false);
+check('and a legacy entry is in', t.bigFishEntrants(potRoster).some(a => a.id === 'p5'), true);
+check('an empty roster is an empty pot', t.bigFishEntrants([]), []);
+
+// ---- the payout pools ----
+// The pool is what the field is told it is playing for. Counting an entry
+// whose fee never arrived overstates every placement in the split.
+const payRoster = [
+  { id: 's1', division: 'solo' },
+  { id: 's2', division: 'solo', pending: true },
+  { id: 't1', division: 'team', role: 'captain' },
+  { id: 't2', division: 'team', role: 'partner' },
+  { id: 't3', division: 'team', role: 'captain', pending: true },
+  { id: 't4', division: 'team', role: 'partner', pending: true },
+  { id: 'b1', division: 'solo', bigfish: true },
+  { id: 'b2', division: 'solo', bigfish: true, pending: true }
+];
+// Confirmed: s1 and b1 are solo, t1 is the one team entry, b1 bought Big Fish.
+check('unconfirmed entries do not inflate a pool',
+  t.poolCounts(payRoster), { solo: 2, teams: 1, bigfish: 1 });
+check('and counting them all would have said otherwise',
+  t.poolCounts(payRoster.map(a => { const c = Object.assign({}, a); delete c.pending; return c; })),
+  { solo: 4, teams: 2, bigfish: 2 });
+check('a team is still one entry fee, not two',
+  t.poolCounts([{ division: 'team', role: 'captain' }, { division: 'team', role: 'partner' }]).teams, 1);
+check('but Big Fish counts both halves of a team',
+  t.poolCounts([{ division: 'team', role: 'captain', bigfish: true },
+                { division: 'team', role: 'partner', bigfish: true }]).bigfish, 2);
+check('a legacy roster still counts in full',
+  t.poolCounts([{ division: 'solo' }, { division: 'solo' }]).solo, 2);
+check('an empty roster is an empty pool', t.poolCounts([]), { solo: 0, teams: 0, bigfish: 0 });
+
+// ---- what they are told ----
+const notice = t.pendingNoticeHtml({ pending: true });
+check('a pending angler is told the entry is not live', /not confirmed/i.test(notice), true);
+check('and told it is the fee, not a mistake they made', /fee/i.test(notice), true);
+check('and told to keep fishing', /still/i.test(notice), true);
+check('a confirmed angler is told nothing', t.pendingNoticeHtml({ name: 'Ann' }), '');
+check('and neither is a legacy one', t.pendingNoticeHtml({}), '');
 
 // ============================================================
 console.log('\n' + (fail === 0 ? 'ALL PASS' : fail + ' FAILED') + '  (' + pass + ' passed)');

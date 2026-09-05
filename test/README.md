@@ -55,6 +55,11 @@ The places where a mistake is silent and expensive:
   rather than just the live one, and that team and personal codes share one
   pool. A duplicate looks like nothing at the time; it surfaces when two
   anglers claim the same fish and the photo cannot settle it.
+- **Confirmed entries.** That an entry does not score, join the Big Fish pot
+  or count toward a pool until the director confirms the fee — and, more
+  importantly, that an angler carrying no flag at all still counts. Reading a
+  missing flag as "unconfirmed" would empty the standings of a tournament
+  already under way, which is why that case is asserted directly.
 - **The roster gate.** `initStore()` is not awaited, so the register form is
   usable before the roster arrives — and a duplicate check against an empty
   roster passes every time. This is how one person registered twice from two
@@ -105,6 +110,13 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Key Fish-I availability off `AI_REVIEW_ENDPOINT` again | 1 failure |
 | Have the page send its own Fish-I prompt | 1 failure |
 | Resolve `/api/fish-i` even on `file://` | 2 failures |
+| Read a missing `pending` flag as unconfirmed | 13 failures |
+| Let an unconfirmed entry into the standings | 1 failure |
+| Let an unconfirmed entry into the Big Fish pot | 2 failures |
+| Count unconfirmed entries in a payout pool | 1 failure |
+| Stop normalising phone numbers | 5 failures |
+| Compare phone numbers in full instead of last ten | 2 failures |
+| Never show the pending notice | 3 failures |
 | Let registration proceed before the roster loads | 2 failures |
 | Treat an offline connection as a loaded roster | 1 failure |
 | Cache a write the server permanently refused | 2 failures |
@@ -113,7 +125,8 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Check board codes against one event instead of all | 1 failure |
 | Let `makeCode` hand out a code without reserving it | 2 failures |
 | Leave team codes out of the code pool | 2 failures |
-| Allow leading zeros in a board code | 2 failures |
+| Put a confusable character back in the code alphabet | 2 failures |
+| Shorten a board code to 3 characters | 1 failure |
 | Render a missing board code as blank | 1 failure |
 | Stop escaping board codes | 2 failures |
 | Typo an element id | lint: 2 findings |
