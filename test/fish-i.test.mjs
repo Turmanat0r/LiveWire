@@ -13,7 +13,7 @@ import { fileURLToPath } from 'url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const handler = require(path.join(HERE, '..', 'api', 'fish-i.js'));
-const { allowedPhotoUrl, clean, normalize, buildPrompt, pickModel } = handler.__test;
+const { allowedPhotoUrl, clean, normalize, buildPrompt, pickModel, rankModels } = handler.__test;
 
 let pass = 0, fail = 0;
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -118,16 +118,36 @@ const M = (name, methods) => ({ name: 'models/' + name, supportedGenerationMetho
 check('nothing offered means nothing picked', pickModel([]), null);
 check('and neither does undefined', pickModel(undefined), null);
 
-check('the preferred flash model wins',
-  pickModel([M('gemini-2.0-flash'), M('gemini-2.5-flash'), M('gemini-1.5-pro')]), 'gemini-2.5-flash');
+// THE bug. A hardcoded preference list named gemini-2.5-flash, which by then
+// was still listed but no longer callable - so Fish-I passed its own health
+// check and failed on the first catch. Ranking by version means the list
+// cannot go stale the same way twice.
+check('the newest flash wins, not a name someone wrote down once',
+  pickModel([M('gemini-2.5-flash'), M('gemini-3.8-flash'), M('gemini-3.5-flash')]),
+  'gemini-3.8-flash');
+check('a version that does not exist yet is still preferred',
+  pickModel([M('gemini-3.8-flash'), M('gemini-9.9-flash')]), 'gemini-9.9-flash');
 check('order in the list does not matter',
-  pickModel([M('gemini-2.5-flash'), M('gemini-2.0-flash')]), 'gemini-2.5-flash');
-check('it falls back down the ranks',
-  pickModel([M('gemini-2.0-flash'), M('gemini-1.5-pro')]), 'gemini-2.0-flash');
-check('an unknown future gemini is still usable',
-  pickModel([M('gemini-9.9-wildcard')]), 'gemini-9.9-wildcard');
-check('a plain name beats a preview of the same rank',
-  pickModel([M('gemini-2.5-flash-preview-01'), M('gemini-2.5-flash')]), 'gemini-2.5-flash');
+  pickModel([M('gemini-2.0-flash'), M('gemini-2.5-flash')]), 'gemini-2.5-flash');
+
+// Ordering rules, each one its own reason.
+check('flash beats pro of the same version',
+  pickModel([M('gemini-3.5-pro'), M('gemini-3.5-flash')]), 'gemini-3.5-flash');
+check('flash beats flash-lite',
+  pickModel([M('gemini-3.5-flash-lite'), M('gemini-3.5-flash')]), 'gemini-3.5-flash');
+check('flash-lite beats pro',
+  pickModel([M('gemini-3.5-pro'), M('gemini-3.5-flash-lite')]), 'gemini-3.5-flash-lite');
+check('a stable release beats a newer preview',
+  pickModel([M('gemini-9.9-flash-preview'), M('gemini-3.5-flash')]), 'gemini-3.5-flash');
+check('and beats a -latest alias that could move underneath us',
+  pickModel([M('gemini-flash-latest'), M('gemini-3.5-flash')]), 'gemini-3.5-flash');
+check('but a preview is better than nothing',
+  pickModel([M('gemini-3.9-flash-preview')]), 'gemini-3.9-flash-preview');
+
+// Resolution walks the ranking, so the order past first place matters too.
+check('the ranking is a real ordering, not just a winner',
+  rankModels([M('gemini-2.0-flash'), M('gemini-3.5-pro'), M('gemini-3.8-flash'), M('gemini-3.5-flash')]),
+  ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-2.0-flash', 'gemini-3.5-pro']);
 
 // The filters. Each of these answers generateContent and would fail in a way
 // that reads as "Fish-I is broken" rather than "wrong tool".
@@ -139,6 +159,13 @@ check('image generators are skipped',
   pickModel([M('gemini-2.5-flash-image-generation'), M('gemini-2.0-flash')]), 'gemini-2.0-flash');
 check('speech and live models are skipped',
   pickModel([M('gemini-2.5-flash-tts'), M('gemini-live-2.5-flash'), M('gemini-2.0-flash')]), 'gemini-2.0-flash');
+// All of these were in the real list this key was offered, all answer
+// generateContent, and none of them read a fish.
+check('music, research and image models are skipped',
+  pickModel([M('lyria-3-pro-preview'), M('deep-research-pro-preview-12-2025'),
+             M('nano-banana-pro-preview'), M('gemini-2.0-flash')]), 'gemini-2.0-flash');
+check('anything not named gemini is skipped',
+  pickModel([M('some-other-vendor-flash')]), null);
 check('a list of nothing usable picks nothing',
   pickModel([M('gemini-embedding-001'), M('imagen-4.0')]), null);
 check('a malformed entry does not throw',

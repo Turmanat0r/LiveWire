@@ -41,44 +41,78 @@ const API_ROOT = 'https://generativelanguage.googleapis.com/v1beta';
 // discovery happens.
 const MODEL_OVERRIDE = process.env.FISHI_MODEL || '';
 
-// In preference order. Flash models are the ones on the free tier, and they
-// are quick, which matters when a director is working through a stack of
-// catches. Anything that cannot take an image is filtered out before this.
-const MODEL_PREFERENCE = [
-  /^gemini-2\.5-flash$/,
-  /^gemini-2\.5-flash-lite$/,
-  /^gemini-2\.5-flash-\d/,
-  /^gemini-2\.0-flash$/,
-  /^gemini-2\.0-flash-\d/,
-  /^gemini-[\d.]+-flash/,
-  /^gemini-.*flash/,
-  /^gemini-[\d.]+-pro$/,
-  /^gemini-/
-];
-
 // Models that answer generateContent but cannot help here - they generate
-// images, speak, embed, or stream live - and would fail in confusing ways.
-const MODEL_EXCLUDE = /embedding|aqa|imagen|veo|tts|audio|live|image-generation|computer-use|robotics/i;
+// images or music, speak, embed, research, or drive a computer - and would
+// fail in ways that read as "Fish-I is broken".
+const MODEL_EXCLUDE = /embedding|aqa|imagen|veo|tts|audio|live|-image|image-generation|computer-use|robotics|banana|lyria|research/i;
 
-// Resolved once per warm instance. Re-resolved when a call 404s, which is what
-// a mid-tournament retirement would look like.
-let cachedModel = null;
+// Ranked rather than matched against a list of names. A hardcoded preference
+// list is a list that goes stale: the first version of this preferred
+// gemini-2.5-flash, which by then was listed but no longer callable, so Fish-I
+// reported itself ready and failed on the first catch.
+//
+// Sorts ascending, so smaller is better:
+//   1. stable before preview or experimental
+//   2. flash, then flash-lite, then pro - flash is the free tier, and quick,
+//      which matters when the director is working through a stack
+//   3. newest version first
+//   4. a pinned release before a -latest alias, which can move underneath us
+function modelRank(id) {
+  const preview = /preview|experimental|\bexp\b|-exp-/.test(id) ? 1 : 0;
+  const kind = /flash-lite/.test(id) ? 1 : /flash/.test(id) ? 0 : /pro/.test(id) ? 2 : 3;
+  const v = /^gemini-(\d+(?:\.\d+)?)-/.exec(id);
+  const version = v ? parseFloat(v[1]) : 0;
+  const latest = /-latest$/.test(id) ? 1 : 0;
+  return [preview, kind, -version, latest, id];
+}
 
-function pickModel(models) {
-  const usable = (models || [])
+function rankModels(models) {
+  return (models || [])
     .filter(m => m && typeof m.name === 'string')
     .filter(m => Array.isArray(m.supportedGenerationMethods)
               && m.supportedGenerationMethods.includes('generateContent'))
     .map(m => m.name.replace(/^models\//, ''))
-    .filter(id => !MODEL_EXCLUDE.test(id));
+    .filter(id => /^gemini-/.test(id) && !MODEL_EXCLUDE.test(id))
+    .sort((a, b) => {
+      const ra = modelRank(a), rb = modelRank(b);
+      for (let i = 0; i < ra.length; i++) {
+        if (ra[i] < rb[i]) return -1;
+        if (ra[i] > rb[i]) return 1;
+      }
+      return 0;
+    });
+}
 
-  for (const rank of MODEL_PREFERENCE) {
-    // Stable within a rank: -latest and -preview names sort after plain ones,
-    // so a pinned release wins over a moving target when both match.
-    const hits = usable.filter(id => rank.test(id)).sort();
-    if (hits.length) return hits[0];
+// Kept so the shape of "what would you choose" stays testable on its own.
+function pickModel(models) {
+  const ranked = rankModels(models);
+  return ranked.length ? ranked[0] : null;
+}
+
+// Resolved once per warm instance, and only after a model has actually
+// answered a call.
+let cachedModel = null;
+
+// Being listed is not the same as being callable - that is the whole bug this
+// went through. So a candidate is tried before it is trusted, with a request
+// small enough to be free in every way that matters.
+//
+// Only a 404 disqualifies. A 400 or a 429 means the model is there and
+// something else is wrong, and walking past it would land us on a worse one.
+async function modelAnswers(key, id) {
+  try {
+    const res = await fetch(API_ROOT + '/models/' + encodeURIComponent(id) + ':generateContent', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: 'ok' }] }],
+        generationConfig: { maxOutputTokens: 16 }
+      })
+    });
+    return res.status !== 404;
+  } catch (e) {
+    return false;
   }
-  return null;
 }
 
 async function listModels(key) {
@@ -99,14 +133,21 @@ async function listModels(key) {
 async function resolveModel(key, force) {
   if (MODEL_OVERRIDE) return MODEL_OVERRIDE;
   if (cachedModel && !force) return cachedModel;
-  const picked = pickModel(await listModels(key));
-  if (!picked) {
-    const err = new Error('This API key has no vision-capable Gemini model available to it.');
-    err.noModel = true;
-    throw err;
+
+  const ranked = rankModels(await listModels(key));
+  // Only the first few are worth trying. Past that the ranking has run out of
+  // anything preferable and the director is waiting on a page load.
+  for (const id of ranked.slice(0, 5)) {
+    if (await modelAnswers(key, id)) {
+      cachedModel = id;
+      return id;
+    }
   }
-  cachedModel = picked;
-  return picked;
+  const err = new Error(ranked.length
+    ? 'None of the Gemini models this key offers would answer a call.'
+    : 'This API key has no vision-capable Gemini model available to it.');
+  err.noModel = true;
+  throw err;
 }
 
 // Vercel caps a serverless request body at 4.5 MB. The app encodes catch
@@ -294,6 +335,7 @@ module.exports = async (req, res) => {
         const all = await listModels(key);
         return send(res, 200, {
           chose: pickModel(all),
+          ranked: rankModels(all).slice(0, 5),
           offered: all
             .filter(m => m && Array.isArray(m.supportedGenerationMethods))
             .map(m => m.name.replace(/^models\//, '') +
@@ -464,4 +506,4 @@ module.exports = async (req, res) => {
 
 // Reachable from test/fish-i.test.mjs. Vercel only cares that module.exports
 // is the handler, and it still is - these hang off it.
-module.exports.__test = { allowedPhotoUrl, clean, normalize, buildPrompt, pickModel };
+module.exports.__test = { allowedPhotoUrl, clean, normalize, buildPrompt, pickModel, rankModels };
