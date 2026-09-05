@@ -51,10 +51,21 @@ The places where a mistake is silent and expensive:
   drag-handle offset/bearing round-trip.
 - **Species scoring** — that the target species is per-event and that changing
   it re-ranks the leaderboard.
-- **Board codes** — that a four-digit code is never issued twice, across every
-  event rather than just the live one, and that team and personal codes share
-  one pool. A duplicate looks like nothing at the time; it surfaces when two
+- **Board codes** — that a code is never issued twice, across every event
+  rather than just the live one, and that team and personal codes share one
+  pool. A duplicate looks like nothing at the time; it surfaces when two
   anglers claim the same fish and the photo cannot settle it.
+- **The roster gate.** `initStore()` is not awaited, so the register form is
+  usable before the roster arrives — and a duplicate check against an empty
+  roster passes every time. This is how one person registered twice from two
+  browsers.
+- **That a refused write is not cached.** `saveCollection` used to update the
+  local cache whichever way the write went, so a registration the server
+  rejected still looked registered on that phone while the angler was being
+  told it had failed.
+- **Clearing and deleting an event** — that a wipe covers every shared
+  collection, takes nothing from any other event, and leaves no ids behind in
+  the delete-tracking set.
 - **Clean startup** — that the page's init does not throw.
 - **The Fish-I vision pass** — that a hosted copy finds the server endpoint at
   all (it did not, for the whole time it was deployed), that the button stays
@@ -94,6 +105,11 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Key Fish-I availability off `AI_REVIEW_ENDPOINT` again | 1 failure |
 | Have the page send its own Fish-I prompt | 1 failure |
 | Resolve `/api/fish-i` even on `file://` | 2 failures |
+| Let registration proceed before the roster loads | 2 failures |
+| Treat an offline connection as a loaded roster | 1 failure |
+| Cache a write the server permanently refused | 2 failures |
+| Leave wiped ids in `loadedIds` | 1 failure |
+| Wipe only some of the shared collections | 2 failures |
 | Check board codes against one event instead of all | 1 failure |
 | Let `makeCode` hand out a code without reserving it | 2 failures |
 | Leave team codes out of the code pool | 2 failures |

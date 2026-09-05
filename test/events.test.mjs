@@ -68,7 +68,11 @@ globalThis.__t = {
   loadBets, saveBets, betRecords, betJoins, betHasJoined, betStanding, betCardHtml,
   BET_TITLE_MAX, BET_OPEN_MAX, BET_SCORING, renderDqNotice,
   makeCode, codesInUse, takenCodes, codeBoxHtml, codeNoteHtml, anglerById,
-  CODE_MIN, CODE_MAX,
+  CODE_ALPHABET, CODE_LENGTH, duplicateEntryError, rosterIsLoaded, wipeEventData,
+  countsSentence, SHARED_COLLECTIONS,
+  get rosterLoaded(){ return rosterLoaded; }, set rosterLoaded(v){ rosterLoaded = v; },
+  get syncState(){ return syncState; }, set syncState(v){ syncState = v; },
+  get lastWriteError(){ return lastWriteError; },
   aiReviewEndpoint, probeFishIEndpoint, fishIVisionAvailable, fishIStatusText,
   requestAiVisionReview, AI_REVIEW_ENDPOINT,
   get appWindow(){ return window; },
@@ -1635,17 +1639,43 @@ section('42. board codes');
 // wrong at the time - it only surfaces when two people claim the same fish.
 
 const oneCode = t.makeCode(new Set());
-check('a code is four digits', /^\d{4}$/.test(oneCode), true);
-check('and never starts with a zero', oneCode[0] !== '0', true);
-check('the range has no leading-zero values', [t.CODE_MIN, t.CODE_MAX], [1000, 9999]);
+const CODE_RE = new RegExp('^[' + t.CODE_ALPHABET + ']{' + t.CODE_LENGTH + '}$');
+check('a code is four characters', oneCode.length, t.CODE_LENGTH);
+check('drawn only from the alphabet', CODE_RE.test(oneCode), true);
 
-// A leading zero is the digit that gets dropped copying a number onto a board.
+// The alphabet is the safety feature: these get written on a wet board with a
+// marker and read back off a photo. Every character with a lookalike is out,
+// so no single misread turns one valid code into another.
+for (const bad of ['0', '1', '2', '5', '8', 'B', 'G', 'I', 'L', 'O', 'S', 'U', 'V', 'Z']) {
+  check('the alphabet excludes ' + bad, t.CODE_ALPHABET.includes(bad), false);
+}
+// Only ONE of each confusable pair goes. 6 stays because G is gone, so a 6
+// read as a G is still unambiguously a 6 - dropping both would shrink the
+// pool for nothing.
+check('but keeps 6, since G is the one that went', t.CODE_ALPHABET.includes('6'), true);
+check('no character appears twice',
+  new Set(t.CODE_ALPHABET).size, t.CODE_ALPHABET.length);
+check('and it is still big enough to matter',
+  Math.pow(t.CODE_ALPHABET.length, t.CODE_LENGTH) > 200000, true);
+
 const many = [];
 const pool0 = new Set();
 for (let i = 0; i < 800; i++) many.push(t.makeCode(pool0));
-check('800 codes are all four digits', many.every(c => /^\d{4}$/.test(c)), true);
+check('800 codes all match the format', many.every(c => CODE_RE.test(c)), true);
 check('and none of them collide', new Set(many).size, 800);
 check('the pool is mutated as it goes, not just read', pool0.size, 800);
+
+// Codes issued when they were four digits are still valid, and stay safe by
+// being IN the pool - not by looking different. 3, 4, 6, 7 and 9 are all in the
+// alphabet, so "3467" is a code this can still draw; only `taken` stops it.
+const legacyPool = t.codesInUse([{ anglerCode: '3467' }, { anglerCode: '9944' }]);
+check('old numeric codes still count as taken', legacyPool.size, 2);
+const afterLegacy = [];
+for (let i = 0; i < 400; i++) afterLegacy.push(t.makeCode(legacyPool));
+check('an all-digit legacy code is never reissued',
+  afterLegacy.includes('3467') || afterLegacy.includes('9944'), false);
+check('even though such a code is drawable from the alphabet',
+  '3467'.split('').every(ch => t.CODE_ALPHABET.includes(ch)), true);
 
 const taken = new Set(['1234']);
 const avoided = [];
@@ -1711,6 +1741,136 @@ await setEvent(E1);
 await t.loadAnglers();
 check('an angler is found by id', t.anglerById('a2').anglerCode, '6002');
 check('and a stranger is not invented', t.anglerById('nope'), null);
+
+// ============================================================
+section('43. the roster has to arrive before anyone can register');
+// The bug this exists for: initStore() is not awaited, so on a browser with no
+// local mirror the form was usable while the roster was still []. Every
+// duplicate check then compared against nothing and passed, and one person
+// registered twice from two browsers.
+const savedRoster = t.rosterLoaded, savedSync = t.syncState;
+t.rosterLoaded = false;
+t.syncState = 'live';
+check('a live connection that has not delivered yet is not ready', t.rosterIsLoaded(), false);
+t.syncState = 'offline';
+check('nor is a dropped connection', t.rosterIsLoaded(), false);
+// No server at all means the local mirror IS the roster, and waiting for a
+// sync that will never come would block registration forever.
+t.syncState = 'local';
+check('but device-only mode is ready immediately', t.rosterIsLoaded(), true);
+t.syncState = 'live';
+t.rosterLoaded = true;
+check('and so is a delivered roster', t.rosterIsLoaded(), true);
+t.rosterLoaded = savedRoster; t.syncState = savedSync;
+
+// ---- the database has the last word ----
+// The client check is a guard; this is the boundary. Branch on the SQLSTATE and
+// the index name, never on prose that Postgres is free to reword.
+const dupPerson = { message: 'Supabase 409 {"code":"23505","message":"duplicate key value violates unique constraint \\"anglers_one_entry_per_person\\""}' };
+const dupCode = { message: 'Supabase 409 {"code":"23505","details":"Key exists","message":"anglers_unique_angler_code"}' };
+check('a duplicate person is recognised', t.duplicateEntryError(dupPerson), 'person');
+check('a duplicate board code is told apart from it', t.duplicateEntryError(dupCode), 'code');
+check('another unique violation is not guessed at',
+  t.duplicateEntryError({ message: 'Supabase 409 {"code":"23505","message":"something_else"}' }), 'other');
+check('an unrelated failure is not a duplicate',
+  t.duplicateEntryError({ message: 'Supabase 500 server exploded' }), null);
+check('and neither is nothing', t.duplicateEntryError(null), null);
+
+// ============================================================
+section('44. clearing and deleting an event');
+// Practice events are the point: people stress test one, then it has to be
+// possible to empty or remove it. Deleting was blocked the moment an event
+// held a single record, which made every practice event permanent.
+seed(
+  [{ id: 'a1', eventId: E1, name: 'Keep Me' }, { id: 'a2', eventId: E2, name: 'Wipe Me' }],
+  [{ id: 'c1', eventId: E1, length: 20 }, { id: 'c2', eventId: E2, length: 30 },
+   { id: 'c3', eventId: E2, length: 31 }],
+  [{ id: 'd1', eventId: E1, amount: 10 }, { id: 'd2', eventId: E2, amount: 20 }]
+);
+t.liveCache.bets = [{ id: 'b1', eventId: E2, kind: 'bet' }];
+t.liveCache.messages = [{ id: 'm1', eventId: E2 }, { id: 'm2', eventId: E1 }];
+t.liveCache.signals = [{ id: 's1', eventId: E2 }];
+await setEvent(E1);
+
+check('the counts are read per event', t.eventRowCounts(E2), { anglers: 1, catches: 2, donations: 1 });
+check('and they say so in words', t.countsSentence({ anglers: 1, catches: 2, donations: 1 }),
+  'It holds 1 angler, 2 catches and 1 donation.');
+check('plural agreement holds too', t.countsSentence({ anglers: 2, catches: 1, donations: 0 }),
+  'It holds 2 anglers, 1 catch and 0 donations.');
+
+check('wiping the other event reports success', await t.wipeEventData(E2), true);
+check('its anglers are gone', t.allRows('anglers').map(r => r.id), ['a1']);
+check('its catches are gone', t.allRows('catches').map(r => r.id), ['c1']);
+check('its donations are gone', t.allRows('donations').map(r => r.id), ['d1']);
+// Chat, beacons and bets are event-scoped too, and a wipe that missed them
+// would leave another event's chatter in a fresh practice run.
+check('its bets are gone', t.allRows('bets').map(r => r.id), []);
+check('its messages are gone', t.allRows('messages').map(r => r.id), ['m2']);
+check('its signals are gone', t.allRows('signals').map(r => r.id), []);
+check('every shared collection was covered',
+  t.SHARED_COLLECTIONS.every(c => t.allRows(c).every(r => t.rowEventId(r) !== E2)), true);
+
+// The live event must be untouched by all of that.
+check('the live event keeps its anglers', (await t.loadAnglers()).map(a => a.id), ['a1']);
+check('and its catches', (await t.loadCatches()).map(c => c.id), ['c1']);
+check('and its donations', (await t.loadDonations()).map(d => d.id), ['d1']);
+
+// A wipe of an event with nothing in it is a no-op, not an error.
+check('wiping an empty event succeeds quietly', await t.wipeEventData('no-such-event'), true);
+check('and changes nothing', t.allRows('anglers').map(r => r.id), ['a1']);
+
+// Saving after a wipe must not try to delete the same rows again - loadedIds
+// is what saveCollection subtracts from, and a stale id there reads as a row
+// the user just deleted from the LIVE event.
+check('a save after a wipe still works', await t.saveAnglers(await t.loadAnglers()), true);
+check('and the live event survives it', t.allRows('anglers').map(r => r.id), ['a1']);
+
+// Wiping the event you are STANDING IN is the practice-event case, and the
+// only one where the wiped ids were ever in loadedIds to go stale.
+await t.loadAnglers();                       // seeds loadedIds with a1
+check('the live event\'s ids are tracked', [...(t.loadedIds.anglers || [])], ['a1']);
+check('wiping the live event works', await t.wipeEventData(E1), true);
+check('and takes its ids out of the delete-tracking set',
+  [...(t.loadedIds.anglers || [])], []);
+check('leaving nothing behind', t.allRows('anglers').map(r => r.id), []);
+
+// ============================================================
+section('45. a rejected write must not be cached as if it landed');
+// saveCollection used to update liveCache whichever way the write went, so a
+// registration the server refused still looked registered on that phone -
+// while the caller was telling the angler it had failed.
+seed([{ id: 'a1', eventId: E1, name: 'Existing' }], [], []);
+await setEvent(E1);
+await t.loadAnglers();
+
+const savedStore = t.store;
+t.store = {
+  label: 'refusing server',
+  photoBudget: 600000,
+  async connect(){},
+  start(){},
+  async applyOp(){
+    const e = new Error('Supabase 409 {"code":"23505","message":"duplicate key value ' +
+      'violates unique constraint \\"anglers_one_entry_per_person\\""}');
+    e.status = 409;              // permanent - retrying can never succeed
+    throw e;
+  },
+  deletePhoto(){}
+};
+try{
+  const attempt = (await t.loadAnglers()).concat([
+    { id: 'a2', eventId: E1, name: 'Existing', anglerCode: 'ACDE' }
+  ]);
+  check('the save reports failure', await t.saveAnglers(attempt), false);
+  check('and the refused angler is NOT in the cache',
+    t.allRows('anglers').map(r => r.id), ['a1']);
+  check('so the roster still reads as it does on the server',
+    (await t.loadAnglers()).map(a => a.id), ['a1']);
+  check('and the reason survives for the caller to explain',
+    t.duplicateEntryError(t.lastWriteError), 'person');
+} finally {
+  t.store = savedStore;
+}
 
 // ============================================================
 console.log('\n' + (fail === 0 ? 'ALL PASS' : fail + ' FAILED') + '  (' + pass + ' passed)');

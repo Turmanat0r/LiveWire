@@ -1047,6 +1047,7 @@
           <p class="hint" style="margin:8px 0 0;"><strong>This is the name everyone else sees you as.</strong> Reroll until you like it &mdash; it is fixed once you register, and only the director can change it afterwards. Standings and payouts still use your real name.</p>
         </div>
         <div class="err" id="reg-err" style="display:none;"></div>
+        <p class="hint" id="reg-roster-note" style="display:none;margin-top:0;">Loading the roster&hellip; the button opens as soon as it lands, so a second entry cannot slip past the check.</p>
         <button class="primary" id="reg-submit">Complete registration</button>
         <p class="hint" id="reg-close-note">Registration closes June 1, 2027. This confirms your spot on the roster &mdash; entry fees and side pot buy-ins are collected separately by PayPal, per the info in your confirmation email.</p>
       </div>
@@ -2306,9 +2307,19 @@ function uniqueHandle(anglers){
 // their own - which is what separates two people fishing one entry. Without
 // the personal code a partner could shoot both anglers' fish.
 //
-// 1000-9999 rather than 0000-9999. A leading zero is exactly the digit that
-// gets dropped when a number is copied onto a board with a wet marker.
-const CODE_MIN = 1000, CODE_MAX = 9999;
+// Letters and numbers, four characters: 23^4 is 279,841 combinations against
+// 9,000 for four digits, so the pool cannot realistically run thin across
+// seasons and two anglers are far less likely to be issued anything similar.
+//
+// The alphabet is the point. These are written on a wet board with a marker
+// and read back off a photo, often at a glance, so no two characters in it may
+// look alike. Where a pair is confusable one of the two is dropped, which is
+// why 6 survives (G is gone) while 0 does not (O would still be there):
+//   dropped: 0 1 2 5 8   B G I L O S U V Z
+// 22 characters, so no single misread can turn one valid code into another,
+// and 22^4 is still 234,256 combinations.
+const CODE_ALPHABET = '34679ACDEFHJKMNPQRTWXY';
+const CODE_LENGTH = 4;
 
 // Personal and team codes share ONE pool, so a number written on a board is
 // never ambiguous about which kind it is.
@@ -2323,16 +2334,31 @@ function codesInUse(anglers){
 
 // `taken` is mutated, so successive calls in one registration cannot collide
 // with each other before anything has been saved.
+//
+// Codes issued before this was alphanumeric were four digits. They stay valid,
+// and they stay in the pool - which is what keeps them safe. The alphabet does
+// NOT rule them out on its own: 3, 4, 6, 7 and 9 are all in it, so "3467" is a
+// code this can still draw. Uniqueness comes from `taken`, never from the
+// shape of the string.
 function makeCode(taken){
-  const span = CODE_MAX - CODE_MIN + 1;
+  const n = CODE_ALPHABET.length;
   for(let i = 0; i < 4000; i++){
-    const c = String(CODE_MIN + Math.floor(Math.random() * span));
+    let c = '';
+    for(let j = 0; j < CODE_LENGTH; j++){
+      c += CODE_ALPHABET.charAt(Math.floor(Math.random() * n));
+    }
     if(!taken.has(c)){ taken.add(c); return c; }
   }
-  // 9000 codes gone. Sweep rather than keep rolling, so a full pool fails
-  // honestly instead of hanging.
-  for(let c = CODE_MIN; c <= CODE_MAX; c++){
-    if(!taken.has(String(c))){ taken.add(String(c)); return String(c); }
+  // 279,841 codes gone, which will not happen - but rolling forever if it did
+  // would hang the registration rather than fail it. Walk the space instead.
+  const total = Math.pow(n, CODE_LENGTH);
+  for(let k = 0; k < total; k++){
+    let c = '', rest = k;
+    for(let j = 0; j < CODE_LENGTH; j++){
+      c = CODE_ALPHABET.charAt(rest % n) + c;
+      rest = Math.floor(rest / n);
+    }
+    if(!taken.has(c)){ taken.add(c); return c; }
   }
   return null;
 }
@@ -2852,7 +2878,23 @@ async function initStore(){
   }
 }
 
+// Has the roster actually arrived from the server yet?
+//
+// This is what let one person register twice from two browsers. initStore()
+// is deliberately not awaited - the UI lights up before the sync lands - so on
+// a browser with no local mirror the register form was usable while
+// liveCache.anglers was still []. The duplicate check then compared the new
+// name against an empty roster and found nothing, every time.
+let rosterLoaded = false;
+// 'local' means there is no server at all, so the local mirror IS the roster
+// and waiting for a sync that will never come would block registration forever.
+function rosterIsLoaded(){ return rosterLoaded || syncState === 'local'; }
+
 function onRows(coll, rows){
+  if(coll === 'anglers'){
+    rosterLoaded = true;
+    try{ updateRegisterReadiness(); }catch(e){}
+  }
   if(coll === 'config'){
     liveCache.config = rows[0] || {};
     // Carries the live event as well as the budgets, so this is also how a
@@ -2950,14 +2992,32 @@ function permanentError(e){
 // or was safely parked for retry. `lastWriteQueued` tells the caller it is
 // pending rather than committed.
 let lastWriteQueued = false;
+// The last write error, kept so a caller can tell WHY a save failed. Without
+// it every rejection reads as "could not save", including the one rejection
+// that has a specific and actionable cause.
+let lastWriteError = null;
+
+// Postgres unique-violation, from supabase-one-entry-per-person.sql. The REST
+// layer hands back the response body, so match on the SQLSTATE and on the
+// index names rather than on prose that could change.
+function duplicateEntryError(e){
+  const m = (e && e.message) || '';
+  if(!/23505/.test(m)) return null;
+  if(/anglers_one_entry_per_person/.test(m)) return 'person';
+  if(/anglers_unique_angler_code/.test(m)) return 'code';
+  return 'other';
+}
+
 async function runOps(ops){
   lastWriteQueued = false;
+  lastWriteError = null;
   if(!store) return queueOutbox(ops);
   const failed = [];
   for(const op of ops){
     try{ await store.applyOp(op); }
     catch(e){
       console.error(e);
+      lastWriteError = e;
       if(e && e.code === 'quota_exceeded') storeFull = true;
       if(permanentError(e)){
         updateSyncUi();
@@ -3065,6 +3125,16 @@ async function saveCollection(name, list){
 
   if(ops.length === 0) return true;
   const result = await runOps(ops);
+
+  // Only believe our own write once it has landed or been parked for retry.
+  //
+  // runOps returns false only when the write can never succeed - a permanent
+  // rejection, or an outbox that could not even hold it. Caching the rows
+  // anyway would leave this device showing an angler or a catch that the
+  // server refused and nobody else will ever see, and the caller has just told
+  // the user it failed. A queued write still returns true, so going offline
+  // mid-event still shows your own work immediately.
+  if(!result) return false;
 
   // Show our own write immediately instead of waiting to be told about it.
   // The snapshot backend echoes a write back within milliseconds, but the
@@ -4153,10 +4223,25 @@ async function renderRegisterScreen(){
   renderRoster();   // the roster card is on this screen; keep it current
   const closed = isRegistrationClosed();
   document.getElementById('reg-closed-notice').style.display = closed ? 'block' : 'none';
-  ['reg-name','reg-phone','reg-partner','reg-bigfish','reg-submit'].forEach(id=>{
+  ['reg-name','reg-phone','reg-partner','reg-bigfish'].forEach(id=>{
     document.getElementById(id).disabled = closed;
   });
   document.querySelectorAll('#reg-division input[type=radio]').forEach(r=> r.disabled = closed);
+  updateRegisterReadiness();
+}
+
+// Touches only the button and its note, never an input, so it is safe to call
+// the moment the roster lands even if someone is mid-way through typing their
+// name. The full screen repaint deliberately skips a focused form, which would
+// otherwise leave the button disabled until they clicked away.
+function updateRegisterReadiness(){
+  const btn = document.getElementById('reg-submit');
+  const note = document.getElementById('reg-roster-note');
+  if(!btn || !note) return;
+  const closed = isRegistrationClosed();
+  const ready = rosterIsLoaded();
+  note.style.display = (!ready && !closed) ? 'block' : 'none';
+  btn.disabled = closed || !ready;
 }
 
 document.querySelectorAll('#reg-division input[type=radio]').forEach(input=>{
@@ -4182,6 +4267,14 @@ bindEl('reg-submit','click', async ()=>{
   if(!name) return fail('Enter your name to register.');
   if(division==='team' && !partnerName) return fail("Enter your partner's name for a team entry.");
   errEl.style.display='none';
+
+  // ---- the roster has to be here before it can be checked against ----
+  // Registering against a roster that has not loaded is registering against an
+  // empty one, and every duplicate check below silently passes.
+  if(!rosterIsLoaded()){
+    return fail('Still loading the roster — wait a moment and try again. ' +
+      'Registering before it arrives is how people end up entered twice.');
+  }
 
   const anglers = await loadAnglers();
 
@@ -4256,7 +4349,18 @@ bindEl('reg-submit','click', async ()=>{
   }
 
   if(!await saveAnglers(anglers)){
-    errEl.textContent = 'Registration could not be saved on this device. Check your storage and try again, or register with the tournament director.';
+    // The database has the final say on one-entry-per-person, and it is the
+    // only check that is right even when this phone's roster was stale. Say so
+    // plainly rather than blaming the device for a rule working correctly.
+    const dup = duplicateEntryError(lastWriteError);
+    if(dup === 'person'){
+      errEl.textContent = name + ' is already entered in this tournament. ' +
+        'One entry per person — see the director if that is not you, or if you need the existing entry changed.';
+    } else if(dup === 'code'){
+      errEl.textContent = 'That entry collided with a board code already in use. Try again — a new code is drawn each time.';
+    } else {
+      errEl.textContent = 'Registration could not be saved on this device. Check your storage and try again, or register with the tournament director.';
+    }
     errEl.style.display='block';
     return;
   }
@@ -6171,17 +6275,26 @@ function renderEventAdmin(){
         acts.push(e.archived
           ? '<button class="small" data-ev-act="restore" data-ev-id="'+escapeHtml(e.id)+'">Restore</button>'
           : '<button class="small" data-ev-act="archive" data-ev-id="'+escapeHtml(e.id)+'">Archive</button>');
-        if(!e.builtIn && total === 0){
-          acts.push('<button class="small" data-ev-act="delete" data-ev-id="'+escapeHtml(e.id)+'">Delete</button>');
-        }
+      }
+      // Clearing keeps the event and empties it - the thing you want between
+      // two runs at a practice event. Offered on the live one too, because a
+      // stress test IS the live event while it is being stressed; the typed
+      // confirmation is what stops it being a mis-tap.
+      if(total > 0){
+        acts.push('<button class="small" data-ev-act="clear" data-ev-id="'+escapeHtml(e.id)+'">Clear data</button>');
+      }
+      // A built-in cannot be deleted at all: it lives in the code and would
+      // come back on the next load. Anything added here can go, records and
+      // all - otherwise a practice event is permanent the moment somebody
+      // registers for it.
+      if(!e.builtIn && !isLive){
+        acts.push('<button class="small" data-ev-act="delete" data-ev-id="'+escapeHtml(e.id)+'">Delete</button>');
       }
       const why = isLive
-        ? '<div class="sub">Switch to another event before archiving this one.</div>'
-        : (!e.builtIn && total > 0
-            ? '<div class="sub">Holds records — archive it rather than deleting.</div>'
-            : (e.builtIn && !e.archived
-                ? '<div class="sub">Shipped with the app — can be archived, not deleted.</div>'
-                : ''));
+        ? '<div class="sub">Switch to another event before archiving or deleting this one.</div>'
+        : (e.builtIn && !e.archived
+            ? '<div class="sub">Shipped with the app — can be archived and cleared, not deleted.</div>'
+            : '');
 
       return '<div class="gps-row"><div class="gps-row-top">'+
              '<span class="gps-row-name">'+escapeHtml(eventLabel(e))+'</span>'+
@@ -6556,6 +6669,57 @@ bindEl('ev-save','click', async ()=>{
     'Added ' + name + '. It is not live yet — pick it in the switcher above when you are ready.');
 });
 
+function countsSentence(c){
+  return 'It holds ' + c.anglers + ' angler' + (c.anglers===1?'':'s') + ', ' +
+         c.catches + ' catch' + (c.catches===1?'':'es') + ' and ' +
+         c.donations + ' donation' + (c.donations===1?'':'s') + '.';
+}
+
+// Typing the name, not clicking OK. These wipe a season's records and cannot be
+// undone, and a confirm dialog on a phone is one tap away from the button that
+// opened it - which is exactly the mis-tap this has to survive.
+function confirmByName(evt, verb, detail){
+  const typed = window.prompt(
+    verb + ' "' + evt.name + '" — this cannot be undone.\n\n' + detail +
+    '\n\nType the event name exactly to confirm:', '');
+  if(typed === null) return false;
+  if(typed.trim().toLowerCase() !== String(evt.name || '').trim().toLowerCase()){
+    window.alert('That did not match "' + evt.name + '". Nothing has been changed.');
+    return false;
+  }
+  return true;
+}
+
+// Removes every record belonging to one event, across every shared collection,
+// and the catch photos with them. Used by both Clear data and Delete.
+//
+// saveCollection cannot do this: it is scoped to the live event by design, so
+// it would read another event's rows as nothing to delete. These ops are built
+// directly and the cache is trimmed to match.
+async function wipeEventData(id){
+  const doomed = {};
+  const ops = [];
+  for(const coll of SHARED_COLLECTIONS){
+    const rows = allRows(coll).filter(r=> rowEventId(r) === id);
+    doomed[coll] = new Set(rows.map(r=> r.id));
+    rows.forEach(r=> ops.push({ kind:'delete', coll:coll, id:r.id }));
+  }
+  if(ops.length === 0) return true;
+  if(!await runOps(ops)) return false;
+
+  for(const coll of SHARED_COLLECTIONS){
+    const gone = doomed[coll] || new Set();   // never crash mid-wipe: the rows are already deleted
+    liveCache[coll] = (liveCache[coll] || []).filter(r=> !gone.has(r.id));
+    localSet(coll, JSON.stringify(liveCache[coll]));
+    // Otherwise the next save would read these ids as rows the user just
+    // deleted from the LIVE event and try to delete them a second time.
+    if(loadedIds[coll]) gone.forEach(x=> loadedIds[coll].delete(x));
+  }
+  (doomed.catches || new Set()).forEach(cid=> deletePhoto(cid));
+  onStoreChanged();
+  return true;
+}
+
 // Row actions on the event list.
 function wireEventListActions(){
   document.querySelectorAll('#event-list [data-ev-act]').forEach(btn=>{
@@ -6585,15 +6749,35 @@ function wireEventListActions(){
         renderAdmin();
         return;
       }
-      if(act === 'delete'){
+      if(act === 'clear'){
         const c = eventRowCounts(id);
-        // Belt and braces: the button is not rendered in this case anyway.
-        if(c.anglers + c.catches + c.donations > 0){
-          window.alert('That event holds records. Archive it instead.');
+        if(!confirmByName(evt, 'Clear every record in', countsSentence(c) +
+          '\n\nThe event itself stays, with its dates, species and boundary. ' +
+          'Everything anyone logged in it goes, including catch photos.')) return;
+        if(!await wipeEventData(id)){
+          window.alert('Could not clear that event. Check the connection and try again — nothing partial is left behind that a retry will not finish.');
+        }
+        renderAdmin();
+        return;
+      }
+      if(act === 'delete'){
+        if(evt.builtIn){
+          window.alert('That event ships with the app and would reappear on the next load. Archive it instead.');
           return;
         }
-        if(!window.confirm('Delete "'+evt.name+'" for good?\n\n'+
-          'It holds no anglers, catches or donations. This cannot be undone.')) return;
+        const c = eventRowCounts(id);
+        const total = c.anglers + c.catches + c.donations;
+        if(!confirmByName(evt, 'Delete', total === 0
+          ? 'It holds no records.'
+          : countsSentence(c) + '\n\nAll of it goes with the event, including catch photos.')) return;
+        // Records first. Deleting the event definition while its rows survive
+        // would strand them: nothing lists them, and nothing can reach them to
+        // clean them up afterwards.
+        if(total > 0 && !await wipeEventData(id)){
+          window.alert('Could not clear that event\'s records, so the event has been left alone. Try again.');
+          renderAdmin();
+          return;
+        }
         await deleteEventRecord(id);
         if(evEditing === id) resetEventForm();
         renderAdmin();
