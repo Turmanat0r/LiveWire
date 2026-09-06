@@ -98,6 +98,13 @@ globalThis.__t = {
   renderFwpReport, renderReportSheet, reportSheetText,
   get appDocument(){ return document; },
   SIZE_SMALL_MIN, SIZE_SMALL_MAX, SIZE_LARGE_MIN, SIZE_LARGE_MAX,
+  noteServerClock, noteResponseClock, clockSkewMs, clockIsTrusted, skewText,
+  CLOCK_SKEW_TOLERANCE_MS, CAPTURE_LAG_TOLERANCE_MS, lagText,
+  photoStamp, photoStampLines, stampClockText, drawPhotoStamp,
+  captureBadges, captureBadgeHtml, PHOTO_SOURCE_CAMERA, PHOTO_SOURCE_UPLOAD,
+  renderClockNotice, encodeToBudget,
+  get serverClockOffset(){ return serverClockOffset; },
+  set serverClockOffset(v){ serverClockOffset = v; },
   loadAwardsBudget, saveAwardsBudget, awardsBudgetMap,
   standingsFor, eventDateRangeText, eventRowCounts, eventDayText,
   getMyAnglerId, setMyAnglerId, onRows, readOutbox
@@ -2794,6 +2801,337 @@ check('the text copy carries the contest name',
 check('and no markup came with it', /<[a-z]/i.test(asText), false);
 check('nor any raw entities', asText.indexOf('&quot;') === -1 && asText.indexOf('&amp;') === -1, true);
 check('and it kept the numbers', asText.indexOf('Total # of Anglers:') > -1, true);
+}
+
+// ============================================================
+section('51. the timestamp burned into a submission photo');
+{
+// The photo IS the evidence in a catch-photo-release tournament, and until now
+// it carried no time of its own. A JSON field beside it can be edited by
+// whoever holds the record, and an EXIF tag is stripped by every messaging app
+// a photo passes through on the way to a dispute - so the time goes into the
+// pixels.
+//
+// Which is only worth something if the clock behind it is worth something, and
+// a phone's clock is a setting. Most of what is checked here is that the app
+// knows the difference between a time it has verified and one it has not.
+
+const NOW = Date.UTC(2027, 8, 18, 15, 30, 0);   // day 1 of the first event, 09:30 Denver
+
+// ---- the server's clock ----
+t.serverClockOffset = null;
+check('with no server seen, the offset is unknown - not zero', t.clockSkewMs(), null);
+check('and "is it trusted" answers unknown too, which is a third answer',
+  t.clockIsTrusted(), null);
+
+check('a Date header sets the offset',
+  t.noteServerClock(new Date(NOW + 300000).toUTCString(), NOW), true);
+check('and it reads as the server being ahead', t.clockSkewMs(), 300000);
+check('which is not trusted', t.clockIsTrusted(), false);
+
+check('a clock inside tolerance is trusted',
+  t.noteServerClock(new Date(NOW + 30000).toUTCString(), NOW) && t.clockIsTrusted(), true);
+check('the tolerance is two minutes', t.CLOCK_SKEW_TOLERANCE_MS, 120000);
+// Exactly at the line is a pass. A header with whole-second resolution plus
+// time in flight would otherwise warn on a perfectly set phone.
+t.noteServerClock(new Date(NOW + t.CLOCK_SKEW_TOLERANCE_MS).toUTCString(), NOW);
+check('exactly at the tolerance still counts as trusted', t.clockIsTrusted(), true);
+t.noteServerClock(new Date(NOW + t.CLOCK_SKEW_TOLERANCE_MS + 1000).toUTCString(), NOW);
+check('a second past it does not', t.clockIsTrusted(), false);
+
+// A header the app cannot read must leave the previous answer alone rather than
+// silently resetting the offset to zero, which would read as a perfect clock.
+const before = t.clockSkewMs();
+check('an unparseable header teaches it nothing', t.noteServerClock('not a date', NOW), false);
+check('and leaves what it already knew', t.clockSkewMs(), before);
+check('so does a missing one', t.noteServerClock('', NOW), false);
+check('and a null one', t.noteServerClock(null, NOW), false);
+
+// This took down every Supabase call the first time it was written: a response
+// without readable headers threw, inside the one function every read and write
+// goes through. A clock reading may never cost a registration.
+check('a response with no headers does not throw', t.noteResponseClock({}), false);
+check('nor does a headers object with no get', t.noteResponseClock({ headers: {} }), false);
+check('nor does nothing at all', t.noteResponseClock(null), false);
+check('nor does a header that throws when read',
+  t.noteResponseClock({ headers: { get(){ throw new Error('nope'); } } }), false);
+check('a real one still works',
+  t.noteResponseClock({ headers: { get: () => new Date(NOW).toUTCString() } }), true);
+
+// ---- how skew reads ----
+check('behind the server reads as behind', t.skewText(2400000).indexOf('behind') > -1, true);
+check('ahead of it reads as ahead', t.skewText(-2400000).indexOf('ahead') > -1, true);
+check('and it is said in whole minutes', t.skewText(2400000), '40 min behind');
+// The Date header has whole-second resolution, so claiming seconds of skew
+// would imply a precision it does not have.
+check('under a minute is said as that, not as 0 min', t.skewText(20000), 'under a minute');
+check('nothing known says nothing', t.skewText(null), '');
+
+// ---- the lines that get drawn ----
+t.serverClockOffset = 0;
+const camLines = t.photoStampLines(t.PHOTO_SOURCE_CAMERA, NOW, 0);
+check('the stamp leads with the event, the day and the time',
+  camLines[0].indexOf('MKWO') === 0 && camLines[0].indexOf('Day 1') > -1, true);
+check('the time carries a zone, so it cannot be misread',
+  /M[DS]T|UTC/.test(camLines[0]), true);
+check('the hour is the event zone, not the reader',
+  camLines[0].indexOf('09:30') > -1, true);
+// Across midnight, so the DATE differs between the event zone and UTC: 23:00
+// on the 18th in Denver is already the 19th in UTC.
+const midnightish = t.stampClockText(Date.UTC(2027, 8, 19, 5, 0));   // 23:00 Denver, 18th
+check('a stamp near midnight keeps the event day, not the calendar\'s',
+  midnightish.indexOf('09/18/2027') > -1 && midnightish.indexOf('23:00') > -1, true);
+check('and does not roll over to the UTC date',
+  midnightish.indexOf('09/19') , -1);
+
+// The check above cannot tell "event zone" from "reader zone" on a machine set
+// to Mountain time - and the machine this was written on is. Dropping the
+// timeZone option entirely still passed here, and only failed under TZ=UTC.
+// So: an event in a zone nowhere near either, which no machine's own setting
+// can make right by accident.
+await t.saveEventRecord('stamp-tz', {
+  name: 'Zone Check', prefix: 'ZC', dates: ['2027-09-18', '2027-09-19'],
+  timeZone: 'Pacific/Honolulu', targetSpecies: 'Walleye', recordInches: 36
+});
+await t.setActiveEvent('stamp-tz');
+// Honolulu is UTC-10 all year, so there is no DST to argue about: 05:00Z on
+// the 18th is 19:00 on the 17th there.
+const hawaii = t.stampClockText(Date.UTC(2027, 8, 18, 5, 0));
+check('the stamp reads in the EVENT zone, whatever the reader is set to',
+  hawaii.indexOf('09/17/2027') > -1 && hawaii.indexOf('19:00') > -1, true);
+// And the day number comes off the same clock, or a catch lands on the wrong
+// tournament day.
+check('and the day number is read on that clock too',
+  t.photoStampLines(t.PHOTO_SOURCE_CAMERA, Date.UTC(2027, 8, 18, 5, 0), 0)[0].indexOf('Day'), -1);
+check('while an instant that IS on day 1 there gets the day',
+  t.photoStampLines(t.PHOTO_SOURCE_CAMERA, Date.UTC(2027, 8, 18, 20, 0), 0)[0].indexOf('Day 1') > -1, true);
+
+// A zone this browser has never heard of must not stop a catch being logged.
+await t.saveEventRecord('stamp-tz', { timeZone: 'Mars/Olympus_Mons' });
+const fallback = t.stampClockText(Date.UTC(2027, 8, 18, 5, 0));
+check('an unknown zone falls back to UTC rather than throwing',
+  fallback.indexOf('UTC') > -1, true);
+check('and still carries a readable time', fallback.indexOf('2027-09-18 05:00') > -1, true);
+
+await t.deleteEventRecord('stamp-tz');
+await t.setActiveEvent(E1);
+check('an in-app capture says so', camLines[1], 'In-app camera');
+// A trusted clock adds no third line. A stamp that carried "clock OK" on every
+// photo would train the eye to skip the line that matters.
+check('a clock that checks out adds nothing', camLines.length, 2);
+
+// An uploaded file could have been shot at any time, and the stamp must not
+// pretend its time is the time of capture.
+const upLines = t.photoStampLines(t.PHOTO_SOURCE_UPLOAD, NOW, 0);
+check('an uploaded file is named as one', upLines[1].indexOf('Uploaded file') === 0, true);
+check('and its time is called the time of submission',
+  upLines[1].indexOf('time of submission') > -1, true);
+
+// The two cases the stamp must never state a bare time for.
+check('an unverified clock is printed as unverified',
+  t.photoStampLines(t.PHOTO_SOURCE_CAMERA, NOW, null)[2], 'Device clock unverified');
+const skewed = t.photoStampLines(t.PHOTO_SOURCE_CAMERA, NOW, 2400000);
+check('and a skewed one prints how far out it is',
+  skewed[2], 'Device clock 40 min behind vs server');
+check('a clock inside tolerance is not called out',
+  t.photoStampLines(t.PHOTO_SOURCE_CAMERA, NOW, 60000).length, 2);
+
+// A catch logged outside the event dates has no day number to print, and
+// inventing "Day 0" would be worse than leaving it off.
+const offDay = t.photoStampLines(t.PHOTO_SOURCE_CAMERA, Date.UTC(2027, 6, 4, 18, 0), 0);
+check('a photo taken off the event days carries no day number',
+  offDay[0].indexOf('Day') , -1);
+check('but still carries the time', offDay[0].indexOf('2027') > -1, true);
+
+// ---- the stamp object ----
+t.serverClockOffset = 300000;
+const stamp = t.photoStamp(t.PHOTO_SOURCE_CAMERA, NOW);
+check('the stamp records when', stamp.at, NOW);
+check('and where it came from', stamp.source, t.PHOTO_SOURCE_CAMERA);
+// Frozen onto the record, not read back later: the clock offset at the moment
+// of the shot is the one that describes the photo.
+check('and the clock offset as it stood', stamp.clockOffsetMs, 300000);
+check('and it carries the lines that were drawn', stamp.lines.length, 3);
+
+// ---- what the director is told ----
+check('a catch from before stamping says so, rather than nothing',
+  t.captureBadges({ timestamp: NOW }).map(b => b.text), ['No photo stamp']);
+
+const clean = t.captureBadges({
+  timestamp: NOW, capture: { at: NOW, source: t.PHOTO_SOURCE_CAMERA, clockOffsetMs: 0 } });
+check('a clean in-app capture is one green badge', clean.map(b => b.text), ['In-app camera']);
+check('and it is marked as good', clean[0].tone, 'ok');
+
+const upload = t.captureBadges({
+  timestamp: NOW, capture: { at: NOW, source: t.PHOTO_SOURCE_UPLOAD, clockOffsetMs: 0 } });
+check('an upload is flagged as weaker evidence', upload[0].text, 'Uploaded file');
+check('but only as a caution, never as a rejection', upload[0].tone, 'warn');
+
+const unver = t.captureBadges({
+  timestamp: NOW, capture: { at: NOW, source: t.PHOTO_SOURCE_CAMERA, clockOffsetMs: null } });
+check('an unverified clock is neutral, not an accusation',
+  unver.map(b => b.tone), ['ok', 'plain']);
+
+const bad = t.captureBadges({
+  timestamp: NOW, capture: { at: NOW, source: t.PHOTO_SOURCE_CAMERA, clockOffsetMs: 2400000 } });
+check('a skewed clock is called out', bad[1].text, 'Clock 40 min behind');
+check('and marked as bad', bad[1].tone, 'bad');
+
+// The gap between shooting and filing. Paddling back into signal is normal;
+// hours is a different question.
+const lagged = t.captureBadges({
+  timestamp: NOW + 3 * 3600000,
+  capture: { at: NOW, source: t.PHOTO_SOURCE_CAMERA, clockOffsetMs: 0 } });
+check('a long gap between capture and filing is surfaced',
+  lagged[1].text, 'Filed 3.0 hr after capture');
+check('the tolerance is twenty minutes', t.CAPTURE_LAG_TOLERANCE_MS, 20 * 60 * 1000);
+check('and a gap inside it is not mentioned',
+  t.captureBadges({ timestamp: NOW + 10 * 60000,
+    capture: { at: NOW, source: t.PHOTO_SOURCE_CAMERA, clockOffsetMs: 0 } }).length, 1);
+
+// A photo stamped AFTER the record holding it cannot have happened. It means
+// the clock moved between the two, which is a sharper tell than a long gap.
+const impossible = t.captureBadges({
+  timestamp: NOW, capture: { at: NOW + 3600000, source: t.PHOTO_SOURCE_CAMERA, clockOffsetMs: 0 } });
+check('a photo stamped after it was filed is called impossible',
+  impossible[1].text, 'Stamped after it was filed');
+check('and marked as bad', impossible[1].tone, 'bad');
+
+check('minutes read as minutes', t.lagText(45 * 60000), '45 min');
+check('and hours as hours once minutes stop helping', t.lagText(3 * 3600000), '3.0 hr');
+check('a long haul drops the decimal', t.lagText(14 * 3600000), '14 hr');
+
+// The badges end up in innerHTML, so a species or a source that ever carried a
+// quote has to come out escaped.
+check('badge text is escaped',
+  t.captureBadgeHtml({ timestamp: NOW }).indexOf('<span class="badge"') === 0, true);
+
+// ---- the drawing ----
+// There is no canvas here, so this checks the contract rather than the pixels:
+// it must draw every line, and it must never throw on a context it cannot use.
+const drawn = [];
+// measureText scales with the font actually set, so the shrink-to-fit path is
+// exercised rather than stepped over. A fake that returned a constant width
+// would have let a stamp run clean off the edge of the photo and still pass.
+let fakeFont = '';
+const fontPx = () => Number((/(\d+(?:\.\d+)?)px/.exec(fakeFont) || [0, 0])[1]);
+const fakeCtx = {
+  save(){}, restore(){}, fillRect(){},
+  measureText: (txt) => ({ width: String(txt).length * fontPx() * 0.6 }),
+  fillText(text){ drawn.push(text); },
+  set font(v){ fakeFont = v; }, get font(){ return fakeFont; },
+  set fillStyle(v){}, get fillStyle(){ return ''; },
+  set textBaseline(v){}, get textBaseline(){ return ''; }
+};
+t.drawPhotoStamp(fakeCtx, 1400, 1050, ['one', 'two', 'three']);
+check('every line is drawn', drawn, ['one', 'two', 'three']);
+check('and sized off the short edge of the photo', fontPx(), 27);
+
+// A normal stamp line fits every rung of the encode ladder unshrunk - worth
+// pinning down, because a shrink that fired on ordinary photos would waste the
+// resolution the ladder just paid for.
+const normalLine = 'MKWO · Day 1 · 09/18/2027 09:30 MDT';
+t.drawPhotoStamp(fakeCtx, 320, 240, [normalLine]);
+check('an ordinary line is not shrunk even on the smallest rung', fontPx(), 10);
+t.drawPhotoStamp(fakeCtx, 1400, 1050, [normalLine]);
+check('nor on a full-size board photo', fontPx(), 27);
+
+// The case that DOES overflow, and it is reachable: the event prefix is typed
+// by the director, and a long one pushes the first line past a small frame.
+// The first version of this test used a line that fitted, so it asserted
+// nothing - dropping the shrink entirely still passed.
+const longLine = 'CANYONFERRYWALLEYECLASSIC · Day 1 · 09/18/2027 09:30 MDT';
+t.drawPhotoStamp(fakeCtx, 240, 240, [longLine]);
+check('a line too wide for the frame is shrunk until it fits',
+  fontPx() * longLine.length * 0.6 <= 240, true);
+check('and it really did shrink, rather than start small', fontPx() < 10, true);
+
+// A floor, because past a certain size the stamp stops being readable at all
+// and a clipped one is then the lesser problem.
+t.drawPhotoStamp(fakeCtx, 240, 240, ['x'.repeat(400)]);
+check('but never below the point of being legible', fontPx(), 7);
+drawn.length = 0;
+drawn.length = 0;
+t.drawPhotoStamp(null, 1400, 1050, ['x']);
+check('a missing context is a no-op, not a throw', drawn, []);
+t.drawPhotoStamp(fakeCtx, 1400, 1050, []);
+check('and so is having nothing to say', drawn, []);
+t.drawPhotoStamp(fakeCtx, 1400, 1050, null);
+check('and so is a null line list', drawn, []);
+
+// ---- the stamp actually reaching the photo ----
+// The two sabotages that got through the first time: removing the draw call
+// altogether, and drawing the stamp BEFORE the image so the photo covers it.
+// Both need a canvas to catch, so one is handed in.
+{
+const calls = [];
+const canvasCtx = {
+  drawImage(){ calls.push('drawImage'); },
+  fillRect(){ calls.push('fillRect'); },
+  fillText(txt){ calls.push('fillText:' + txt); },
+  measureText: (txt) => ({ width: String(txt).length * 8 }),
+  save(){}, restore(){}, font: '', fillStyle: '', textBaseline: ''
+};
+let rungsOverBudget = 0;
+const fakeCanvas = {
+  width: 0, height: 0,
+  getContext: () => canvasCtx,
+  // Over budget while rungsOverBudget lasts, which walks encodeToBudget down
+  // its ladder - the whole point being that each rung redraws from scratch.
+  toDataURL: () => (rungsOverBudget-- > 0 ? 'x'.repeat(9000000) : 'data:image/jpeg;base64,AAAA')
+};
+const realCreate = t.appDocument.createElement;
+t.appDocument.createElement = (tag) => (tag === 'canvas' ? fakeCanvas : realCreate(tag));
+
+const shot = t.photoStamp(t.PHOTO_SOURCE_CAMERA, NOW);
+t.encodeToBudget({}, 1400, 1050, shot);
+check('the photo is drawn', calls.indexOf('drawImage') > -1, true);
+check('and the stamp is drawn onto it',
+  calls.filter(c => c.indexOf('fillText:') === 0).length, shot.lines.length);
+// Order matters and nothing else would notice: a stamp drawn first is simply
+// painted over by the photo, and the file still saves, still looks fine, and
+// carries no time at all.
+check('the stamp goes on AFTER the image, not under it',
+  calls.indexOf('drawImage') < calls.indexOf('fillText:' + shot.lines[0]), true);
+
+// Each rung of the ladder starts from a blank canvas. A stamp drawn once
+// outside the loop survives only if the first rung happens to fit the budget -
+// so on a weak signal, exactly when it matters, it would vanish.
+calls.length = 0;
+rungsOverBudget = 2;
+t.encodeToBudget({}, 1400, 1050, shot);
+const rungs = calls.filter(c => c === 'drawImage').length;
+check('a photo that needs three rungs draws three times', rungs, 3);
+check('and is stamped on every one of them',
+  calls.filter(c => c.indexOf('fillText:') === 0).length, shot.lines.length * rungs);
+
+// No stamp asked for, none drawn. fitPhoto() re-encodes an already-stamped
+// photo and must not stamp it twice.
+calls.length = 0;
+rungsOverBudget = 0;
+t.encodeToBudget({}, 1400, 1050);
+check('an unstamped encode draws no text at all',
+  calls.filter(c => c.indexOf('fillText:') === 0).length, 0);
+check('but still draws the photo', calls.indexOf('drawImage') > -1, true);
+
+t.appDocument.createElement = realCreate;
+}
+
+// ---- the notice the angler can act on ----
+const note = t.appDocument.getElementById('sub-clock-note');
+t.serverClockOffset = null;
+t.renderClockNotice();
+check('an unverified clock is not nagged about', note.style.display, 'none');
+t.serverClockOffset = 60000;
+t.renderClockNotice();
+check('nor is one inside tolerance', note.style.display, 'none');
+t.serverClockOffset = 2400000;
+t.renderClockNotice();
+check('a skewed one is raised before the shot', note.style.display, 'block');
+check('with how far out it is', note.textContent.indexOf('40 min behind') > -1, true);
+check('and what to do about it',
+  note.textContent.indexOf('automatic date and time') > -1, true);
+t.serverClockOffset = null;
 }
 
 // ============================================================

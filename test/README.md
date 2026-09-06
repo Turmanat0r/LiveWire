@@ -95,6 +95,12 @@ The places where a mistake is silent and expensive:
   fished, and each fish appearing on exactly one of the form's two overlapping
   size tables. The overlap is the subtle one — taken literally the form asks
   for a 15" walleye in both.
+- **The timestamp burned into a submission photo.** That it is drawn *after*
+  the image and *inside* the encode loop — a stamp painted under the photo, or
+  drawn once outside a loop that redraws the canvas per rung, produces a file
+  that saves cleanly and carries no time at all. Plus that the app knows the
+  difference between a clock it has checked against the server and one it
+  hasn't, and never states a bare time for the second.
 - **Which URLs the endpoint will fetch.** Gemini wants image bytes rather than
   a link, so the server does the fetching, and a server that fetches whatever
   URL it is handed can be pointed at addresses only it can reach. The allowlist
@@ -193,6 +199,35 @@ And on the FWP contest report, every count below measured rather than guessed:
 | Leave markup in the plain-text copy | 1 failure |
 | Stop the sheet being rendered at all | 9 failures |
 
+And on the photo timestamp:
+
+| Break this | Expect |
+|---|---|
+| Never draw the stamp onto the canvas | 3 failures |
+| Draw the stamp before the image, so the photo covers it | 1 failure |
+| Draw it once outside the encode loop | 3 failures |
+| Write the stamp in the reader's time zone | 3 failures |
+| Drop the time-zone label from the stamp | 1 failure |
+| Stamp an uploaded file as an in-app capture | 2 failures |
+| Present an upload's time as the time of capture | 1 failure |
+| Stamp an unverified clock as if it had been checked | 1 failure |
+| Add a "clock OK" line to every photo | 2 failures |
+| Read the clock offset at render instead of freezing it at capture | 6 failures |
+| Let an unreadable `Date` header reset the clock to a perfect match | 1 failure |
+| Treat an unknown clock as a verified one | 1 failure |
+| Read `res.headers.get()` unguarded | crashes every Supabase call |
+| Swap "ahead" and "behind" | 6 failures |
+| Report skew in seconds the header cannot support | 1 failure |
+| Pass a catch from before stamping with no badge at all | 2 failures |
+| Ignore a photo stamped after it was filed | crash |
+| Ignore a long gap between capture and filing | crash |
+| Drop the shrink-to-fit | 3 failures |
+| Shrink the stamp when there is room | 3 failures |
+| Remove the shrink's legibility floor | 1 failure |
+| Nag the angler about a clock that is fine | 2 failures |
+| Never tell the angler their clock is wrong | 1 failure |
+| Stamp a photo taken off the event days as "Day 0" | 1 failure |
+
 And in `fish-i.test.mjs`, all of which weaken the photo-URL allowlist or the
 prompt clamp:
 
@@ -214,6 +249,15 @@ non-event day builds a `dayKey` that matches nothing). Both behaviours are
 enforced twice. A test that went red for them would be asserting the
 implementation rather than the rule, so there isn't one.
 
+**A test cannot see a time zone it is already in.** The machine this was
+written on is set to `America/Denver`, which is the tournament's own zone — so
+"does the photo stamp use the event's zone or the reader's?" was unanswerable
+locally, and deleting the `timeZone` option passed every test here while
+failing three under `TZ=UTC`. The fix was not a note in this file: the suite now
+creates an event in `Pacific/Honolulu` and asserts against that, so the check
+bites on any machine. Watch for the same trap anywhere else the event zone and
+the reader's could coincide.
+
 **The registration form's own validation is not reachable from here.** Every
 one of those checks — the emergency contact, the partner phone, the residency
 question — lives inside the `reg-submit` click handler, and the stub DOM never
@@ -222,6 +266,11 @@ underneath: `residencyCounts()` reads a null as *unanswered* and the report
 warns about it, so an answer skipped at the form still cannot become a wrong
 number on the state's paperwork. Pulling that validation out into a pure
 function would close the gap properly, and has not been done.
+
+The same is true of the **submit** handler, which is where the stamp gets
+attached to the catch record and where a retake clears the previous shot's
+stamp. `photoStamp()`, `encodeToBudget()` and `captureBadges()` are all covered;
+the three lines of wiring between them are not.
 
 That table exists because it has caught real gaps twice: replacing instead of
 merging produced **no** failures until an assertion was added for it, and the

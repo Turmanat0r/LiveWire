@@ -1551,6 +1551,9 @@
           </label>
         </div>
         <div class="err" id="sub-err" style="display:none;"></div>
+        <!-- Shown only when this phone's clock disagrees with the server. The
+             time it prints on the photo is the angler's own evidence. -->
+        <p class="hint" id="sub-clock-note" style="display:none;background:#F1D6D0;color:#7A2018;padding:9px 11px;border-left:3px solid var(--danger);"></p>
         <button class="primary" id="sub-submit">Submit catch for scoring</button>
         <p class="hint">Fish must be shown flat on a bump board with a visible measuring scale (e.g. Ketch X-Board, Bubba Bump Board, YakAttack LeaderBoard, or similar) in the photo. Catches are reviewed before they count on the leaderboard.</p>
       </div>
@@ -2691,6 +2694,64 @@ function getCatchLocation(){
   });
 }
 
+// How long a photo may sit between being shot and being filed before it is
+// worth a second look. Twenty minutes covers paddling back into signal and the
+// outbox draining; a photo filed hours after it was taken is a different
+// question, and one only the director can answer.
+const CAPTURE_LAG_TOLERANCE_MS = 20 * 60 * 1000;
+
+function lagText(ms){
+  const mins = Math.round(Math.abs(ms) / 60000);
+  if(mins < 90) return mins + ' min';
+  const hours = Math.abs(ms) / 3600000;
+  return (hours < 10 ? hours.toFixed(1) : String(Math.round(hours))) + ' hr';
+}
+
+// What the stamp is worth, as a short list the director can read at a glance.
+// Split out from the HTML so the judgements can be tested; nothing here rejects
+// anything, exactly like every other first-pass signal.
+function captureBadges(c){
+  const cap = c && c.capture;
+  if(!cap){
+    // Logged before the app stamped photos at all. The photo is still evidence;
+    // it just carries no time of its own, and saying so beats saying nothing.
+    return [{ tone:'plain', text:'No photo stamp' }];
+  }
+  const out = [cap.source === PHOTO_SOURCE_UPLOAD
+    ? { tone:'warn', text:'Uploaded file' }
+    : { tone:'ok', text:'In-app camera' }];
+
+  if(cap.clockOffsetMs === null || cap.clockOffsetMs === undefined){
+    out.push({ tone:'plain', text:'Clock unverified' });
+  } else if(Math.abs(cap.clockOffsetMs) > CLOCK_SKEW_TOLERANCE_MS){
+    out.push({ tone:'bad', text:'Clock ' + skewText(cap.clockOffsetMs) });
+  }
+
+  const lag = Number(c.timestamp) - Number(cap.at);
+  if(isFinite(lag)){
+    // A photo stamped AFTER the record that holds it cannot have happened. It
+    // means the clock moved between the two, which is worth more attention
+    // than a long lag.
+    if(lag < -60000) out.push({ tone:'bad', text:'Stamped after it was filed' });
+    else if(lag > CAPTURE_LAG_TOLERANCE_MS){
+      out.push({ tone:'warn', text:'Filed ' + lagText(lag) + ' after capture' });
+    }
+  }
+  return out;
+}
+
+const CAPTURE_TONES = {
+  ok:    'background:#DCE7DA;color:#3B5A34;',
+  warn:  'background:#F3E4C4;color:var(--gold-deep);',
+  bad:   'background:#F1D6D0;color:var(--danger);',
+  plain: 'background:#E4E1D8;color:#6B6963;'
+};
+function captureBadgeHtml(c){
+  return captureBadges(c).map(b=>
+    '<span class="badge" style="' + CAPTURE_TONES[b.tone] + '">' + escapeHtml(b.text) + '</span>'
+  ).join('');
+}
+
 function boundaryBadgeHtml(c){
   const loc = c.location;
   if(!loc){
@@ -3246,6 +3307,9 @@ function supabaseBackend(){
     const opts = Object.assign({}, init);
     opts.headers = Object.assign({}, authHeaders(), (init && init.headers) || {});
     const res = await fetch(base + path, opts);
+    // Every response carries one, ok or not, so the device clock gets checked
+    // against the server's on every request the app already makes.
+    noteResponseClock(res);
     if(!res.ok){
       let detail = '';
       try{ detail = (await res.text()).slice(0, 200); }catch(e){}
@@ -4105,12 +4169,172 @@ function initials(name){
   return (parts[0][0] + (parts[1]?parts[1][0]:'')).toUpperCase();
 }
 
+// ---- the server's clock ----
+// A timestamp burned into a photo is worth exactly as much as the clock that
+// produced it, and a phone's clock is a setting. So the app measures how far
+// this device is from the tournament server: every Supabase response carries a
+// Date header, which makes the offset free - no extra round trip, no API - and
+// it is what lets a stamp say "this came off a clock that was 40 minutes out"
+// instead of stating a wrong time with confidence.
+//
+// Nothing is ever rejected over this. It is a note for the director, like every
+// other signal in the first pass.
+let serverClockOffset = null;   // server time minus device time, in ms
+let serverClockSeenAt = 0;
+
+// Two minutes. The Date header has whole-second resolution, the response spent
+// time in flight, and phones drift a little between NTP syncs - none of that is
+// someone moving their clock to fake a catch.
+const CLOCK_SKEW_TOLERANCE_MS = 2 * 60 * 1000;
+
+// Wrapped rather than read inline, and it may never throw: a clock reading is
+// a nice-to-have, and a registration must not fail because a response came
+// back without a readable header. Reaching into res.headers.get() unguarded
+// took down every Supabase call the first time it was written.
+function noteResponseClock(res){
+  try{
+    if(res && res.headers && typeof res.headers.get === 'function'){
+      return noteServerClock(res.headers.get('date'));
+    }
+  }catch(e){ /* the clock stays unverified, which is an honest answer */ }
+  return false;
+}
+
+function noteServerClock(dateHeader, receivedAt){
+  const at = Date.parse(dateHeader || '');
+  if(!at) return false;                       // absent or unparseable: learn nothing
+  const now = receivedAt === undefined ? Date.now() : receivedAt;
+  serverClockOffset = at - now;
+  serverClockSeenAt = now;
+  return true;
+}
+// null means "no idea" - a device-only event, or one that has not reached the
+// server yet. That is a third answer, and the stamp says so rather than
+// implying the clock has been checked and passed.
+function clockSkewMs(){ return serverClockOffset; }
+function clockIsTrusted(){
+  return serverClockOffset === null ? null : Math.abs(serverClockOffset) <= CLOCK_SKEW_TOLERANCE_MS;
+}
+// Rounded to whole minutes: "43 min" is the useful part, and a stamp claiming
+// 43 min 12 s of skew would imply a precision the Date header does not have.
+function skewText(ms){
+  if(ms === null || ms === undefined) return '';
+  const mins = Math.round(Math.abs(ms) / 60000);
+  if(mins === 0) return 'under a minute';
+  const unit = mins === 1 ? 'min' : 'min';
+  return mins + ' ' + unit + (ms > 0 ? ' behind' : ' ahead');
+}
+
+// ---- the stamp ----
+// Burned into the pixels rather than kept beside them: a JSON field can be
+// edited by whoever holds the record, and an EXIF tag is stripped by every
+// messaging app a photo passes through on its way to a dispute.
+//
+// PHOTO_SOURCE_CAMERA is worth more as evidence than an uploaded file, and the
+// stamp says which it was. A file picked off the roll could have been shot any
+// time, so its time is the time it was SUBMITTED and the stamp does not pretend
+// otherwise.
+const PHOTO_SOURCE_CAMERA = 'camera';
+const PHOTO_SOURCE_UPLOAD = 'upload';
+
+function stampClockText(at){
+  const evt = activeEvent();
+  try{
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: evt.timeZone,
+      year:'numeric', month:'2-digit', day:'2-digit',
+      hour:'2-digit', minute:'2-digit', hourCycle:'h23', timeZoneName:'short'
+    }).format(new Date(at));
+  }catch(e){
+    // An event carrying a time zone this browser does not know must not stop a
+    // catch being logged. UTC is wrong-but-labelled, which is readable.
+    return new Date(at).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+  }
+}
+
+// The lines that get drawn, top to bottom. Split out from the drawing so the
+// wording can be tested without a canvas.
+function photoStampLines(source, at, skewMs){
+  const evt = activeEvent();
+  const when = stampClockText(at);
+  const dayIndex = (evt.dates || []).indexOf(eventTimeParts(new Date(at)).dateKey);
+  const day = dayIndex === -1 ? '' : ' · Day ' + (dayIndex + 1);
+  const lines = [(evt.prefix || 'EVENT') + day + ' · ' + when];
+  lines.push(source === PHOTO_SOURCE_CAMERA
+    ? 'In-app camera'
+    : 'Uploaded file · time of submission');
+  // Only when there is something to say. A stamp that carried "clock OK" on
+  // every photo would train the eye to skip the line that matters.
+  if(skewMs === null || skewMs === undefined){
+    lines.push('Device clock unverified');
+  } else if(Math.abs(skewMs) > CLOCK_SKEW_TOLERANCE_MS){
+    lines.push('Device clock ' + skewText(skewMs) + ' vs server');
+  }
+  return lines;
+}
+
+function photoStamp(source, at){
+  const when = at === undefined ? Date.now() : at;
+  return {
+    at: when,
+    source: source,
+    clockOffsetMs: clockSkewMs(),
+    lines: photoStampLines(source, when, clockSkewMs())
+  };
+}
+
+// Bottom-left, sized off the canvas so it reads the same on a 1400px board shot
+// and on the 400px rung a weak signal settles for. Drawn INSIDE the encode loop
+// - see encodeToBudget - because every rung redraws the canvas from scratch.
+// Monospace on purpose: a proportional face makes a timestamp harder to read
+// at a glance, and the stamp is meant to be read off a photo on a phone.
+function fontFace(){ return 'px ui-monospace, "SF Mono", Menlo, Consolas, monospace'; }
+
+function drawPhotoStamp(ctx, width, height, lines){
+  if(!ctx || !lines || lines.length === 0) return;
+  ctx.save();
+  const widest = ()=>{
+    let w = 0;
+    for(let i = 0; i < lines.length; i++) w = Math.max(w, ctx.measureText(lines[i]).width);
+    return w;
+  };
+  // 2.6% of the short edge, floored so the smallest rung stays legible.
+  let size = Math.max(10, Math.round(Math.min(width, height) * 0.026));
+  ctx.font = '600 ' + size + fontFace();
+  // Shrink to fit rather than let a line run off the edge. A narrow or portrait
+  // frame - and the 240px floor of the encode ladder - can leave the longest
+  // line wider than the photo, and a stamp clipped mid-timestamp is worse than
+  // a small one. Floored at 7px: past that it stops being readable at all, and
+  // a clipped stamp is then the lesser problem.
+  const room = width - Math.round(size * 0.55) * 2;
+  const over = widest();
+  if(over > room && over > 0){
+    size = Math.max(7, Math.floor(size * (room / over)));
+    ctx.font = '600 ' + size + fontFace();
+  }
+  const pad = Math.round(size * 0.55);
+  const lead = Math.round(size * 1.32);
+  const boxH = lead * lines.length + pad * 2 - (lead - size);
+  ctx.textBaseline = 'top';
+  const boxW = Math.min(width, widest() + pad * 2);
+  const top = height - boxH;
+  // A band rather than a shadow: the stamp has to survive a photo of a photo,
+  // and a drop shadow over a bright bump board does not.
+  ctx.fillStyle = 'rgba(0,0,0,0.62)';
+  ctx.fillRect(0, top, boxW, boxH);
+  ctx.fillStyle = '#FFFFFF';
+  for(let i = 0; i < lines.length; i++){
+    ctx.fillText(lines[i], pad, top + pad + lead * i);
+  }
+  ctx.restore();
+}
+
 // Encodes to the LARGEST rung of PHOTO_STEPS that fits the active backend's
 // byte budget, so a photo can never be too big for whatever has to hold it.
 // Takes an <img> or a live <video> frame. On a Supabase event the top rung
 // applies and the director gets a 1400px board photo; on the Artifact store,
 // whose records cap at 256 KiB, it settles a few rungs lower.
-function encodeToBudget(source, naturalW, naturalH){
+function encodeToBudget(source, naturalW, naturalH, stamp){
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   const budget = photoBudget();
@@ -4133,6 +4357,10 @@ function encodeToBudget(source, naturalW, naturalH){
     canvas.width = Math.max(1, Math.round(w));
     canvas.height = Math.max(1, Math.round(h));
     ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+    // After the image, before the encode, and inside the loop: each rung starts
+    // from a blank canvas, so a stamp drawn once outside would survive only if
+    // the first rung happened to fit.
+    if(stamp) drawPhotoStamp(ctx, canvas.width, canvas.height, stamp.lines);
     out = canvas.toDataURL('image/jpeg', step.q);
     if(out.length <= budget) return out;
   }
@@ -4142,14 +4370,14 @@ function encodeToBudget(source, naturalW, naturalH){
 // Resolves { dataUrl, srcWidth, srcHeight } - the source dimensions are the
 // ORIGINAL photo's, captured before downscaling, so the resolution check in the
 // first-pass review judges what the angler actually shot, not our stored copy.
-function resizeImage(file){
+function resizeImage(file, stamp){
   return new Promise((resolve,reject)=>{
     const reader = new FileReader();
     reader.onload = e=>{
       const img = new Image();
       img.onload = ()=>{
         resolve({
-          dataUrl: encodeToBudget(img, img.width, img.height),
+          dataUrl: encodeToBudget(img, img.width, img.height, stamp),
           srcWidth: img.width, srcHeight: img.height
         });
       };
@@ -5296,9 +5524,30 @@ async function populateAnglerSelect(selectId, noteId){
   return anglers;
 }
 
+// The one place a wrong clock can still be FIXED rather than just recorded. A
+// stamp reading 40 minutes out is a mark against the angler's own catch, and
+// they are the only person who can put it right - so they get told here, before
+// they shoot, rather than finding out in a dispute.
+function renderClockNotice(){
+  const el = document.getElementById('sub-clock-note');
+  if(!el) return;
+  const off = clockSkewMs();
+  // Unverified is not a warning. A device-only event, or a phone that has not
+  // reached the server yet, is the normal state at a boat ramp with no signal.
+  if(off === null || Math.abs(off) <= CLOCK_SKEW_TOLERANCE_MS){
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = 'block';
+  el.textContent = 'This phone’s clock is ' + skewText(off) + ' of the tournament server, ' +
+    'and that time gets printed on your photo. Turn on automatic date and time in your ' +
+    'phone settings before you shoot, or the director will see the gap on your catch.';
+}
+
 async function renderSubmitScreen(){
   await populateAnglerSelect('sub-angler', 'sub-angler-note');
   renderSpeciesOptions();
+  renderClockNotice();
   updateGuide();
 }
 
@@ -5306,6 +5555,9 @@ async function renderSubmitScreen(){
 let camStream = null;
 let capturedPhotoData = null;
 let capturedPhotoDims = { width: 0, height: 0 }; // native sensor size, before downscaling
+// What was burned into the pixels, kept so the catch record can carry the same
+// values. If the two ever disagreed, neither would be worth anything.
+let capturedPhotoStamp = null;
 
 // The scoring species plus the not-scored bucket. Rebuilt whenever the submit
 // screen is shown, so a director changing the target species reaches anglers
@@ -5537,7 +5789,12 @@ function capturePhoto(){
   const video = document.getElementById('vf-video');
   if(!video || !video.videoWidth) return;
   capturedPhotoDims = { width: video.videoWidth, height: video.videoHeight };
-  capturedPhotoData = encodeToBudget(video, video.videoWidth, video.videoHeight);
+  // Stamped at the moment the shutter fires, not at submit. An angler who
+  // photographs a fish and files it twenty minutes later has a stamp that says
+  // when the fish was on the board, which is the question that matters.
+  capturedPhotoStamp = photoStamp(PHOTO_SOURCE_CAMERA);
+  capturedPhotoData = encodeToBudget(video, video.videoWidth, video.videoHeight,
+                                     capturedPhotoStamp);
 
   stopAutoCapture();
   document.getElementById('vf-preview-img').src = capturedPhotoData;
@@ -5560,6 +5817,7 @@ bindEl('vf-auto-on','change', ()=>{
 bindEl('vf-retake','click', ()=>{
   capturedPhotoData = null;
   capturedPhotoDims = { width: 0, height: 0 };
+  capturedPhotoStamp = null;
   document.getElementById('vf-preview').style.display='none';
   startCamera();
 });
@@ -5571,6 +5829,7 @@ bindEl('sub-photo','change', (e)=>{
   if(e.target.files && e.target.files[0]){
     capturedPhotoData = null;
     capturedPhotoDims = { width: 0, height: 0 };
+    capturedPhotoStamp = null;
     const preview = document.getElementById('vf-preview');
     if(preview) preview.style.display = 'none';
   }
@@ -5599,11 +5858,15 @@ bindEl('sub-submit','click', async ()=>{
     const angler = anglers.find(a=>a.id===anglerId);
     let photoData = capturedPhotoData || '';
     let srcWidth = capturedPhotoDims.width, srcHeight = capturedPhotoDims.height;
+    let stamp = capturedPhotoStamp;
 
     if(!photoData && fileInput.files[0]){
       submitBtn.textContent = 'Preparing photo…';
       try{
-        const resized = await resizeImage(fileInput.files[0]);
+        // A file off the camera roll could have been shot at any time, so its
+        // stamp reads as the time of submission and says so on the photo.
+        stamp = photoStamp(PHOTO_SOURCE_UPLOAD);
+        const resized = await resizeImage(fileInput.files[0], stamp);
         photoData = resized.dataUrl;
         srcWidth = resized.srcWidth;
         srcHeight = resized.srcHeight;
@@ -5647,6 +5910,12 @@ bindEl('sub-submit','click', async ()=>{
       photoUrl: store && store.photoUrlFor ? store.photoUrlFor(catchId) : '',
       precheck,
       location: catchLocation,
+      // The same values that were burned into the pixels. Kept beside them so
+      // the director's list can be read and sorted without opening every photo
+      // - never INSTEAD of them, which is why the stamp is drawn at all.
+      capture: stamp ? {
+        at: stamp.at, source: stamp.source, clockOffsetMs: stamp.clockOffsetMs
+      } : null,
       timestamp: Date.now(),
       status: 'pending'
     });
@@ -5683,6 +5952,7 @@ bindEl('sub-submit','click', async ()=>{
     fileInput.value='';
     capturedPhotoData = null;
     capturedPhotoDims = { width: 0, height: 0 };
+    capturedPhotoStamp = null;
     document.getElementById('vf-preview').style.display='none';
     goto('manage');
   }catch(e){
@@ -9045,7 +9315,7 @@ async function renderAdmin(){
       const img = photoSlotHtml(c);
       return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+lengthHtml(c.length)+'</span></div>'+
         '<div class="name">'+escapeHtml(c.anglerName)+' &middot; '+escapeHtml(c.species)+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
-        '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+'</div>'+
+        '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+captureBadgeHtml(c)+'</div>'+
         firstPassHtml(c, catches, dupCorpus)+
         '<div class="actions"><button class="small" data-act="approve" data-id="'+c.id+'">Approve</button>'+
         '<button class="small" data-act="reject" data-id="'+c.id+'">Reject</button></div></div></div>';
@@ -9059,7 +9329,7 @@ async function renderAdmin(){
       return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+lengthHtml(c.length)+'</span></div>'+
         '<div class="name">'+escapeHtml(c.anglerName)+' &middot; '+escapeHtml(c.species)+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
         statusHtml(c.status)+
-        '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+'</div>'+
+        '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+captureBadgeHtml(c)+'</div>'+
         firstPassHtml(c, catches, dupCorpus)+
         '<div class="actions"><button class="small" data-act="delete" data-id="'+c.id+'">Delete</button></div></div></div>';
     }).join('');
