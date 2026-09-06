@@ -40,6 +40,30 @@ of sync with it. Change `index.html` and the tests see the change immediately.
 
 The places where a mistake is silent and expensive:
 
+- **The browser's own Back button.** The app is one page pretending to be
+  thirteen, and the browser had no idea: Back from three screens deep left it
+  altogether — out to whatever was open before the tournament, or, installed to
+  a home screen, to a dead stop. Every screen change now writes a history entry.
+  The tests cover the three ways that goes wrong: pushing an entry the history
+  *itself* just delivered (Back sticks and never moves), pushing on a re-tap of
+  the screen you are already on (the stack fills with copies and Back appears
+  dead), and replacing instead of pushing (there is nothing to go back to).
+  The screen lives in the **hash**, not a path — the app is one static file, and
+  a real path would 404 on a hard refresh unless the host rewrote it, which is a
+  deploy setting waiting to be forgotten. `screenFromHash` is fed straight off
+  the address bar, so it treats anything it does not recognise as *no opinion*
+  and falls to home; it is tested against a script payload and a path traversal
+  for the same reason.
+  None of it is required: a `file://` page throws `SecurityError` on
+  `pushState` in several browsers, so failing to *record* a move must never stop
+  the move happening. Tested with a history API that throws on every call.
+- **Back closes the photo panel.** The pop-out takes a history entry of its own,
+  so Back shuts the photo rather than leaving the screen behind it — what every
+  phone gallery does. One entry for the panel, not one per fish, or walking the
+  arrows would leave a trail to press Back through afterwards. The Close button
+  goes through `history.back()` too, so the button and the Back button are one
+  action: closing any other way would leave the entry on the stack and the next
+  Back would appear to do nothing at all.
 - **What the public wall may say.** The fish gallery shows every approved catch
   in the event, the viewer's own first. It is the whole field looking at each
   other's fish, so the angler there is a **handle** — and `galleryOrder` enforces
@@ -353,6 +377,21 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Show arrows with nowhere to go, or live at either end | 1 failure |
 | Count the position off by one | 1 failure |
 | Paint a photo over its own caption | lint |
+| Record no history, so Back leaves the app | crash |
+| Push an entry the history itself delivered | 4 failures |
+| Stack a duplicate entry for the screen you are on | 4 failures |
+| Push the opening entry instead of replacing it | 1 failure |
+| Replace every entry, leaving nothing to go back to | crash |
+| Trust the address bar without checking the screen name | 5 failures |
+| Throw on a null hash instead of naming nothing | crash |
+| Leave the screen on Back instead of closing the photo | 4 failures |
+| Trust a popstate state naming an unknown screen | 1 failure |
+| Land nowhere when an entry is unreadable | 2 failures |
+| Ignore a deep link, or push it behind the opening entry | 1 failure |
+| Take a history entry per fish the arrows walk to | 4 failures |
+| Take no entry for the panel, so Back skips past it | 6 failures |
+| Leave the panel's entry on the stack when it closes | 1 failure |
+| Let a throwing pushState take the navigation down | crash |
 | Stop normalising phone numbers | 5 failures |
 | Compare phone numbers in full instead of last ten | 2 failures |
 | Never show the pending notice | 3 failures |

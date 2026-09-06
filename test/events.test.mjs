@@ -109,7 +109,9 @@ globalThis.__t = {
   loadAwardsBudget, saveAwardsBudget, awardsBudgetMap,
   standingsFor, byLengthThenEarliest, bySmallestThenEarliest, catchTime,
   canActFor, reviewCatch, showAdminTool,
-  galleryOrder, galleryTileHtml, galleryTime, openLightbox, closeLightbox,
+  galleryOrder, galleryTileHtml, galleryTime, openLightbox, closeLightbox, hideLightbox,
+  screenHash, screenFromHash, historyApi, pushScreenState, handlePopState, initHistory,
+  goto, screens, get currentScreen(){ return currentScreen; },
   splitFor, PAYOUT_SHARES, eventDateRangeText, eventRowCounts, eventDayText,
   getMyAnglerId, setMyAnglerId, onRows, readOutbox
 };
@@ -1562,6 +1564,176 @@ section('29g. the pop-out shows a different thing to each side');
   check('closing drops the image so a big photo is not held in memory',
     elById.get('lightbox-img').src, undefined);
   check('and forgets which fish was open', elById.get('photo-lightbox').hidden, true);
+}
+
+// ============================================================
+section('29h. the browser Back button');
+// The app is one page pretending to be twelve. Without history entries, Back
+// from three screens deep leaves it altogether - out to whatever was open
+// before the tournament, or, installed to a home screen, to a dead stop.
+{
+  // A history stack good enough to walk. The real window.addEventListener in
+  // this harness is a no-op, so popstate is delivered by calling the handler,
+  // which is the part with the logic in it.
+  function fakeHistory(){
+    const stack = [];
+    return {
+      stack,
+      pushState(st, _title, url){ stack.push({ st: st, url: url }); },
+      replaceState(st, _title, url){
+        const top = stack[stack.length - 1];
+        const keep = url === undefined && top ? top.url : url;
+        if(top) stack[stack.length - 1] = { st: st, url: keep };
+        else stack.push({ st: st, url: keep });
+      },
+      back(){
+        if(stack.length < 2) return null;
+        stack.pop();
+        return stack[stack.length - 1];
+      }
+    };
+  }
+  const savedHist = t.appWindow.history;
+  const savedLoc2 = t.appWindow.location;
+  // Deliver the entry Back landed on, the way a browser would.
+  const goBack = (h)=>{ const at = h.back(); t.handlePopState({ state: at && at.st }); return at; };
+
+  try{
+    // ---- reading the address bar ----
+    check('a known screen is recognised', t.screenFromHash('#leaderboard'), 'leaderboard');
+    check('with a slash too', t.screenFromHash('#/leaderboard'), 'leaderboard');
+    check('and without the hash', t.screenFromHash('gallery'), 'gallery');
+    check('an empty hash names nothing', t.screenFromHash('#'), null);
+    check('nor does an empty string', t.screenFromHash(''), null);
+    check('nor null', t.screenFromHash(null), null);
+    check('nor undefined', t.screenFromHash(undefined), null);
+    // It is fed straight off the address bar, so anything unrecognised has to
+    // read as "no opinion" rather than being trusted.
+    check('a screen that does not exist is refused', t.screenFromHash('#wharrgarbl'), null);
+    check('and so is a payload', t.screenFromHash('#<script>alert(1)</script>'), null);
+    check('and a path traversal', t.screenFromHash('#../../etc/passwd'), null);
+    check('every real screen round-trips',
+      t.screens.every(n => t.screenFromHash(t.screenHash(n)) === n), true);
+
+    // ---- with no history API at all ----
+    delete t.appWindow.history;
+    check('a browser with no history API is detected', t.historyApi(), null);
+    check('and recording a move simply reports it did not',
+      t.pushScreenState('home', false), false);
+    t.goto('leaderboard');
+    check('but the app still navigates', t.currentScreen, 'leaderboard');
+
+    // A file:// page - the app opened straight off a phone or a USB stick -
+    // throws SecurityError on pushState in several browsers. Not being able to
+    // RECORD the move is not a reason to refuse to make it.
+    t.appWindow.history = {
+      pushState(){ throw new Error('SecurityError'); },
+      replaceState(){ throw new Error('SecurityError'); }
+    };
+    check('a history API that throws is still detected as present',
+      t.historyApi() !== null, true);
+    check('recording reports the failure rather than raising it',
+      t.pushScreenState('gallery', false), false);
+    t.goto('gallery');
+    check('and the navigation happens anyway', t.currentScreen, 'gallery');
+    t.initHistory();
+    check('opening the app does not die on it either', t.currentScreen, 'gallery');
+
+    // ---- with one ----
+    const h = fakeHistory();
+    t.appWindow.history = h;
+    t.appWindow.location = { hash: '' };
+    t.goto('home', { replace: true });
+    check('the opening screen takes one entry', h.stack.length, 1);
+
+    t.goto('leaderboard');
+    t.goto('gallery');
+    check('each move adds an entry', h.stack.length, 3);
+    check('and the address bar names the screen', h.stack[2].url, '#gallery');
+    check('the entry remembers which screen it is',
+      h.stack[2].st && h.stack[2].st.screen, 'gallery');
+
+    // Re-tapping the tab you are already on is not a move. Without this the
+    // stack fills with copies of one screen and Back appears to do nothing.
+    t.goto('gallery');
+    t.goto('gallery');
+    check('standing still adds nothing', h.stack.length, 3);
+
+    // ---- walking back ----
+    goBack(h);
+    check('Back returns to the previous screen', t.currentScreen, 'leaderboard');
+    goBack(h);
+    check('and the one before that', t.currentScreen, 'home');
+    check('without pushing the entries it came out of', h.stack.length, 1);
+
+    // An entry this app did not write - a restored session, say - has no state
+    // object, so the hash is the fallback.
+    t.appWindow.location = { hash: '#bigfish' };
+    t.handlePopState({ state: null });
+    check('an entry with no state falls back to the address bar',
+      t.currentScreen, 'bigfish');
+    // And if that names nothing either, home rather than a blank app.
+    t.appWindow.location = { hash: '#nonsense' };
+    t.handlePopState({ state: null });
+    check('and to home when the address bar is no help', t.currentScreen, 'home');
+    t.handlePopState({ state: { screen: 'not-a-screen' } });
+    check('a state naming an unknown screen is refused too', t.currentScreen, 'home');
+
+    // ---- opening straight onto a screen ----
+    t.appWindow.location = { hash: '#gallery' };
+    t.goto('home', { replace: true });
+    const before = h.stack.length;
+    t.initHistory();
+    check('a link into a screen opens on it', t.currentScreen, 'gallery');
+    check('and replaces the opening entry rather than stacking behind it',
+      h.stack.length, before);
+
+    t.appWindow.location = { hash: '' };
+    t.goto('home', { replace: true });
+    t.initHistory();
+    check('opening with no hash stays on home', t.currentScreen, 'home');
+
+    // ---- the photo panel ----
+    await setEvent(E1);
+    const hAnglers = [{ id:'h1', name:'Nav Tester', handle:'Drifting Reed' }];
+    seed(hAnglers, [{ id:'hc1', eventId:E1, anglerId:'h1', anglerName:'Nav Tester',
+      species:'Walleye', length:20, division:'solo', status:'approved', timestamp:1 }], [], {});
+    t.goto('gallery');
+    const atGallery = h.stack.length;
+    await t.openLightbox('hc1', { mode:'public' });
+    check('opening a fish full screen takes an entry of its own',
+      h.stack.length, atGallery + 1);
+    check('and marks it as the panel', h.stack[h.stack.length-1].st.lightbox, true);
+
+    // Walking the arrows must not leave a trail to press Back through.
+    await t.openLightbox('hc1', { mode:'public' });
+    await t.openLightbox('hc1', { mode:'public' });
+    check('walking between fish adds no more', h.stack.length, atGallery + 1);
+
+    // Back closes the photo and leaves you on the screen behind it.
+    goBack(h);
+    check('Back closes the panel', elById.get('photo-lightbox').hidden, true);
+    check('rather than leaving the screen', t.currentScreen, 'gallery');
+    check('and the panel gives its entry back', h.stack.length, atGallery);
+
+    // The Close button has to go the same way, or the entry outlives the panel
+    // and the next Back appears to do nothing.
+    await t.openLightbox('hc1', { mode:'public' });
+    check('the panel takes an entry again', h.stack.length, atGallery + 1);
+    // closeLightbox() calls history.back() itself, so the stack has already
+    // moved by the time we hand it the popstate a browser would have fired.
+    t.closeLightbox();
+    t.handlePopState({ state: h.stack[h.stack.length-1].st });
+    check('closing by button spends the same entry', h.stack.length, atGallery);
+    check('and the panel is shut', elById.get('photo-lightbox').hidden, true);
+  } finally {
+    if(savedHist === undefined) delete t.appWindow.history;
+    else t.appWindow.history = savedHist;
+    if(savedLoc2 === undefined) delete t.appWindow.location;
+    else t.appWindow.location = savedLoc2;
+    t.hideLightbox();
+    t.goto('home');
+  }
 }
 
 // ============================================================

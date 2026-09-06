@@ -5153,7 +5153,56 @@ function renderScreen(name){
 }
 function refreshActiveScreen(){ renderScreen(currentScreen); }
 
-function goto(name){
+// ---- the browser's own Back button ----
+// This is one page pretending to be twelve, and without the code below the
+// browser does not know that: Back from three screens deep leaves the app
+// altogether - out to whatever was open before the tournament, or, installed to
+// a home screen, to a dead stop. Plenty of people navigate that way and never
+// touch the Home link.
+//
+// So every screen change writes a history entry and Back walks them.
+//
+// The hash carries the screen rather than a path, because the app is served as
+// a single static file: a real path would 404 on a hard refresh unless the host
+// rewrote it, and that is a deploy setting waiting to be forgotten.
+function screenHash(name){ return '#' + name; }
+
+// Which screen a URL is asking for, or null if it names nothing we have. Fed
+// straight off the address bar, so it has to treat anything unrecognised as
+// "no opinion" rather than trusting it.
+function screenFromHash(hash){
+  const name = String(hash == null ? '' : hash).replace(/^#\/?/, '');
+  return screens.indexOf(name) !== -1 ? name : null;
+}
+
+// A file:// page, an old browser, or a sandbox can all leave this missing or
+// throw on use. Navigation has to keep working without it.
+function historyApi(){
+  try{
+    const h = typeof window !== 'undefined' && window.history;
+    return (h && typeof h.pushState === 'function' && typeof h.replaceState === 'function')
+      ? h : null;
+  }catch(e){ return null; }
+}
+
+function pushScreenState(name, replace){
+  const h = historyApi();
+  if(!h) return false;
+  try{
+    const state = { screen: name };
+    if(replace) h.replaceState(state, '', screenHash(name));
+    else h.pushState(state, '', screenHash(name));
+    return true;
+  }catch(e){
+    // Some browsers refuse pushState on file://. Not being able to record the
+    // move is not a reason to refuse to make it.
+    return false;
+  }
+}
+
+function goto(name, opts){
+  const o = opts || {};
+  const moved = currentScreen !== name;
   currentScreen = name;
   screens.forEach(s=>{
     document.getElementById('screen-'+s).classList.toggle('active', s===name);
@@ -5162,7 +5211,47 @@ function goto(name){
   document.getElementById('app').dataset.theme = name;
   if(name!=='submit') stopCamera();
   updateSyncUi();
+  // A move the USER made goes into the history. One made BY the history does
+  // not, or Back would push the entry it just came out of and get stuck.
+  // Re-tapping the tab you are already on is not a move either, or the stack
+  // fills with copies of one screen and Back appears to do nothing.
+  if(!o.fromHistory && (moved || o.replace)) pushScreenState(name, o.replace);
   renderScreen(name);
+}
+
+// Back, and forward. Registered from the init block, once the whole script has
+// been evaluated.
+function handlePopState(e){
+  // With the photo panel open, Back closes the panel - which is what every
+  // phone gallery does, and what the panel's own history entry was pushed for.
+  if(lightboxCatchId){ hideLightbox(); return; }
+  const st = e && e.state;
+  const fromState = st && st.screen && screens.indexOf(st.screen) !== -1 ? st.screen : null;
+  const loc = typeof window !== 'undefined' && window.location;
+  // The state object is the reliable half; the hash is the fallback for an
+  // entry this app did not write, such as one restored by a session reload.
+  const name = fromState || screenFromHash(loc && loc.hash) || 'home';
+  goto(name, { fromHistory: true });
+}
+
+// Opening straight onto a screen: a link, a bookmark, or a reload of whatever
+// was on screen. Anything unrecognised falls to home rather than a blank app.
+function initHistory(){
+  const loc = typeof window !== 'undefined' && window.location;
+  const deep = screenFromHash(loc && loc.hash);
+  if(deep && deep !== currentScreen){
+    // replace, not push: the first entry should not have an emptier one behind
+    // it that Back would drop into.
+    goto(deep, { replace: true });
+  } else {
+    // Give the opening entry a state object so Back FROM the second screen has
+    // something to land on. The URL is left exactly as the visitor typed it.
+    const h = historyApi();
+    if(h){ try{ h.replaceState({ screen: currentScreen }, ''); }catch(e){} }
+  }
+  if(typeof window !== 'undefined' && window.addEventListener){
+    window.addEventListener('popstate', handlePopState);
+  }
 }
 document.addEventListener('click', (e)=>{
   const el = e.target.closest('[data-goto]');
@@ -9949,17 +10038,39 @@ let lightboxCatchId = null;
 let lightboxMode = LIGHTBOX_PUBLIC;
 // The ids the arrows walk, in the order the screen behind is showing them.
 let lightboxSequence = [];
+// Whether the panel put an entry on the history stack when it opened.
+let lightboxPushed = false;
 
-function closeLightbox(){
+// The panel takes a history entry of its own, so Back closes the photo instead
+// of leaving the screen behind it - which is what a phone gallery does, and
+// what someone who opened a fish full-screen means by "back".
+function hideLightbox(){
   const box = document.getElementById('photo-lightbox');
   if(!box) return;
   box.hidden = true;
   box.classList.remove('zoomed');
   lightboxCatchId = null;
   lightboxSequence = [];
+  lightboxPushed = false;
   // Drop the image so a big photo is not held in memory behind a closed panel.
   const img = document.getElementById('lightbox-img');
   if(img) img.removeAttribute('src');
+}
+
+// Closing on purpose - the Close button, Escape, or a verdict. Where the panel
+// owns a history entry, going back is what closes it, so the button and the
+// Back button are the same single action and cannot drift apart. Without this
+// the entry would outlive the panel and the next Back would appear to do
+// nothing at all.
+function closeLightbox(){
+  if(lightboxPushed){
+    lightboxPushed = false;
+    const h = historyApi();
+    if(h && typeof h.back === 'function'){
+      try{ h.back(); return; }catch(e){}
+    }
+  }
+  hideLightbox();
 }
 
 // Where the current fish sits in the sequence, or -1 when it was opened alone.
@@ -9979,6 +10090,15 @@ async function openLightbox(catchId, opts){
   const o = opts || {};
   const c = (await loadCatches()).find(x=> x.id === catchId);
   if(!c) return;
+  // One entry for the panel, not one per fish: walking the arrows should not
+  // leave a trail of entries to press Back through afterwards.
+  if(!lightboxCatchId && !lightboxPushed){
+    const h = historyApi();
+    if(h){
+      try{ h.pushState({ screen: currentScreen, lightbox: true }, ''); lightboxPushed = true; }
+      catch(e){}
+    }
+  }
   lightboxCatchId = catchId;
   lightboxMode = o.mode === LIGHTBOX_DIRECTOR ? LIGHTBOX_DIRECTOR : LIGHTBOX_PUBLIC;
   lightboxSequence = Array.isArray(o.sequence) ? o.sequence.slice() : [];
@@ -10862,6 +10982,8 @@ if(window.visualViewport){
     resumeBeaconTracking();
     await renderRoster();
     await renderHome();
+    // Last, so a deep link paints onto an app that is already awake.
+    initHistory();
   }catch(e){
     console.error(e);
     const b = document.createElement('div');
