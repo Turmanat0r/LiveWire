@@ -40,6 +40,31 @@ of sync with it. Change `index.html` and the tests see the change immediately.
 
 The places where a mistake is silent and expensive:
 
+- **What the public wall may say.** The fish gallery shows every approved catch
+  in the event, the viewer's own first. It is the whole field looking at each
+  other's fish, so the angler there is a **handle** — and `galleryOrder` enforces
+  that by shape rather than by discipline: it returns a *projection* of each
+  catch, not the record, so `anglerName` is not in the object and there is
+  nothing to leak however a tile is later rendered. The test asserts no real
+  name survives into the output, and lint refuses any mention of `anglerName`
+  inside the three gallery functions.
+  Approved only: a pending fish may still be rejected, and hanging a rejected
+  one on the wall makes an angler argue with a director's judgement in public.
+  A disqualified angler's fish come off, same as the leaderboard.
+- **One pop-out, two audiences.** The director's review lists and the public
+  gallery open the same panel, and it must not show them the same thing — real
+  names, the boundary verdict and the clock-skew flags are review notes on a
+  fish already judged. The mode is read on every paint, an unrecognised mode
+  falls to the **public** side (a typo at a call site should cost a director
+  some detail, never publish a name), and the verdict buttons are checked
+  against the mode again before they write. Tested in both directions, plus the
+  case that matters most: a *pending* fish opened publicly still offers no
+  approve button.
+- **Newest-first needs the opposite sentinel.** `catchTime` makes an undated
+  catch enormous so it sorts *last* in an earliest-first tie-break. The gallery
+  sorts newest-first, where that same value would send an undated fish to the
+  *top of the wall*, above everything real. `galleryTime` floors it to zero
+  instead, so a record missing its timestamp sinks either way.
 - **Who may act for an entry.** Every angler picker is scoped to the entries
   this device is signed in to; only the director sees the whole field. A device
   with no registration used to be handed the *whole field* instead — the
@@ -311,6 +336,23 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Have reject delete the catch instead | crash |
 | Report a vanished catch as handled | 2 failures |
 | Drop the review tool from the switcher | crash |
+| Return the catch records instead of the gallery projection | 2 failures |
+| Print a real name on a gallery tile | lint |
+| Show a real name in the public pop-out | 5 failures |
+| Treat an unknown pop-out mode as the director's | 3 failures |
+| Republish the boundary verdict to the field | 1 failure |
+| Wire the gallery grid to director mode | lint |
+| Offer approve and reject to a viewer | 2 failures |
+| Put pending or rejected fish on the wall | 6 failures |
+| Leave a disqualified angler's fish on it | 3 failures |
+| Stop putting the viewer's own fish first | 4 failures |
+| Order the wall oldest-first | 4 failures |
+| Drop the gallery's id tiebreak | 1 failure |
+| Let an undated fish top the wall | 3 failures |
+| Hand NaN to the gallery comparator | 2 failures |
+| Show arrows with nowhere to go, or live at either end | 1 failure |
+| Count the position off by one | 1 failure |
+| Paint a photo over its own caption | lint |
 | Stop normalising phone numbers | 5 failures |
 | Compare phone numbers in full instead of last ten | 2 failures |
 | Never show the pending notice | 3 failures |

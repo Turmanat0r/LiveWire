@@ -1130,6 +1130,47 @@
      nested deep inside the director panel and display:none on any ancestor
      would take it with them. */
 
+  /* ---- the fish gallery ----
+     Square tiles so a wall of fish reads as a wall of fish. The caption sits
+     ON the photo rather than under it, because a grid of cards with captions
+     underneath turns into a list at this size. */
+  .gallery-grid{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:6px;
+  }
+  .gallery-tile{
+    position:relative;aspect-ratio:1/1;overflow:hidden;border-radius:4px;
+    border:1px solid var(--line);background:var(--paper-2);
+    padding:0;cursor:zoom-in;display:block;width:100%;
+  }
+  /* Older Safari has no aspect-ratio; without this the tiles collapse to the
+     height of their caption. */
+  @supports not (aspect-ratio: 1 / 1){
+    .gallery-tile{height:0;padding-bottom:100%;}
+  }
+  .gallery-tile .photo-target{position:absolute;inset:0;display:block;}
+  .gallery-tile img{
+    position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;
+  }
+  .gallery-tile .noimg{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    color:var(--steel);font-size:10px;
+  }
+  .gallery-cap{
+    position:absolute;left:0;right:0;bottom:0;z-index:1;
+    padding:12px 6px 4px;text-align:left;
+    background:linear-gradient(to top,rgba(12,20,18,.82),rgba(12,20,18,0));
+    color:#F4F1E9;font-size:10px;line-height:1.35;
+  }
+  .gallery-cap .who{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .gallery-cap .len{display:block;font-variant-numeric:tabular-nums;opacity:.9;}
+  /* Your own fish, so you can find them in a wall of forty. */
+  .gallery-tile.mine{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold);}
+  .gallery-mine-tag{
+    position:absolute;top:4px;left:4px;z-index:1;
+    background:var(--gold);color:#0C1412;font-size:9px;font-weight:700;
+    padding:1px 5px;border-radius:3px;letter-spacing:.04em;
+  }
+
   /* ---- full-size catch photo ----
      A 64px thumbnail cannot show whether a tail is pinched or where the nose
      sits on the tape, and that is the whole of the judgement. Tapping a photo
@@ -1145,7 +1186,12 @@
     display:flex;align-items:center;justify-content:space-between;gap:12px;
     padding:10px 12px;color:#F4F1E9;flex:0 0 auto;
   }
-  .lightbox-title{font-weight:600;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .lightbox-title{font-weight:600;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto;}
+  .lightbox-nav{display:flex;align-items:center;gap:6px;flex:0 0 auto;}
+  .lightbox-nav[hidden]{display:none;}
+  .lightbox-count{color:#C8D3CC;font-size:11px;font-variant-numeric:tabular-nums;min-width:52px;text-align:center;}
+  .lightbox-nav button{min-width:38px;}
+  .lightbox-nav button:disabled{opacity:.35;}
   /* The stage scrolls, so a zoomed photo can be dragged around rather than
      cropped to whatever fits. */
   .lightbox-stage{
@@ -1310,6 +1356,10 @@
         <button class="home-tile" type="button" data-goto="livewell">
           <span class="home-tile-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12c4-5 10-6 15-2l3-3v10l-3-3c-5 4-11 3-15-2Z"/><circle cx="16" cy="11" r=".7" fill="currentColor" stroke="none"/></svg></span>
           <span class="home-tile-copy"><span class="home-tile-label">CPR Livewell</span><span class="home-tile-sub">Your scoring fish</span></span>
+        </button>
+        <button class="home-tile" type="button" data-goto="gallery">
+          <span class="home-tile-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="m6 16 3.5-4 2.5 3 2.5-3L18 16"/><circle cx="9" cy="9.5" r="1.2"/></svg></span>
+          <span class="home-tile-copy"><span class="home-tile-label">Fish Gallery</span><span class="home-tile-sub">Every fish on the board</span></span>
         </button>
         <button class="home-tile accent-gold" type="button" data-goto="bigfish">
           <span class="home-tile-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15 8.5c-.8-.7-1.8-1-3-1-1.7 0-3 .9-3 2.2 0 3.4 6 1.3 6 4.5 0 1.3-1.3 2.3-3.1 2.3-1.3 0-2.5-.4-3.4-1.2M12 5.5v13"/></svg></span>
@@ -1649,6 +1699,16 @@
         </div>
         <p class="hint" style="margin-top:0;" id="livewell-note">Every approved catch is released on the water, so your livewell is a running tally rather than fish in a tank.</p>
         <div id="lw-list"></div>
+      </div>
+    </section>
+
+    <!-- GALLERY -->
+    <section class="screen" id="screen-gallery">
+      <a class="backlink" data-goto="home" role="button" tabindex="0">&larr; Home</a>
+      <div class="card">
+        <h2>Fish gallery</h2>
+        <p class="hint" style="margin-top:0;" id="gallery-note"></p>
+        <div class="gallery-grid" id="gallery-grid"></div>
       </div>
     </section>
 
@@ -2215,6 +2275,11 @@
   <div class="lightbox" id="photo-lightbox" hidden>
     <div class="lightbox-bar">
       <span class="lightbox-title" id="lightbox-title"></span>
+      <span class="lightbox-nav" id="lightbox-nav" hidden>
+        <button class="small" type="button" id="lightbox-prev" aria-label="Previous fish">&larr;</button>
+        <span class="lightbox-count" id="lightbox-count"></span>
+        <button class="small" type="button" id="lightbox-next" aria-label="Next fish">&rarr;</button>
+      </span>
       <button class="small" type="button" id="lightbox-close">Close</button>
     </div>
     <div class="lightbox-stage">
@@ -4200,28 +4265,33 @@ function lengthHtml(length){
 function photoSlotHtml(c){
   return '<div class="photoslot" data-photo-for="'+escapeHtml(c.id)+'"><div class="noimg">&hellip;</div></div>';
 }
+// data-photo-for is the contract, not the class: the review lists hang it on a
+// bare 64px box, the gallery on a whole tile that also carries a caption and a
+// marker. Where a slot names a .photo-target, the photo is painted into that
+// and everything else the tile is carrying survives.
 function hydratePhotos(root){
   const scope = root || document;
-  scope.querySelectorAll('.photoslot[data-photo-for]').forEach(slot=>{
-    if(slot.dataset.photoDone) return;
-    slot.dataset.photoDone = '1';
-    const id = slot.dataset.photoFor;
+  scope.querySelectorAll('[data-photo-for]').forEach(host=>{
+    if(host.dataset.photoDone) return;
+    host.dataset.photoDone = '1';
+    const id = host.dataset.photoFor;
+    const slot = host.querySelector('.photo-target') || host;
     loadPhoto(id).then(url=>{
       if(!slot.isConnected) return;
       if(url){
         const img = document.createElement('img');
         img.alt = 'Catch photo on the bump board';
         // An object-storage URL can 404 while an upload is still queued.
-        img.onerror = ()=>{ slot.innerHTML = '<div class="noimg">no photo</div>'; };
+        img.onerror = ()=>{ slot.innerHTML = '<span class="noimg">no photo</span>'; };
         img.src = url;
         slot.textContent = '';
         slot.appendChild(img);
       } else {
-        slot.innerHTML = '<div class="noimg">no photo</div>';
+        slot.innerHTML = '<span class="noimg">no photo</span>';
       }
     }).catch(e=>{
       console.error(e);
-      slot.innerHTML = '<div class="noimg">no photo</div>';
+      slot.innerHTML = '<span class="noimg">no photo</span>';
     });
   });
 }
@@ -5054,7 +5124,7 @@ function fishIErrorCopy(e){
 }
 
 // ---- navigation ----
-const screens = ['home','register','checkin','submit','manage','livewell','leaderboard','bigfish','gps','payouts','chat','admin'];
+const screens = ['home','register','checkin','submit','manage','livewell','gallery','leaderboard','bigfish','gps','payouts','chat','admin'];
 let currentScreen = 'home';
 
 // Split out of goto() so a write from another device can repaint what is
@@ -5074,6 +5144,7 @@ function renderScreen(name){
   if(name==='manage') renderManageScreen();
   if(name==='checkin') renderCheckin();
   if(name==='livewell') renderLivewell();
+  if(name==='gallery') renderGallery();
   if(name==='bigfish'){ renderBigFish(); renderBets(); }
   if(name==='gps') renderPublicGps();
   if(name==='payouts') renderPayoutCalculator();
@@ -6316,6 +6387,84 @@ async function renderLivewellList(){
     const badge = isBest ? '<span class="badge">Currently counts</span>' : '';
     return '<div class="catchcard'+(isBest?' best':'')+'">'+img+'<div class="info"><div class="top"><span class="len">'+lengthHtml(c.length)+'</span>'+statusHtml(c.status)+'</div>'+badge+'</div></div>';
   }).join('');
+  hydratePhotos(el);
+}
+
+// ---- the fish gallery ----
+// Every approved fish in the event, the angler's own first.
+//
+// PRIVACY IS THE SHAPE OF THIS FUNCTION. It returns a PROJECTION rather than
+// the catch records, so the real name on a catch (c.anglerName) cannot reach
+// the gallery even by accident - there is nothing to leak because the field is
+// not in the object. The public identity is the handle, here as everywhere.
+//
+// Approved only. A pending fish may still be rejected, and publishing a
+// rejected one hangs a director's judgement on the wall where the angler has
+// to argue with it. Your own pending fish are on the livewell and manage
+// screens, which is where deciding about them belongs.
+function galleryOrder(catches, anglers, myIds){
+  const mine = new Set(myIds || []);
+  const byId = {};
+  (anglers || []).forEach(a=>{ byId[a.id] = a; });
+  return (catches || [])
+    .filter(c=>{
+      if(!c || c.status !== 'approved') return false;
+      // Same rule as the leaderboard: a disqualified entry is off the board, and
+      // a gallery still showing their fish asks a question nobody wants to
+      // answer at a prizegiving.
+      const a = byId[c.anglerId];
+      return !(a && a.disqualified);
+    })
+    .map(c=> ({
+      id: c.id,
+      handle: displayHandle(byId[c.anglerId]),
+      species: c.species,
+      length: c.length,
+      division: c.division,
+      timestamp: c.timestamp,
+      mine: mine.has(c.anglerId)
+    }))
+    .sort((a, b)=>
+      // Yours first - the whole point of the ordering.
+      (Number(b.mine) - Number(a.mine))
+      // Then newest, so a fish you just landed is at the top of your own block.
+      || (galleryTime(b) - galleryTime(a))
+      || String(a.id).localeCompare(String(b.id)));
+}
+
+// catchTime() pushes an undated fish to the BACK of an earliest-first sort by
+// making it enormous. Newest-first needs the opposite sentinel or that same
+// fish would leap to the FRONT of the gallery. Zero puts it at the end either
+// way, which is where a record missing its timestamp belongs.
+function galleryTime(c){
+  const n = Number(c && c.timestamp);
+  return isFinite(n) ? n : 0;
+}
+
+function galleryTileHtml(row){
+  // The photo lands in .photo-target; the marker and caption sit over it and
+  // are not touched when the image arrives.
+  return '<button type="button" class="gallery-tile' + (row.mine ? ' mine' : '') +
+    '" data-photo-for="' + escapeHtml(row.id) + '">' +
+    '<span class="photo-target"><span class="noimg">&hellip;</span></span>' +
+    (row.mine ? '<span class="gallery-mine-tag">YOURS</span>' : '') +
+    '<span class="gallery-cap">' +
+      '<span class="who">' + escapeHtml(row.handle) + '</span>' +
+      '<span class="len">' + escapeHtml(Number(row.length).toFixed(2)) + '&quot;</span>' +
+    '</span></button>';
+}
+
+async function renderGallery(){
+  const anglers = await loadAnglers();
+  const rows = galleryOrder(await loadCatches(), anglers, myAnglerIds(anglers));
+  const el = document.getElementById('gallery-grid');
+  if(!el) return;
+  const mineCount = rows.filter(r=> r.mine).length;
+  setText('gallery-note', rows.length === 0
+    ? 'Nothing approved yet. Every fish the director approves shows up here.'
+    : rows.length + ' approved fish' +
+      (mineCount > 0 ? ', yours first' : '') + '. Tap one to see it full size.');
+  el.innerHTML = rows.length === 0 ? '' : rows.map(galleryTileHtml).join('');
   hydratePhotos(el);
 }
 
@@ -9788,7 +9937,18 @@ async function reviewCatch(id, action){
   return true;
 }
 
+// WHOSE PANEL THIS IS. Two very different screens open it: the director's
+// review lists, and the public gallery. They are NOT allowed to show the same
+// thing. Real names, the boundary verdict and the clock-skew flags are the
+// director's business - the gallery is the whole field, and there an angler is
+// their handle and nothing else. The mode is what keeps those apart, so it is
+// read on every paint rather than assumed.
+const LIGHTBOX_DIRECTOR = 'director';
+const LIGHTBOX_PUBLIC = 'public';
 let lightboxCatchId = null;
+let lightboxMode = LIGHTBOX_PUBLIC;
+// The ids the arrows walk, in the order the screen behind is showing them.
+let lightboxSequence = [];
 
 function closeLightbox(){
   const box = document.getElementById('photo-lightbox');
@@ -9796,27 +9956,52 @@ function closeLightbox(){
   box.hidden = true;
   box.classList.remove('zoomed');
   lightboxCatchId = null;
+  lightboxSequence = [];
   // Drop the image so a big photo is not held in memory behind a closed panel.
   const img = document.getElementById('lightbox-img');
   if(img) img.removeAttribute('src');
 }
 
-async function openLightbox(catchId){
+// Where the current fish sits in the sequence, or -1 when it was opened alone.
+function lightboxIndex(){
+  return lightboxSequence.indexOf(lightboxCatchId);
+}
+function lightboxStep(delta){
+  const i = lightboxIndex();
+  if(i === -1) return;
+  const next = lightboxSequence[i + delta];
+  if(next) openLightbox(next, { mode: lightboxMode, sequence: lightboxSequence });
+}
+
+async function openLightbox(catchId, opts){
   const box = document.getElementById('photo-lightbox');
   if(!box) return;
+  const o = opts || {};
   const c = (await loadCatches()).find(x=> x.id === catchId);
   if(!c) return;
   lightboxCatchId = catchId;
+  lightboxMode = o.mode === LIGHTBOX_DIRECTOR ? LIGHTBOX_DIRECTOR : LIGHTBOX_PUBLIC;
+  lightboxSequence = Array.isArray(o.sequence) ? o.sequence.slice() : [];
   box.classList.remove('zoomed');
   box.hidden = false;
 
-  setText('lightbox-title', c.anglerName + ' · ' + Number(c.length).toFixed(2) + '"');
+  const director = lightboxMode === LIGHTBOX_DIRECTOR;
+  // The line where the two modes differ most: a real name, or a handle.
+  setText('lightbox-title',
+    (director ? c.anglerName : displayHandle(anglerById(c.anglerId))) +
+    ' · ' + Number(c.length).toFixed(2) + '"');
 
   const meta = document.getElementById('lightbox-meta');
   if(meta){
-    meta.innerHTML = escapeHtml(c.species) + ' &middot; ' +
-      (c.division === 'team' ? 'Team' : 'Solo') + ' &middot; ' + statusHtml(c.status) +
-      '<div style="margin-top:6px;">' + boundaryBadgeHtml(c) + captureBadgeHtml(c) + '</div>';
+    const head = escapeHtml(c.species) + ' &middot; ' +
+      (c.division === 'team' ? 'Team' : 'Solo');
+    meta.innerHTML = director
+      ? head + ' &middot; ' + statusHtml(c.status) +
+        '<div style="margin-top:6px;">' + boundaryBadgeHtml(c) + captureBadgeHtml(c) + '</div>'
+      // Publicly: what it is, and when it was caught. The boundary verdict and
+      // the capture flags are review notes on a fish already judged, and
+      // publishing them would reopen a decision that has been made.
+      : head + (c.timestamp ? ' &middot; ' + escapeHtml(chatWhen(c.timestamp)) : '');
   }
 
   const img = document.getElementById('lightbox-img');
@@ -9837,9 +10022,22 @@ async function openLightbox(catchId){
     });
   }
 
+  // Arrows only when there is a sequence to walk, and only towards a fish that
+  // is actually there - a dead arrow at the end of a gallery reads as broken.
+  const i = lightboxIndex();
+  const nav = document.getElementById('lightbox-nav');
+  if(nav){
+    nav.hidden = i === -1 || lightboxSequence.length < 2;
+    const prev = document.getElementById('lightbox-prev');
+    const next = document.getElementById('lightbox-next');
+    if(prev) prev.disabled = i <= 0;
+    if(next) next.disabled = i === -1 || i >= lightboxSequence.length - 1;
+    setText('lightbox-count', i === -1 ? '' : (i + 1) + ' of ' + lightboxSequence.length);
+  }
+
   const acts = document.getElementById('lightbox-actions');
   if(acts){
-    acts.innerHTML = c.status === 'pending'
+    acts.innerHTML = (director && c.status === 'pending')
       ? '<button class="small" data-lb-act="approve">Approve</button>' +
         '<button class="small danger" data-lb-act="reject">Reject</button>'
       : '<button class="secondary" data-lb-act="close">Done</button>';
@@ -9857,19 +10055,26 @@ function setLightboxMissing(missing){
   }
 }
 
-// Bound once: both hosts are in the static markup, so delegation survives every
-// repaint of the lists inside them.
-['admin-pending','admin-all'].forEach(hostId=>{
-  const host = document.getElementById(hostId);
+// Bound once: every host below is in the static markup, so delegation survives
+// each repaint of the lists inside them. The mode travels with the host, which
+// is what stops a public grid ever opening a director's view of a fish.
+[['admin-pending', LIGHTBOX_DIRECTOR],
+ ['admin-all', LIGHTBOX_DIRECTOR],
+ ['gallery-grid', LIGHTBOX_PUBLIC]].forEach(pair=>{
+  const host = document.getElementById(pair[0]);
   if(!host || !host.addEventListener) return;
   host.addEventListener('click', (e)=>{
-    const slot = e.target && e.target.closest && e.target.closest('.photoslot[data-photo-for]');
+    const slot = e.target && e.target.closest && e.target.closest('[data-photo-for]');
     if(!slot) return;
-    openLightbox(slot.dataset.photoFor);
+    const ids = [];
+    host.querySelectorAll('[data-photo-for]').forEach(el=> ids.push(el.dataset.photoFor));
+    openLightbox(slot.dataset.photoFor, { mode: pair[1], sequence: ids });
   });
 });
 
 bindEl('lightbox-close','click', closeLightbox);
+bindEl('lightbox-prev','click', ()=> lightboxStep(-1));
+bindEl('lightbox-next','click', ()=> lightboxStep(1));
 // Tap the photo to switch between fit-to-screen and natural size. Fitted, a
 // long fish is a couple of hundred pixels wide and the tape is unreadable.
 bindEl('lightbox-img','click', ()=>{
@@ -9881,6 +10086,9 @@ bindEl('lightbox-actions','click', async (e)=>{
   if(!btn) return;
   const act = btn.dataset.lbAct;
   if(act === 'close'){ closeLightbox(); return; }
+  // A verdict is the director's alone. The buttons are only drawn in that mode,
+  // but the buttons are markup - so the mode is checked again before writing.
+  if(lightboxMode !== LIGHTBOX_DIRECTOR || !adminUnlocked){ closeLightbox(); return; }
   const id = lightboxCatchId;
   if(!id) return;
   btn.disabled = true;
@@ -9890,7 +10098,10 @@ bindEl('lightbox-actions','click', async (e)=>{
 });
 if(typeof document !== 'undefined' && document.addEventListener){
   document.addEventListener('keydown', (e)=>{
-    if(e.key === 'Escape' && lightboxCatchId) closeLightbox();
+    if(!lightboxCatchId) return;
+    if(e.key === 'Escape') closeLightbox();
+    else if(e.key === 'ArrowLeft') lightboxStep(-1);
+    else if(e.key === 'ArrowRight') lightboxStep(1);
   });
 }
 

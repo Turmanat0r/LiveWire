@@ -109,6 +109,7 @@ globalThis.__t = {
   loadAwardsBudget, saveAwardsBudget, awardsBudgetMap,
   standingsFor, byLengthThenEarliest, bySmallestThenEarliest, catchTime,
   canActFor, reviewCatch, showAdminTool,
+  galleryOrder, galleryTileHtml, galleryTime, openLightbox, closeLightbox,
   splitFor, PAYOUT_SHARES, eventDateRangeText, eventRowCounts, eventDayText,
   getMyAnglerId, setMyAnglerId, onRows, readOutbox
 };
@@ -133,6 +134,8 @@ function fakeEl() {
     addEventListener(){}, removeEventListener(){}, appendChild(){}, focus(){},
     querySelectorAll(){ return []; }, querySelector(){ return null; },
     closest(){ return fakeEl(); }, setAttribute(){}, getAttribute(){ return null; },
+    // Real code clears an <img> src this way to let a big photo out of memory.
+    removeAttribute(name){ delete this[name]; },
     getContext(){ return null; }, isConnected: true
   };
   return el;
@@ -1392,6 +1395,173 @@ section('29e. the director panel opens on the fish');
   ['gps','payout','contestants','event','positions','report','review'].forEach(tool=>{
     check('the ' + tool + ' tool has a card', !!elById.get('admin-tool-' + tool), true);
   });
+}
+
+// ============================================================
+section('29f. the fish gallery');
+// A wall of every approved fish, the viewer's own first.
+{
+  const gAnglers = [
+    { id: 'g1', name: 'Ann Realname', handle: 'Salty Perch', tournamentId: 'MK-1' },
+    { id: 'g2', name: 'Bob Realname', handle: 'Rogue Pike', tournamentId: 'MK-2' },
+    { id: 'g3', name: 'Cy Realname', handle: 'Cheat', tournamentId: 'MK-3', disqualified: true }
+  ];
+  const gc = (id, who, status, ts, len) => ({ id, anglerId: who, anglerName:
+    (gAnglers.find(a => a.id === who) || {}).name, species: 'Walleye',
+    length: len || 20, division: 'solo', status, timestamp: ts });
+  const gCatches = [
+    gc('c-old-mine', 'g1', 'approved', 1000),
+    gc('c-new-mine', 'g1', 'approved', 5000),
+    gc('c-pending',  'g1', 'pending',  6000),
+    gc('c-rejected', 'g1', 'rejected', 7000),
+    gc('c-new-them', 'g2', 'approved', 9000),
+    gc('c-old-them', 'g2', 'approved', 2000),
+    gc('c-dq',       'g3', 'approved', 9500)
+  ];
+  const ids = (rows) => rows.map(r => r.id);
+
+  const gal = t.galleryOrder(gCatches, gAnglers, ['g1']);
+  check('your own fish come first, newest first within them',
+    ids(gal).slice(0, 2), ['c-new-mine', 'c-old-mine']);
+  check('then everyone else, also newest first',
+    ids(gal).slice(2), ['c-new-them', 'c-old-them']);
+  check('a pending fish is not on the wall', ids(gal).indexOf('c-pending'), -1);
+  check('nor is a rejected one', ids(gal).indexOf('c-rejected'), -1);
+  check('nor a disqualified angler\u2019s, same as the leaderboard',
+    ids(gal).indexOf('c-dq'), -1);
+  check('your own are flagged', gal.filter(r => r.mine).map(r => r.id),
+    ['c-new-mine', 'c-old-mine']);
+
+  // THE PRIVACY PROPERTY. The gallery is public, so the function returns a
+  // projection rather than the catch records - the real name is not in the
+  // object, so it cannot leak from one however the tile is later rendered.
+  check('no real name survives into the gallery',
+    /Realname/.test(JSON.stringify(gal)), false);
+  check('the angler is their handle', gal[0].handle, 'Salty Perch');
+  check('and the tile prints the handle', /Salty Perch/.test(t.galleryTileHtml(gal[0])), true);
+  check('never the real name', /Realname/.test(t.galleryTileHtml(gal[0])), false);
+  check('the projection carries only what the wall needs',
+    Object.keys(gal[0]).sort().join(','),
+    'division,handle,id,length,mine,species,timestamp');
+
+  // Determinism, same as every other ordering in the app.
+  check('the row order of the input cannot change the wall',
+    ids(t.galleryOrder(gCatches.slice().reverse(), gAnglers, ['g1'])), ids(gal));
+  check('two fish at the same instant still get a fixed order',
+    ids(t.galleryOrder([gc('z2','g2','approved',3000), gc('z1','g2','approved',3000)],
+      gAnglers, [])), ['z1', 'z2']);
+
+  // catchTime() makes an undated fish enormous so it sorts LAST earliest-first.
+  // Newest-first needs the opposite sentinel or that same fish leaps to the
+  // front of the gallery, above everything real.
+  check('an undated fish sinks to the bottom rather than topping the wall',
+    ids(t.galleryOrder([gc('dated','g2','approved',100), gc('undated','g2','approved',undefined)],
+      gAnglers, [])), ['dated', 'undated']);
+  check('galleryTime reads a real timestamp', t.galleryTime({ timestamp: 42 }), 42);
+  check('and floors a missing one rather than maximising it',
+    t.galleryTime({}), 0);
+  check('a junk timestamp is floored too', t.galleryTime({ timestamp: 'soon' }), 0);
+
+  check('nobody signed in still sees the whole wall',
+    ids(t.galleryOrder(gCatches, gAnglers, [])).length, 4);
+  check('and none of it is marked as theirs',
+    t.galleryOrder(gCatches, gAnglers, []).some(r => r.mine), false);
+  check('an empty event is an empty wall', t.galleryOrder([], gAnglers, ['g1']), []);
+  check('and missing arguments do not throw', t.galleryOrder(null, null, null), []);
+  // A catch whose angler has left the roster still has a photo worth showing,
+  // but it must not fall back to anything identifying.
+  check('an unknown angler reads as unknown, not as a name',
+    t.galleryOrder([gc('orphan','gone','approved',1)], gAnglers, [])[0].handle,
+    'Unknown angler');
+}
+
+// ============================================================
+section('29g. the pop-out shows a different thing to each side');
+// One panel, two audiences. The director's review lists open it on a real name
+// with the boundary verdict and the clock-skew flags; the gallery opens the
+// same fish for the whole field, where the angler is a handle and the review
+// notes are nobody else's business. Getting that backwards publishes either a
+// real name or a decision that has already been made.
+{
+  await setEvent(E1);
+  const lbAnglers = [{ id:'lb1', name:'Dana Realname', handle:'Quiet Heron',
+                       tournamentId:'MK-9' }];
+  const lbCatch = { id:'lbc1', eventId:E1, anglerId:'lb1', anglerName:'Dana Realname',
+    species:'Walleye', length:23.5, division:'solo', status:'approved', timestamp:4000,
+    location:{ withinBounds:false, outsideMiles:0.4 },
+    capture:{ at: 1000, source:'camera', clockOffsetMs: 0 } };
+  seed(lbAnglers, [lbCatch], [], {});
+
+  await t.openLightbox('lbc1', { mode:'public' });
+  const pubTitle = elById.get('lightbox-title').textContent;
+  const pubMeta = elById.get('lightbox-meta').innerHTML;
+  check('the public pop-out names the handle', /Quiet Heron/.test(pubTitle), true);
+  check('and never the real name', /Realname/.test(pubTitle), false);
+  check('nor does the meta line', /Realname/.test(pubMeta), false);
+  check('it still says what the fish was', /Walleye/.test(pubMeta), true);
+  check('the length is on it', /23\.50/.test(pubTitle), true);
+  // The boundary verdict is a review note on a fish already judged. Publishing
+  // it reopens a decision in front of the whole field.
+  check('the boundary verdict stays with the director',
+    /outside the line/.test(pubMeta), false);
+  check('and so do the capture flags', /Logged/.test(pubMeta), false);
+  // A PENDING fish, opened publicly. The gallery only ever lists approved ones,
+  // so this is the mode guard being tested rather than the listing rule - if
+  // the buttons keyed off status alone, any viewer could rule on a fish.
+  seed(lbAnglers, [Object.assign({}, lbCatch, { id:'lbp', status:'pending' })], [], {});
+  await t.openLightbox('lbp', { mode:'public' });
+  check('a viewer is offered no verdict buttons, even on a pending fish',
+    /data-lb-act="approve"/.test(elById.get('lightbox-actions').innerHTML), false);
+  check('they get a way out instead',
+    /data-lb-act="close"/.test(elById.get('lightbox-actions').innerHTML), true);
+  await t.openLightbox('lbp', { mode:'director' });
+  check('the director does get them',
+    /data-lb-act="approve"/.test(elById.get('lightbox-actions').innerHTML), true);
+  seed(lbAnglers, [lbCatch], [], {});
+
+  await t.openLightbox('lbc1', { mode:'director' });
+  const dirTitle = elById.get('lightbox-title').textContent;
+  check('the director sees the real name', /Dana Realname/.test(dirTitle), true);
+  check('and the boundary verdict is back',
+    /outside the line/.test(elById.get('lightbox-meta').innerHTML), true);
+
+  // An unknown mode must fall to the SAFE side. A typo in a call site should
+  // cost a director some information, never publish a real name.
+  await t.openLightbox('lbc1', { mode:'wharrgarbl' });
+  check('an unrecognised mode is treated as public',
+    /Realname/.test(elById.get('lightbox-title').textContent), false);
+  await t.openLightbox('lbc1', {});
+  check('and so is no mode at all',
+    /Realname/.test(elById.get('lightbox-title').textContent), false);
+  await t.openLightbox('lbc1');
+  check('and no options object at all',
+    /Realname/.test(elById.get('lightbox-title').textContent), false);
+
+  // Walking a gallery: the arrows only appear when there is somewhere to go.
+  seed(lbAnglers, [lbCatch,
+    Object.assign({}, lbCatch, { id:'lbc2', timestamp:5000 }),
+    Object.assign({}, lbCatch, { id:'lbc3', timestamp:6000 })], [], {});
+  await t.openLightbox('lbc2', { mode:'public', sequence:['lbc1','lbc2','lbc3'] });
+  check('the position in the wall is shown',
+    elById.get('lightbox-count').textContent, '2 of 3');
+  check('and the arrows are offered', elById.get('lightbox-nav').hidden, false);
+  check('back is available in the middle', elById.get('lightbox-prev').disabled, false);
+  check('so is forward', elById.get('lightbox-next').disabled, false);
+
+  await t.openLightbox('lbc1', { mode:'public', sequence:['lbc1','lbc2','lbc3'] });
+  check('there is nothing before the first', elById.get('lightbox-prev').disabled, true);
+  await t.openLightbox('lbc3', { mode:'public', sequence:['lbc1','lbc2','lbc3'] });
+  check('nor anything after the last', elById.get('lightbox-next').disabled, true);
+
+  await t.openLightbox('lbc1', { mode:'public' });
+  check('a fish opened on its own has no arrows',
+    elById.get('lightbox-nav').hidden, true);
+
+  elById.get('lightbox-img').src = 'blob:something-big';
+  t.closeLightbox();
+  check('closing drops the image so a big photo is not held in memory',
+    elById.get('lightbox-img').src, undefined);
+  check('and forgets which fish was open', elById.get('photo-lightbox').hidden, true);
 }
 
 // ============================================================

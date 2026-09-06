@@ -374,6 +374,40 @@ for (const m of src.matchAll(/<(script|link)\b[^>]*?(?:src|href)="(https:\/\/[^"
   }
 }
 
+// ------------------------------------------------------------- the public wall
+// The gallery is the whole field looking at each other's fish, so the angler
+// there is a handle. galleryOrder() enforces that by returning a PROJECTION
+// rather than the catch records - the real name is not in the object, so there
+// is nothing to leak. These keep the rest of the path honest, in the places a
+// test cannot reach: a wiring table and two render functions.
+const galleryFns = ['galleryOrder', 'galleryTileHtml', 'renderGallery'];
+for (const fn of galleryFns) {
+  const body = (script.match(new RegExp(
+    '(?:async )?function ' + fn + '\\([^)]*\\)\\{([\\s\\S]*?)\\n\\}')) || ['', ''])[1];
+  if (!body) {
+    note('gallery', `cannot find ${fn} - the public wall cannot be checked`);
+  } else if (/anglerName/.test(body)) {
+    note('gallery', `${fn} mentions anglerName - the gallery is public and the ` +
+      `angler there is their handle`);
+  }
+}
+// The mode travels with the host in the lightbox wiring table. Pairing the
+// gallery with the director's mode would publish real names to the field.
+const wiring = (script.match(/\[\['admin-pending'[\s\S]*?\]\]\.forEach/) || [''])[0];
+if (!wiring) {
+  note('gallery', 'cannot find the lightbox wiring table - the gallery mode is unchecked');
+} else if (!/\['gallery-grid',\s*LIGHTBOX_PUBLIC\]/.test(wiring)) {
+  note('gallery', 'the gallery grid is not wired to LIGHTBOX_PUBLIC, so the wall ' +
+    'would open fish with a real name on them');
+}
+// The gallery tile carries a caption and a marker over its photo. Painting the
+// image into the tile itself rather than into .photo-target wipes both.
+const hydrate = (script.match(/function hydratePhotos\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+if (hydrate && !hydrate.includes('.photo-target')) {
+  note('gallery', 'hydratePhotos no longer paints into .photo-target, so a photo ' +
+    'arriving wipes the caption off every gallery tile');
+}
+
 // ------------------------------------------------------------ acting for others
 // Two write paths decide whether THIS device may change somebody else's
 // record. Both are inside render functions, so there is no unit test that can
