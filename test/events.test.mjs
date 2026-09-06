@@ -92,6 +92,9 @@ globalThis.__t = {
   reportClockText, clockToMinutes, reportDayRow, buildReportModel,
   stripEntities, sizeColumns, sheetValue, resetReportForm, SHEET_BLANK, pickedResidency,
   reportWithDefaults, fillReportInputs,
+  PAGE_WIDTH_PX, PAGE_HEIGHT_PX, spillText, reportSpillPages,
+  setReportPageView, scaleReportPages,
+  get reportPageView(){ return reportPageView; },
   renderFwpReport, renderReportSheet, reportSheetText,
   get appDocument(){ return document; },
   SIZE_SMALL_MIN, SIZE_SMALL_MAX, SIZE_LARGE_MIN, SIZE_LARGE_MAX,
@@ -2584,6 +2587,84 @@ await t.renderFwpReport();
 const untouched = t.appDocument.getElementById('report-sheet').innerHTML;
 check('so an untouched sponsor prints rather than reading as unfilled',
   untouched.indexOf('Turmanator') > -1, true);
+
+// ---- page view ----
+// The question it answers is "how many sheets of paper is this", so that is
+// what is checked: the arithmetic, the wording, and that the scale never
+// flatters the paper by showing the form larger than it prints.
+check('the page is US Letter at the CSS inch', [t.PAGE_WIDTH_PX, t.PAGE_HEIGHT_PX], [816, 1056]);
+
+check('nothing over means nothing said', t.spillText([]), '');
+check('one page over is counted in sheets, not pixels',
+  t.spillText([1]).indexOf('3 sheets rather than 2') > -1, true);
+check('and named in the singular', t.spillText([1]).indexOf('Page 1 holds') > -1, true);
+check('two pages over come out as four sheets',
+  t.spillText([1, 2]).indexOf('4 sheets rather than 2') > -1, true);
+check('and read as a list', t.spillText([1, 2]).indexOf('Pages 1 and 2 hold') > -1, true);
+check('three read as a list too', t.spillText([1, 2, 3]).indexOf('Pages 1, 2 and 3 hold') > -1, true);
+// The footers being wrong is the part that actually embarrasses a filing, so
+// it is the part the message has to mention.
+check('the warning says the footers end up wrong',
+  t.spillText([1]).indexOf('footers end up on the wrong ones') > -1, true);
+
+// The measurement itself needs a laid-out page, which there is no browser here
+// to provide - so the pages are handed in directly. scrollHeight is the only
+// thing the real code reads off them.
+const pv = t.appDocument.getElementById('report-sheet');
+// Each fake page keeps its own class list rather than logging calls, so the
+// mark coming OFF is as visible as it going on.
+const fakePage = (h) => {
+  const classes = new Set();
+  return {
+    scrollHeight: h, classes,
+    classList: { add: (c) => classes.add(c), remove: (c) => classes.delete(c) }
+  };
+};
+const realQuery = pv.querySelectorAll;
+const shortPage = fakePage(900), tallPage = fakePage(1200);
+pv.querySelectorAll = () => [shortPage, tallPage];
+
+t.setReportPageView(false);
+check('with the page view off nothing is measured', t.reportSpillPages(), []);
+
+t.setReportPageView(true);
+check('the page view is on', t.reportPageView, true);
+check('a page taller than the sheet is the one flagged', t.reportSpillPages(), [2]);
+check('and it is marked on the page itself', tallPage.classes.has('overflowing'), true);
+check('while the one that fits is left alone', shortPage.classes.has('overflowing'), false);
+
+// The mark has to come off again. Left on, a page trimmed back to fit keeps its
+// red end-of-sheet line for the rest of the session and the director stops
+// believing any of them.
+tallPage.scrollHeight = 900;
+check('trimming it back clears the spill', t.reportSpillPages(), []);
+check('and takes the mark off the page', tallPage.classes.has('overflowing'), false);
+tallPage.scrollHeight = 1200;
+
+// Exactly a sheet is a fit. Off-by-one here would warn on every clean form.
+pv.querySelectorAll = () => [fakePage(t.PAGE_HEIGHT_PX)];
+check('a page that exactly fills the sheet is not a spill', t.reportSpillPages(), []);
+// A scale transform leaves sub-pixel rounding behind, hence the slack.
+pv.querySelectorAll = () => [fakePage(t.PAGE_HEIGHT_PX + 2)];
+check('and neither is two pixels of rounding', t.reportSpillPages(), []);
+pv.querySelectorAll = () => [fakePage(t.PAGE_HEIGHT_PX + 3)];
+check('three is', t.reportSpillPages(), [1]);
+
+// Scaling down to a narrow screen is the whole trick; scaling UP would show
+// the form bigger than the paper and mislead about what fits.
+pv.style.transform = '';
+t.appDocument.getElementById('report-frame').clientWidth = 408;   // half a page
+t.scaleReportPages();
+check('a narrow screen halves the sheet', pv.style.transform, 'scale(0.5)');
+t.appDocument.getElementById('report-frame').clientWidth = 2000;  // a big monitor
+t.scaleReportPages();
+check('a wide one never blows it up past life size', pv.style.transform, 'scale(1)');
+
+t.setReportPageView(false);
+check('turning it off drops the transform entirely', pv.style.transform, '');
+check('and the frame stops carrying a height',
+  t.appDocument.getElementById('report-frame').style.height, '');
+pv.querySelectorAll = realQuery;
 
 // ---- the render path ----
 // There is no browser here, so this cannot say the sheet LOOKS right. It can

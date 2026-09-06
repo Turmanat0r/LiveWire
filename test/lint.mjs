@@ -232,6 +232,46 @@ for (const rule of style.split('}')) {
   }
 }
 
+// --------------------------------------------------- print vs the page view
+// The page view exists to answer "how many sheets of paper is this", and it can
+// only answer it while it measures the form at the same size the printer does.
+// Those sizes live once, as --fwp-* custom properties on #report-sheet, and the
+// print block deliberately sets none of them.
+//
+// Redefining one inside @media print is the failure this catches: the printed
+// copy changes, the page view does not, and it goes on cheerfully reporting a
+// fit for a form that now spills. Nothing visible breaks, so nothing else would
+// notice.
+const printBlock = (() => {
+  const at = style.indexOf('@media print{');
+  if (at === -1) return '';
+  // Brace-matched rather than regex'd: the block has nested rules in it.
+  let depth = 0;
+  for (let i = style.indexOf('{', at); i < style.length; i++) {
+    if (style[i] === '{') depth++;
+    else if (style[i] === '}' && --depth === 0) return style.slice(at, i + 1);
+  }
+  return style.slice(at);
+})();
+
+if (style.includes('@media print{') && !printBlock) {
+  note('css', 'the @media print block never closes');
+}
+for (const m of printBlock.matchAll(/(--fwp-[\w-]+)\s*:/g)) {
+  note('print-drift',
+    `@media print redefines ${m[1]} — the page view reads the base value, so the ` +
+    `two would disagree about what fits on a page`);
+}
+// And the base has to actually be there to be read.
+const FWP_TOKENS = ['--fwp-base', '--fwp-grid', '--fwp-size', '--fwp-title',
+                    '--fwp-head', '--fwp-foot', '--fwp-cell-pad', '--fwp-size-pad'];
+const sheetBase = (style.match(/#report-sheet\{([^}]*)\}/) || ['', ''])[1];
+for (const token of FWP_TOKENS) {
+  if (!sheetBase.includes(token + ':')) {
+    note('css', `#report-sheet does not set ${token}, so the printed form has no size for it`);
+  }
+}
+
 // ------------------------------------------------------- serverless functions
 // A relative endpoint the page calls has to exist as a file in api/, or the
 // deploy goes out and the feature 404s with nothing in the console to explain

@@ -172,23 +172,50 @@
   /* ---- FWP contest report ----
      The sheet is a rebuild of the state's paper form, not a styled summary of
      it, so it deliberately drops out of the app's palette: black on white,
-     Arial, ruled boxes. It is read on a phone and then printed, and the
-     printed copy is the one that matters. */
+     Arial, ruled boxes.
+
+     PAPER IS THE BASE HERE, and the compact screen sizes below are the opt-out.
+     That is deliberate: the printed copy and the on-screen page view then share
+     one definition of what the form measures, and cannot drift apart. If they
+     drifted, the page view would stop predicting where the pages break, which
+     is the only reason it exists. */
   #report-sheet{
+    --fwp-base:10pt;
+    --fwp-grid:9pt;
+    --fwp-size:6.5pt;
+    --fwp-title:14pt;
+    --fwp-head:9pt;
+    --fwp-foot:7.5pt;
+    --fwp-cell-pad:3px 4px;
+    --fwp-size-pad:2px 1px;
     background:#fff;color:#000;padding:14px;
-    font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.35;
+    font-family:Arial,Helvetica,sans-serif;font-size:var(--fwp-base);line-height:1.35;
     border:1px solid var(--line);
+  }
+  /* Readable on a phone. Only on screen, and only when the page view is off -
+     the page view wants the paper's own measurements. */
+  @media screen{
+    #report-sheet:not(.pageview){
+      --fwp-base:12px;
+      --fwp-grid:12px;
+      --fwp-size:11px;
+      --fwp-title:17px;
+      --fwp-head:12px;
+      --fwp-foot:10px;
+      --fwp-cell-pad:5px 6px;
+      --fwp-size-pad:3px 2px;
+    }
   }
   .fwp-page + .fwp-page{margin-top:24px;padding-top:20px;border-top:2px dashed var(--line);}
   .fwp-region{text-align:right;font-weight:700;margin-bottom:8px;}
   .fwp-title{
-    text-align:center;font-size:17px;font-weight:700;text-decoration:underline;
+    text-align:center;font-size:var(--fwp-title);font-weight:700;text-decoration:underline;
     margin:0 0 14px;color:#000;
   }
   .fwp-return{font-weight:700;margin:0 0 8px;}
   .fwp-address{margin:0 0 16px 30px;line-height:1.5;}
   .fwp-head{
-    text-align:center;font-size:12px;font-weight:700;text-decoration:underline;
+    text-align:center;font-size:var(--fwp-head);font-weight:700;text-decoration:underline;
     color:#000;margin:18px 0 6px;border:none;padding:0;letter-spacing:0;text-transform:none;
   }
   .fwp-head-note{font-weight:700;}
@@ -196,9 +223,12 @@
   .fwp-sub.em{font-style:italic;}
   /* The label/value grids at the head of page 1. Fixed layout so a long
      waterbody name wraps inside its box instead of widening the column. */
-  .fwp-grid,.fwp-table{border-collapse:collapse;width:100%;margin-bottom:14px;table-layout:fixed;}
+  .fwp-grid,.fwp-table{
+    border-collapse:collapse;width:100%;margin-bottom:14px;
+    table-layout:fixed;font-size:var(--fwp-grid);
+  }
   .fwp-grid th,.fwp-grid td,.fwp-table th,.fwp-table td{
-    border:1px solid #000;padding:5px 6px;vertical-align:top;
+    border:1px solid #000;padding:var(--fwp-cell-pad);vertical-align:top;
     overflow-wrap:anywhere;word-break:normal;
   }
   .fwp-grid th{background:#D9D9D9;text-align:center;font-weight:700;}
@@ -209,8 +239,8 @@
   /* Twenty inch columns will never fit a phone. Scrolling the table beats
      scrolling the page sideways, which breaks the fixed nav. */
   .rscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
-  .fwp-size{table-layout:auto;font-size:11px;}
-  .fwp-size th,.fwp-size td{padding:3px 2px;white-space:nowrap;}
+  .fwp-size{table-layout:auto;font-size:var(--fwp-size);}
+  .fwp-size th,.fwp-size td{padding:var(--fwp-size-pad);white-space:nowrap;}
   .fwp-species-col{width:130px;text-align:center;}
   /* Page 2's fill-in-the-blank lines. */
   .fwp-line{margin:0 0 12px;}
@@ -228,27 +258,41 @@
   .fwp-box-area{border:1px solid #000;min-height:70px;padding:7px 8px;margin-bottom:14px;}
   .fwp-foot{
     display:flex;justify-content:space-between;gap:12px;
-    font-size:10px;font-weight:700;margin-top:16px;
+    font-size:var(--fwp-foot);font-weight:700;margin-top:16px;
   }
-  /* Named on screen, empty on paper - see fwpValue(). A printed blank and a
-     printed "nothing" are the same thing, so the words exist to be read now. */
-  .rblank{color:#B00;font-style:italic;font-weight:400;}
-  .rnote{color:var(--steel);font-size:12px;line-height:1.5;margin:0 0 6px;}
-  #report-notes{margin-bottom:12px;}
-  .rwarn{
-    border-left:3px solid var(--gold);background:var(--paper-2);
+
+  /* ---- page view ----
+     US Letter at 96dpi, with the print stylesheet's own margins and type, laid
+     out full size and then scaled down to the screen by scaleReportPages().
+     Scaling rather than reflowing is the point: a reflowed preview would break
+     its pages somewhere the printer never will.
+
+     min-height, not height. A printer does not clip an over-long page, it
+     spills it onto another sheet - so this shows the spill and marks where the
+     paper actually ends. */
+  #report-frame{overflow:hidden;}
+  #report-sheet.pageview{
+    width:8.5in;border:none;padding:0;background:none;
+    transform-origin:top left;
+  }
+  #report-sheet.pageview .fwp-page{
+    width:8.5in;min-height:11in;padding:0.5in;
+    box-sizing:border-box;background:#fff;position:relative;
+    box-shadow:0 1px 8px rgba(0,0,0,.3);
+    margin:0 0 20px;border-top:none;
+  }
+  #report-sheet.pageview .fwp-page + .fwp-page{margin-top:0;padding-top:0.5in;border-top:none;}
+  #report-sheet.pageview .rscroll{overflow:visible;}
+  #report-sheet.pageview .fwp-page.overflowing::after{
+    content:'\2191 fits on the sheet   \2193 spills onto another one';
+    position:absolute;left:0;right:0;top:11in;
+    border-top:2px dashed var(--danger);
+    color:var(--danger);font-size:8pt;font-weight:700;padding:3px 0.5in 0;
+  }
+  .rspill{
+    border-left:3px solid var(--danger);background:#F1D6D0;color:#7A2018;
     padding:9px 11px;margin-bottom:8px;font-size:13px;line-height:1.5;
   }
-  .rdue{
-    border:1px solid var(--line);border-left:3px solid var(--deep);background:var(--white);
-    padding:9px 11px;margin-bottom:10px;font-size:13px;
-  }
-  .rdue.late{border-left-color:var(--danger);color:var(--danger);font-weight:600;}
-  .rfix{
-    display:flex;align-items:center;justify-content:space-between;gap:10px;
-    padding:7px 0;border-bottom:1px solid var(--line);
-  }
-  .rfix:last-child{border-bottom:none;}
   .rday{border:1px solid var(--line);padding:10px;margin-bottom:8px;background:var(--white);}
   .rday-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;}
   .rday-name{font-weight:600;}
@@ -1085,23 +1129,32 @@
     body *{visibility:hidden !important;}
     #report-sheet,#report-sheet *{visibility:visible !important;}
     #report-sheet{
-      position:absolute;left:0;top:0;width:100%;
-      border:none;padding:0;background:#fff;color:#000;font-size:10pt;
+      position:absolute;left:0;top:0;width:100% !important;
+      border:none;padding:0;background:#fff;color:#000;
+      /* The page view scales the sheet down to fit a screen. Paper has no such
+         constraint, and leaving the transform on would print it shrunk into
+         the top-left corner. */
+      transform:none !important;
     }
+    #report-frame{height:auto !important;overflow:visible !important;}
+    /* Type sizes are NOT set here. They live on #report-sheet as the base, so
+       this and the page view cannot disagree about what fits. */
     /* An unfilled box prints EMPTY, the way the paper form would have been
        handed over. The words are for the director, not for the state. */
     .rblank{display:none !important;}
+    /* Paper supplies its own edges and shadows. */
+    #report-sheet.pageview .fwp-page{
+      width:auto !important;min-height:0 !important;padding:0 !important;
+      box-shadow:none !important;margin:0 !important;
+    }
+    #report-sheet.pageview .fwp-page.overflowing::after{display:none !important;}
     /* Two pages, and the form says which is which. */
     .fwp-break{break-after:page;page-break-after:always;}
     .fwp-page + .fwp-page{margin-top:0;padding-top:0;border-top:none;}
     /* Nothing to scroll on paper, and a clipped table would lose columns. */
     .rscroll{overflow:visible !important;}
-    .fwp-size{font-size:6.5pt;}
-    .fwp-size th,.fwp-size td{padding:2px 1px;}
-    .fwp-grid,.fwp-table{font-size:9pt;}
     .fwp-head,.fwp-sub{break-after:avoid;page-break-after:avoid;}
     .fwp-grid,.fwp-table,.fwp-box-area{break-inside:avoid;page-break-inside:avoid;}
-    .fwp-title{font-size:14pt;}
     .tabbar{display:none !important;}
     @page{margin:12mm;}
   }
@@ -2038,13 +2091,21 @@
                one, so anything the app wants to say about the numbers is said
                here instead of on the page that gets posted. -->
           <div id="report-notes"></div>
-          <!-- The only thing on the page the print stylesheet leaves visible. -->
-          <div id="report-sheet"></div>
+          <div id="report-spill"></div>
+          <!-- The frame carries the height while the sheet inside it is scaled
+               down for the page view - a transform does not affect layout, so
+               without this the card would keep a screenful of blank space. -->
+          <div id="report-frame">
+            <!-- The only thing on the page the print stylesheet leaves visible. -->
+            <div id="report-sheet"></div>
+          </div>
 
           <div class="actions" style="margin-top:14px;">
-            <button class="secondary" type="button" id="report-print">Print the sheet</button>
+            <button class="secondary" type="button" id="report-print">Print / Save as PDF</button>
+            <button class="small" type="button" id="report-pageview">Page view</button>
             <button class="small" type="button" id="report-copy">Copy as text</button>
           </div>
+          <p class="hint" style="margin-top:8px;">Page view lays the sheet out on real US Letter pages at the size it prints, so you can see where each page ends before you commit paper to it. For a PDF, use Print and choose <em>Save as PDF</em> as the destination.</p>
           <p class="hint" id="report-copied" style="display:none;"></p>
         </div>
 
@@ -7581,6 +7642,10 @@ async function renderFwpReport(){
   renderReportResidency(model.residency);
   renderReportSheet(model);
   renderReportNotes(model);
+  // The sheet was just replaced, so its height and its page count are both
+  // new - neither the scale nor the spill warning survives a repaint.
+  scaleReportPages();
+  renderReportSpill();
 
   setText('report-tool-summary', model.warnings.length
     ? model.warnings.length + ' thing' + (model.warnings.length === 1 ? '' : 's') + ' to settle'
@@ -7629,6 +7694,108 @@ bindEl('admin-tool-report', 'click', async (e)=>{
     return;
   }
   await renderFwpReport();
+});
+
+// ---- page view ----
+// "Will this fit on the page" cannot be answered by the compact screen layout,
+// and answering it through the print dialog means opening a modal every time a
+// box changes. So the sheet can be laid out on real US Letter pages instead,
+// at the size it prints, and scaled down to whatever screen is reading it.
+//
+// Scaled, never reflowed. A preview that reflowed to the screen would break its
+// pages somewhere the printer never will, which is worse than no preview.
+
+// US Letter at the 96dpi CSS inch. The stylesheet says 8.5in/11in; these are
+// the same numbers in the units getBoundingClientRect answers in.
+const PAGE_WIDTH_PX = 816;
+const PAGE_HEIGHT_PX = 1056;
+
+let reportPageView = false;
+
+function scaleReportPages(){
+  const frame = document.getElementById('report-frame');
+  const sheet = document.getElementById('report-sheet');
+  if(!frame || !sheet) return;
+  if(!reportPageView){
+    sheet.style.transform = '';
+    frame.style.height = '';
+    return;
+  }
+  // Never scaled UP: a 30-inch monitor showing the form larger than life would
+  // be a worse guide to the paper than one showing it smaller.
+  const avail = frame.clientWidth || PAGE_WIDTH_PX;
+  const scale = Math.min(1, avail / PAGE_WIDTH_PX);
+  sheet.style.transform = 'scale(' + scale + ')';
+  // A transform does not affect layout, so the frame keeps the sheet's full
+  // unscaled height and leaves a screenful of empty card underneath it.
+  // Number() guarded: a height of NaN silently collapses the frame, and the
+  // sheet then overlaps whatever the card puts under it.
+  const tall = Number(sheet.scrollHeight) || 0;
+  frame.style.height = tall > 0 ? Math.ceil(tall * scale) + 'px' : '';
+}
+
+// Which pages hold more than a sheet of paper will take. A printer does not
+// clip the overflow, it carries it onto another sheet - so a two-page form
+// quietly comes out of the printer as three, with the "Page 1 of 2" footer
+// stranded in the middle. That is what this is looking for.
+function reportSpillPages(){
+  const sheet = document.getElementById('report-sheet');
+  if(!sheet || !sheet.querySelectorAll) return [];
+  const pages = sheet.querySelectorAll('.fwp-page');
+  const out = [];
+  for(let i = 0; i < pages.length; i++){
+    const page = pages[i];
+    if(page.classList) page.classList.remove('overflowing');
+    // Only meaningful in the page view: outside it the page has no fixed
+    // height to overflow, and every measurement would read as a fit.
+    if(!reportPageView) continue;
+    // 2px of slack for the sub-pixel rounding a scale transform leaves behind.
+    if(page.scrollHeight > PAGE_HEIGHT_PX + 2){
+      if(page.classList) page.classList.add('overflowing');
+      out.push(i + 1);
+    }
+  }
+  return out;
+}
+
+// Said in sheets of paper rather than pixels, because that is the decision:
+// how many pages am I about to put in an envelope.
+function spillText(pages){
+  if(pages.length === 0) return '';
+  const which = pages.length === 1
+    ? 'Page ' + pages[0] + ' holds'
+    : 'Pages ' + pages.slice(0, -1).join(', ') + ' and ' + pages[pages.length-1] + ' hold';
+  return which + ' more than one sheet of paper will take. Printing this gives you ' +
+    (2 + pages.length) + ' sheets rather than 2, and the page footers end up on the wrong ones. ' +
+    'The dashed line on each page marks where the paper actually ends.';
+}
+
+function renderReportSpill(){
+  const el = document.getElementById('report-spill');
+  if(!el) return;
+  const pages = reportSpillPages();
+  if(pages.length === 0){ el.innerHTML = ''; return; }
+  el.innerHTML = '<div class="rspill">' + escapeHtml(spillText(pages)) + '</div>';
+}
+
+function setReportPageView(on){
+  reportPageView = !!on;
+  const sheet = document.getElementById('report-sheet');
+  if(sheet && sheet.classList) sheet.classList.toggle('pageview', reportPageView);
+  setText('report-pageview', reportPageView ? 'Fit to screen' : 'Page view');
+  scaleReportPages();
+  renderReportSpill();
+}
+
+bindEl('report-pageview', 'click', ()=> setReportPageView(!reportPageView));
+
+// The scale is a function of how much room the card has, so it has to be
+// recomputed when that changes - a rotated phone otherwise leaves the sheet
+// either cropped or floating in a third of its frame.
+window.addEventListener('resize', ()=>{
+  if(!reportPageView) return;
+  scaleReportPages();
+  renderReportSpill();
 });
 
 bindEl('report-print', 'click', ()=>{ window.print(); });
