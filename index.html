@@ -6,8 +6,16 @@
 <title>LiveWire — Montana Kayak Walleye Open</title>
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/livewire-icon-192.png">
+<!-- Fonts used to load with @import at the top of the stylesheet, which is the
+     slowest way there is: the browser has to download and parse the CSS before
+     it even discovers the import, so the request starts late and blocks paint
+     while it finishes. As a <link> it is found in the first pass of the HTML
+     and fetched alongside everything else. preconnect opens the connection to
+     the font files' host early, which is a separate origin from the CSS. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&amp;family=Inter:wght@400;500;600&amp;family=Oswald:wght@500;600;700&amp;family=Space+Mono:wght@400;700&amp;display=swap">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&family=Oswald:wght@500;600;700&family=Space+Mono:wght@400;700&display=swap');
 
   :root{
     --ink:#16201F;
@@ -1159,12 +1167,28 @@
     @page{margin:12mm;}
   }
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- EVERY EXTERNAL FILE IS PINNED TO AN EXACT VERSION AND CHECKED AGAINST A HASH.
+     This used to read "@supabase/supabase-js@2", which is not a version - it is
+     "whatever the newest 2.x happens to be when the phone asks". Every release
+     upstream landed on every angler's phone, unread and untested, and the first
+     anyone would know of a bad one is on the water. The integrity hash is the
+     other half: it is the fingerprint of the exact file, so a CDN that serves
+     anything else gets refused rather than run.
+     To upgrade deliberately: bump the version, re-take the hash with
+       curl -s <url> | openssl dgst -sha384 -binary | openssl base64 -A
+     and test before an event, never during one. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.min.js"
+        integrity="sha384-EyR2P0dlmjnEGcm9xcjdAn0VedZpRHEwDLP9oSS6wYMvzHBHkUrvgonveazJ/sSx"
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <!-- Leaflet, for drawing and viewing the course boundary. Both of these are
      allowed to fail: on the water there is no signal, and every screen that
      uses them falls back to a text readout computed on the phone. -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H"
+      crossorigin="anonymous" referrerpolicy="no-referrer">
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH"
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 </head>
 <body>
 <div id="app" data-theme="home">
@@ -3065,6 +3089,14 @@ const SUPABASE_URL = 'https://ecwcjtneypbbqciwgbjw.supabase.co';        // e.g. 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVjd2NqdG5leXBiYnFjaXdnYmp3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzODQ2ODUsImV4cCI6MjEwMzk2MDY4NX0.Z3WZjdFBRZR2wk2L92xp4iN0kCedcW-XQbNOzEonmVI';   // the long 'anon' / 'public' key
 const SUPABASE_BUCKET = 'catch-photos';
 const SUPABASE_POLL_MS = 5000;  // how often devices pick up each other's writes
+// Failing reads back off to a minute rather than retrying every 5s into a
+// server or a signal that is not there.
+const SYNC_BACKOFF_MAX_MS = 60000;
+// Rows per read. Supabase caps this server-side too ("Max rows"); fetchAll()
+// pages on whatever actually comes back, so this only has to be sane.
+const SYNC_PAGE = 1000;
+// A stop so a misbehaving server can never spin the loop forever.
+const SYNC_MAX_PAGES = 200;
 
 const STORAGE_PREFIX = 'mkwo:';
 
@@ -3351,6 +3383,49 @@ function supabaseBackend(){
            encodeURIComponent(catchId) + '.jpg';
   }
 
+  // Read one whole table, in pages.
+  //
+  // PostgREST caps how many rows it will return in a single response -
+  // Supabase exposes it as "Max rows" - and it does so SILENTLY: a truncated
+  // table comes back as an ordinary 200 with no hint that anything is
+  // missing. The catches table grows with every event held, so a season or
+  // two in, fish would simply stop appearing on the leaderboard with nothing
+  // anywhere to say why.
+  //
+  // The ORDER matters as much as the paging. Without it Postgres may return
+  // rows however it likes, and that order changes when a row is updated - so
+  // paging over an unordered set can miss rows and repeat others in the same
+  // pass. Ordering by id makes the pages line up.
+  async function fetchAll(table){
+    const q = '/rest/v1/' + table + '?select=id,data&order=id.asc&limit=' + SYNC_PAGE;
+    const out = [];
+    // Ask for the row count with the first page: it comes back in the same
+    // round trip, so we learn how far to page without a wasted request.
+    const first = await rest(q + '&offset=0', {
+      method: 'GET', headers: { 'Prefer': 'count=exact' }
+    });
+    const take = (rows)=>{
+      if(!Array.isArray(rows)) return 0;
+      for(const r of rows) out.push(Object.assign({}, r.data, { id: r.id }));
+      return rows.length;
+    };
+    let got = take(await first.json());
+    // "0-999/4523" - the figure after the slash is the real total. A '*'
+    // there means the server would not count, and we page until it runs dry.
+    const total = Number(((first.headers && first.headers.get
+      && first.headers.get('content-range')) || '').split('/')[1]);
+    for(let page = 1; page < SYNC_MAX_PAGES; page++){
+      if(isFinite(total) ? out.length >= total : got === 0) break;
+      if(got === 0) break;
+      const res = await rest(q + '&offset=' + out.length, { method: 'GET' });
+      // Step by what actually came back, never by what was asked for: if the
+      // server caps a page below our limit, advancing by the limit would skip
+      // every row in the gap.
+      got = take(await res.json());
+    }
+    return out;
+  }
+
   return {
     label: 'tournament server',
     // Object storage, not a JSON record - so the budget is about what a phone
@@ -3391,23 +3466,70 @@ function supabaseBackend(){
     },
 
     start(onRows){
+      // ONE tick at a time. setInterval does not wait for an async callback, so
+      // on a weak link ticks used to overlap and pile up - and the extra
+      // concurrent fetches made the weak link weaker. That is a spiral, and it
+      // sets in exactly where this app has to work: out on the water with one
+      // bar showing.
+      let inFlight = false;
+      let failures = 0;
+      let timer = null;
+
+      // 5s while it is working. When it is not, back off 10s, 20s, 40s, up to a
+      // minute, rather than hammering a server that is not answering.
+      function nextDelay(){
+        return failures === 0 ? SUPABASE_POLL_MS
+          : Math.min(SUPABASE_POLL_MS * Math.pow(2, failures), SYNC_BACKOFF_MAX_MS);
+      }
+      function schedule(){
+        if(timer) clearTimeout(timer);
+        timer = setTimeout(tick, nextDelay());
+      }
+      function runNow(){
+        if(timer){ clearTimeout(timer); timer = null; }
+        tick();
+      }
+
       const tick = async ()=>{
+        if(inFlight) return;
+        // A phone in a pocket does not need the leaderboard redrawn every five
+        // seconds. This picks straight back up when the screen comes on.
+        if(typeof document !== 'undefined' && document.hidden){ schedule(); return; }
+        inFlight = true;
         try{
           for(const coll of Object.keys(TABLES)){
-            const res = await rest('/rest/v1/' + TABLES[coll] + '?select=id,data', { method: 'GET' });
-            const raw = await res.json();
-            onRows(coll, raw.map(r=> Object.assign({}, r.data, { id: r.id })));
+            onRows(coll, await fetchAll(TABLES[coll]));
           }
+          failures = 0;
           if(syncState !== 'live') setSyncState('live', '');
           drainOutbox();
         }catch(e){
           console.error(e);
+          failures++;
           setSyncState('offline', 'Cannot reach the tournament server right now.');
+        }finally{
+          inFlight = false;
+          schedule();
         }
       };
+
+      // Looking at the page again, or getting signal back, is worth a read now
+      // rather than at the end of whatever backoff we had reached.
+      if(typeof document !== 'undefined' && document.addEventListener){
+        document.addEventListener('visibilitychange', ()=>{
+          if(!document.hidden){ failures = 0; runNow(); }
+        });
+      }
+      if(typeof window !== 'undefined' && window.addEventListener){
+        window.addEventListener('online', ()=>{ failures = 0; runNow(); });
+      }
       tick();
-      setInterval(tick, SUPABASE_POLL_MS);
     },
+
+    // Exposed so the paging can be driven from the tests. Silent truncation is
+    // the failure this guards against, and it cannot be seen from outside -
+    // a short read looks exactly like a small table.
+    fetchAll,
 
     // Deterministic from the catch id, so a queued upload still gets the right
     // address written onto the catch immediately.
@@ -6075,7 +6197,7 @@ bindEl('lw-angler','change', renderLivewellList);
 
 async function renderLivewellList(){
   const anglerId = document.getElementById('lw-angler').value;
-  const catches = (await loadCatches()).filter(c=>c.anglerId===anglerId && isScoringSpecies(c.species)).sort((a,b)=>b.length-a.length);
+  const catches = (await loadCatches()).filter(c=>c.anglerId===anglerId && isScoringSpecies(c.species)).sort(byLengthThenEarliest);
   const el = document.getElementById('lw-list');
   if(catches.length===0){ el.innerHTML = '<p class="empty">No '+escapeHtml(targetSpecies().toLowerCase())+' submitted yet.</p>'; return; }
 
@@ -6100,6 +6222,41 @@ document.querySelectorAll('.divtabs button').forEach(btn=>{
   });
 });
 
+// TIE-BREAKING. Length ties happen - a bump board reads to the quarter inch and
+// a good day puts several fish on the same mark. Ranking on length alone leaves
+// the order to however the rows happened to arrive, and rows arrive in whatever
+// order Postgres hands them back, which CHANGES when a row is updated. So
+// approving one catch could reorder a tie somewhere else entirely, and two
+// phones could show different boards from identical data.
+//
+// The rule is EARLIEST FISH WINS, which is the usual tournament answer and the
+// one published in the rules. It is also stable: a timestamp never changes, so
+// every device sorts the same way for good.
+//
+// A catch with no usable timestamp sorts last rather than first - a missing
+// field should never win a tie - and the id settles the impossible case, so the
+// order is total and nothing is ever left to arrival order.
+const TIE_LAST = Number.MAX_SAFE_INTEGER;
+function catchTime(c){
+  const n = Number(c && c.timestamp);
+  return isFinite(n) ? n : TIE_LAST;
+}
+// Longest first, then earliest, then id. Used for single fish (Big Fish, the
+// winning fish on the state form) so those two can never disagree.
+function byLengthThenEarliest(a, b){
+  return (Number(b.length) - Number(a.length))
+      || (catchTime(a) - catchTime(b))
+      || String(a.id).localeCompare(String(b.id));
+}
+// The same rule upside down, for the "smallest fish" side bet. Earliest still
+// wins the tie - the tie-break is about who got there first, not about which
+// end of the tape the bet is scored from.
+function bySmallestThenEarliest(a, b){
+  return (Number(a.length) - Number(b.length))
+      || (catchTime(a) - catchTime(b))
+      || String(a.id).localeCompare(String(b.id));
+}
+
 // Shared ranking used by BOTH the public leaderboard and the director's
 // contestant view, so "current standing" can never drift between the two.
 // Disqualified anglers are excluded here, which removes them everywhere at once.
@@ -6122,7 +6279,8 @@ function standingsFor(division, catches, anglers){
     const key = (division==='team' && angler && angler.teamId) ? angler.teamId : c.anglerId;
     // Named by handle, never by c.anglerName - the leaderboard is public.
     if(!groups[key]) groups[key] = { key, name: displayHandle(angler), fish: [], anglerIds: [] };
-    groups[key].fish.push(c.length);
+    // The whole catch, not just its length - the tie-break needs its timestamp.
+    groups[key].fish.push(c);
     if(groups[key].anglerIds.indexOf(c.anglerId)===-1) groups[key].anglerIds.push(c.anglerId);
     if(division==='team' && angler && angler.teamId){
       const mate = anglers.find(m=>m.teamId===angler.teamId && m.id!==angler.id);
@@ -6132,14 +6290,24 @@ function standingsFor(division, catches, anglers){
 
   return Object.keys(groups).map(k=>{
     const g = groups[k];
-    const sorted = g.fish.slice().sort((x,y)=>y-x);
+    // Longest first, and among equal lengths the one landed first - so bestAt
+    // is when this group's best fish was actually caught.
+    const sorted = g.fish.slice().sort(byLengthThenEarliest);
     return {
       key: g.key, name: g.name, anglerIds: g.anglerIds,
-      best: sorted[0],
-      top3sum: sorted.slice(0,3).reduce((s,v)=>s+v,0),
+      best: Number(sorted[0].length),
+      bestAt: catchTime(sorted[0]),
+      top3sum: sorted.slice(0,3).reduce((s,c)=>s+Number(c.length),0),
       count: g.fish.length
     };
-  }).sort((a,b)=> b.best - a.best || b.top3sum - a.top3sum);
+    // Best fish, then best 3 combined, then whoever got there first. The key
+    // is a last resort that can only matter if two groups tie on all three
+    // AND both carry no timestamp; it exists so the order is never arrival
+    // order. See byLengthThenEarliest() for why that matters.
+  }).sort((a,b)=> (b.best - a.best)
+               || (b.top3sum - a.top3sum)
+               || (a.bestAt - b.bestAt)
+               || String(a.key).localeCompare(String(b.key)));
 }
 
 // 1-based placing for one angler in their division, or 0 if they aren't ranked.
@@ -6165,8 +6333,8 @@ async function renderLeaderboard(){
   }
   const sp = targetSpecies().toLowerCase();
   document.getElementById('lb-tiebreak-note').textContent = currentDiv==='team'
-    ? 'Ranked by the single longest '+sp+' caught by either teammate. Ties broken by the combined length of the team\'s best 3 fish.'
-    : 'Ranked by single longest '+sp+'. Ties broken by combined length of best 3 fish.';
+    ? 'Ranked by the single longest '+sp+' caught by either teammate. Ties broken by the combined length of the team\'s best 3 fish, then by whichever fish was logged first.'
+    : 'Ranked by single longest '+sp+'. Ties broken by combined length of best 3 fish, then by whichever fish was logged first.';
 }
 
 // ---- big fish ----
@@ -6185,7 +6353,7 @@ async function renderBigFish(){
   anglers.forEach(a=>{ byId[a.id] = a; });
   const el = document.getElementById('bf-list');
   if(catches.length===0){ el.innerHTML = '<p class="empty">No qualifying catches yet.</p>'; return; }
-  const sorted = catches.slice().sort((a,b)=>b.length-a.length).slice(0,10);
+  const sorted = catches.slice().sort(byLengthThenEarliest).slice(0,10);
   el.innerHTML = sorted.map((c,i)=>
     '<div class="lbrow"><div class="rank">'+(i+1)+'</div><div class="who"><div class="name">'+escapeHtml(displayHandle(byId[c.anglerId]))+'</div><div class="sub">'+(c.division==='team'?'Team':'Solo')+' division</div></div><div class="len">'+c.length.toFixed(2)+'"</div></div>'
   ).join('');
@@ -6657,12 +6825,13 @@ function betStanding(bet, rows, catches, anglerById){
     return { anglerId: bestId, detail: best + ' approved ' + (best === 1 ? 'fish' : 'fish') };
   }
   if(bet.scoring === 'first'){
-    const first = eligible.slice().sort((a,b)=> a.timestamp - b.timestamp)[0];
+    const first = eligible.slice().sort((a,b)=> (catchTime(a) - catchTime(b))
+                                            || String(a.id).localeCompare(String(b.id)))[0];
     return { anglerId: first.anglerId,
              detail: 'at ' + new Date(first.timestamp).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) };
   }
   // smallest
-  const small = eligible.slice().sort((a,b)=> a.length - b.length)[0];
+  const small = eligible.slice().sort(bySmallestThenEarliest)[0];
   return { anglerId: small.anglerId, detail: Number(small.length).toFixed(2) + '"' };
 }
 
@@ -7241,7 +7410,7 @@ function unpaidInTheMoney(anglers, catches){
   bigFishEntrants(roster).forEach(a=>{ inPot[a.id] = true; });
   const best = (catches || [])
     .filter(c=> c.status === 'approved' && isScoringSpecies(c.species) && inPot[c.anglerId])
-    .sort((a, b)=> b.length - a.length)[0];
+    .sort(byLengthThenEarliest)[0];
   if(best){
     const a = byId[best.anglerId];
     if(a && !feePaid(a) && !seen[a.id]){
@@ -7490,7 +7659,9 @@ function winningFish(catches, anglers){
     if(c.status !== 'approved' || !isScoringSpecies(c.species)) return false;
     const a = byId[c.anglerId];
     return !(a && a.disqualified);
-  }).sort((a, b)=> b.length - a.length)[0] || null;
+    // Ties go to the fish landed first, exactly as the leaderboard ranks them,
+    // so the form and the trophy can never name different fish.
+  }).sort(byLengthThenEarliest)[0] || null;
 }
 
 // Thirty days from the last day fished.
@@ -8188,6 +8359,45 @@ bindEl('report-copy', 'click', async ()=>{
   }
 });
 
+// ---- splitting the pool ----
+// 50/30/20, worked in WHOLE CENTS.
+//
+// Doing it in floating point and rounding each share on its own does not add
+// up: a $300.05 pool gives 150.025 / 90.015 / 60.01, and rounding those
+// separately hands out $300.06 - a cent more than the pool holds. The other
+// direction leaves a cent stranded. Neither is a lot of money and both are
+// wrong on a sheet somebody is reading out at a prizegiving.
+//
+// So: floor every share to a cent, then hand the leftover cents out one at a
+// time, largest remainder first. That is the standard apportionment method and
+// it makes the parts add up to the whole, exactly, every time.
+const PAYOUT_SHARES = [
+  { place: '1st', share: 0.50 },
+  { place: '2nd', share: 0.30 },
+  { place: '3rd', share: 0.20 }
+];
+function splitFor(eligible, pool){
+  // Only pay out places the field can actually fill (a 1-entry division has no
+  // 2nd or 3rd place to award).
+  const paid = Math.min(Math.max(0, Number(eligible) || 0), PAYOUT_SHARES.length);
+  if(paid === 0) return [];
+  const cents = Math.round((Number(pool) || 0) * 100);
+  if(cents <= 0) return PAYOUT_SHARES.slice(0, paid).map(x=> ({ place: x.place, amount: 0 }));
+  const shares = PAYOUT_SHARES.slice(0, paid);
+  // An unfilled place is NOT redistributed - it stays unawarded and the screen
+  // says so - so the places being paid share only their own portion, never the
+  // whole pool.
+  const toGive = Math.round(cents * shares.reduce((s, x)=> s + x.share, 0));
+  const exact = shares.map(x=> cents * x.share);
+  const out = exact.map(v=> Math.floor(v));
+  let left = toGive - out.reduce((s, v)=> s + v, 0);
+  const byRemainder = exact
+    .map((v, i)=> ({ rem: v - Math.floor(v), i }))
+    .sort((a, b)=> (b.rem - a.rem) || (a.i - b.i));
+  for(let k = 0; k < byRemainder.length && left > 0; k++, left--) out[byRemainder[k].i]++;
+  return shares.map((x, i)=> ({ place: x.place, amount: out[i] / 100 }));
+}
+
 async function renderPayoutCalculator(){
   const anglers = await loadAnglers();
   const donations = await loadDonations();
@@ -8212,18 +8422,6 @@ async function renderPayoutCalculator(){
   const soloPool = solo.length * FEE_SOLO + soloDonated;
   const teamPool = teamEntries.length * FEE_TEAM + teamDonated;
   const bigfishPool = bigfishAnglerCount * FEE_BIGFISH + bigfishDonated;
-
-  function splitFor(eligible, pool){
-    if(eligible===0) return [];
-    // Only pay out places the field can actually fill (a 1-entry division
-    // has no 2nd or 3rd place to award).
-    const places = [
-      { place: '1st', amount: pool*0.50 },
-      { place: '2nd', amount: pool*0.30 },
-      { place: '3rd', amount: pool*0.20 }
-    ];
-    return places.slice(0, Math.min(eligible, 3));
-  }
 
   // `entries` is everyone who paid in (the pool); `eligible` excludes
   // disqualified anglers, who forfeit their place but not their entry fee.

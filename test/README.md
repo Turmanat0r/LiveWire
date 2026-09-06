@@ -40,6 +40,37 @@ of sync with it. Change `index.html` and the tests see the change immediately.
 
 The places where a mistake is silent and expensive:
 
+- **Ties, and that they never follow row order.** Two anglers can land the same
+  length — a bump board reads to the quarter inch. Ranking on length alone left
+  the order to however the rows happened to arrive, and rows arrive in whatever
+  order Postgres feels like: an order that *changes when a row is updated*. So
+  approving one catch could silently reorder a tie somewhere else, and two
+  phones could show different boards from identical data. The rule is now
+  **earliest fish wins**, and the tests assert it in both directions and with
+  the input reversed, because "same data, same answer" is the whole point. A
+  missing timestamp sorts last rather than first — a blank field must never win
+  a tie — and the id settles the impossible case so the order is total.
+  `byLengthThenEarliest` is shared by the leaderboard, Big Fish, the winning
+  fish on the state form and the angler's own list, so those can never disagree
+  about who won; a lint rule fails the build if any ranking sorts on length
+  alone, because `renderBigFish` has no test around it to notice.
+- **Reading a table that outgrew one response.** Supabase caps how many rows one
+  response carries and truncates **silently** — a short read is an ordinary 200
+  and looks exactly like a small table. The catches table grows with every event
+  held, so without paging, fish would simply stop reaching the leaderboard a
+  season or two in, with nothing anywhere to say why. The tests page a 2500-row
+  table, then do it again against a server that caps pages *below* the requested
+  size (stepping by what was asked for instead of what came back would skip
+  every row in the gap), and check the count header is used so there is no
+  wasted final read on every poll.
+- **Splitting a pool without losing a cent.** 50/30/20 of an odd pool does not
+  divide evenly, and rounding each share on its own handed out a cent more than
+  the pool held — or stranded one. It is now worked in whole cents with the
+  leftovers going to the largest remainder. Swept across every pool from
+  $100.00 to $150.00 in one-cent steps, the parts add up to the whole exactly.
+  An unfilled place is asserted *not* to be redistributed: it stays unawarded
+  and the screen says so, because spreading it would quietly pay 2nd place more
+  than the rules promise.
 - **Event scoping** — that the leaderboard, GPS check, Big Fish pot and payouts
   read only the live event.
 - **Deletion safety** — that saving under one event cannot delete or drop
@@ -139,6 +170,29 @@ Add the function you want to reach to the `globalThis.__t = { ... }` block near
 the top of `events.test.mjs`, then use it as `t.yourFunction()`. Assertions are
 `check(name, got, want)`.
 
+## The CSP is in Report-Only, on purpose
+
+`vercel.json` carries the security headers. Everything in it is enforced except
+the Content-Security-Policy, which ships as `Content-Security-Policy-Report-Only`.
+
+That is the normal way to introduce a policy to an app that already exists: it
+reports what it *would* have blocked to the browser console and blocks nothing,
+so a policy that turns out to be a line too tight cannot take the app down at a
+boat ramp. The origins in it were read out of `index.html` rather than guessed —
+jsDelivr, Google Fonts, `tile.openstreetmap.org`, Supabase — and a lint rule
+fails the build if the page ever loads from somewhere the policy does not name,
+so it cannot quietly fall behind the code.
+
+**To turn it on:** open the app on a phone and on a laptop, visit every screen
+that touches the network — the map and boundary editor, the camera, a catch
+submission, the payout screen, the FWP report — and watch the console. If
+nothing is reported, rename the key to `Content-Security-Policy` and redeploy.
+Do that between events, never during one.
+
+`script-src` has to keep `'unsafe-inline'`: the whole app is one inline
+`<script>`, and the alternative is a hash that changes on every edit, which with
+no build step is a thing that would silently rot.
+
 ## Checking the tests still bite
 
 A suite that cannot fail is worse than no suite, because it reads as safety.
@@ -178,6 +232,46 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Flag a paid angler as owing | 5 failures |
 | Tell the angler their catches do not count | 2 failures |
 | Print fee status on the public roster | 1 failure |
+| Remove the tie-break, leaving ties to row order | 7 failures |
+| Give a tie to the latest fish instead of the earliest | 5 failures |
+| Drop the id fallback, so untimed ties float | 1 failure |
+| Skip best-3, so depth stops counting | 1 failure |
+| Read `bestAt` off the first fish logged, not the best one | 1 failure |
+| Sort a missing timestamp first, so a blank field steals ties | 3 failures |
+| Let `catchTime` return NaN for junk | 3 failures |
+| Keep only lengths in the group, losing the timestamps | 5 failures |
+| Rank the winning fish on length alone | 2 failures |
+| Rank Big Fish on length alone | lint |
+| Rank the angler's own list on length alone | lint |
+| Pick the unpaid Big Fish leader by a different rule | lint |
+| Rank the smallest-fish bet largest-first | 3 failures |
+| Drop the smallest-fish bet's tie-break | 2 failures |
+| Remove paging, so a big table truncates silently | 8 failures |
+| Drop the `order` clause, so pages stop lining up | 1 failure |
+| Advance the offset by the page size asked for | 2 failures |
+| Stop on the first short page | 2 failures |
+| Read the count from the wrong side of the slash | 1 failure |
+| Cap `SYNC_MAX_PAGES` at one | 8 failures |
+| Drop the id when reading rows back | 3 failures |
+| Remove the in-flight guard, so ticks overlap | lint |
+| Put the loop back on `setInterval` | lint |
+| Remove the hidden-page check | lint |
+| Flatten the backoff to a fixed 5s | lint |
+| Never count or never reset failures | lint |
+| Read a table with no `limit` | lint |
+| Float supabase-js back to `@2` | lint |
+| Drop an integrity hash, or its `crossorigin` | lint |
+| Delete `vercel.json`, or any header in it | lint |
+| Let the CSP fall behind an origin the page uses | lint |
+| Cache `sw.js` for a year | lint |
+| Revoke the page's own camera permission | lint |
+| Put the floating-point payout split back | 4 failures |
+| Strand the leftover cents, or round shares up | 4 failures |
+| Give leftover cents to the smallest remainder | 1 failure |
+| Redistribute an unfilled place across the rest | 3 failures |
+| Drift the split off 50/30/20 | 10 failures |
+| Let a negative pool produce a negative payout | 1 failure |
+| Truncate cents instead of rounding | 1 failure |
 | Stop normalising phone numbers | 5 failures |
 | Compare phone numbers in full instead of last ten | 2 failures |
 | Never show the pending notice | 3 failures |
@@ -265,16 +359,19 @@ prompt clamp:
 
 Put it back afterwards.
 
-Three guards in the app are deliberately redundant, and a sabotage of any of
+Five guards in the app are deliberately redundant, and a sabotage of any of
 them passes: the phone-length check in `claimEntry` (the equality check already
 refuses an empty number), the event-day check in `overdueCheckouts` (a
-non-event day builds a `dayKey` that matches nothing), and the `seen` check in
+non-event day builds a `dayKey` that matches nothing), the `paid === 0` early
+return in `splitFor` (the general path returns `[]` for an empty share list
+anyway) and its `PAYOUT_SHARES.length` cap (the array holds three, so a literal
+`4` slices to the same three), and the `seen` check in
 `unpaidInTheMoney`'s division loop — `standingsFor` groups by angler, so one
 person cannot appear twice in one division's top three. It is only reachable if
 an angler's catches straddle two divisions, which needs a division edit after
 they had already logged fish. The `seen` check in the same function's Big Fish
 block *is* load-bearing (someone can place and lead the pot at once) and is
-tested. All three behaviours are enforced twice. A test that went red for them would be asserting the
+tested. All five behaviours are enforced twice. A test that went red for them would be asserting the
 implementation rather than the rule, so there isn't one.
 
 **A test cannot see a time zone it is already in.** The machine this was

@@ -22,6 +22,7 @@ const script = (src.match(/<script>([\s\S]*)<\/script>/) || [])[1];
 if (!script) { console.error('no inline script found'); process.exit(1); }
 
 const problems = [];
+const NL = String.fromCharCode(10);
 const note = (kind, msg) => problems.push({ kind, msg });
 
 // Markup only. Counting tags across the script block would score every
@@ -270,6 +271,178 @@ for (const token of FWP_TOKENS) {
   if (!sheetBase.includes(token + ':')) {
     note('css', `#report-sheet does not set ${token}, so the printed form has no size for it`);
   }
+}
+
+// ----------------------------------------------------------- hosting headers
+// vercel.json carries the security headers and the cache rules. The one that
+// rots is the CSP: add a CDN or an API to the page and the policy silently
+// stops covering it, so this checks every external origin the page names is
+// actually allowed by the policy. JSON takes no comments, which is why the
+// reasoning lives here.
+const VJ = path.join(HERE, '..', 'vercel.json');
+if (!fs.existsSync(VJ)) {
+  note('hosting', 'vercel.json is missing - the deploy would go out with no ' +
+    'security headers and no cache rules for sw.js');
+} else {
+  let vercel = null;
+  try { vercel = JSON.parse(fs.readFileSync(VJ, 'utf8')); }
+  catch (e) { note('hosting', 'vercel.json is not valid JSON: ' + e.message); }
+  if (vercel) {
+    // Read the actual key names, not the file as a string: a substring match
+    // would be satisfied by a misspelt or disabled entry that no browser will
+    // ever act on.
+    const setHeaders = new Map();
+    for (const rule of vercel.headers || []) {
+      for (const h of rule.headers || []) {
+        if (h && h.key && String(h.value || '').trim()) setHeaders.set(String(h.key), String(h.value));
+      }
+    }
+    for (const [key, why] of [
+      ['X-Content-Type-Options', 'lets a browser sniff a response into something executable'],
+      ['Referrer-Policy', 'leaks the full URL to every third party the page touches'],
+      ['Permissions-Policy', 'leaves camera and location open to any embedded frame'],
+      ['Strict-Transport-Security', 'allows a downgrade to plain http']
+    ]) {
+      if (!setHeaders.has(key)) note('hosting', `vercel.json sets no ${key}, which ${why}`);
+    }
+    // The camera and GPS are the whole app on the water - a policy that forgot
+    // to allow them would break catch submission rather than just tighten it.
+    const perms = setHeaders.get('Permissions-Policy') || '';
+    for (const feature of ['camera', 'geolocation']) {
+      if (perms && !new RegExp(feature + '=\\(self\\)').test(perms)) {
+        note('hosting', `Permissions-Policy does not grant ${feature} to the page ` +
+          `itself - submitting a catch needs it`);
+      }
+    }
+    // sw.js must never be cached hard, or a bad worker outlives its fix.
+    const sw = (vercel.headers || []).find((h) => String(h.source).includes('sw.js'));
+    const swCache = sw && (sw.headers || []).find((x) => x.key === 'Cache-Control');
+    if (!swCache || !/max-age=0|no-cache|no-store/.test(swCache.value)) {
+      note('hosting', 'sw.js is not served must-revalidate - a bad service worker ' +
+        'would keep serving the old app until its cache happened to turn over');
+    }
+    // Every external origin the page names has to appear in the policy.
+    const policy = setHeaders.get('Content-Security-Policy')
+      || setHeaders.get('Content-Security-Policy-Report-Only') || '';
+    if (policy && !/frame-ancestors/.test(policy)) {
+      note('hosting', 'the CSP sets no frame-ancestors, so the app can be framed ' +
+        'and clickjacked');
+    }
+    if (!policy) {
+      note('hosting', 'vercel.json carries no Content-Security-Policy');
+    } else {
+      const origins = new Set();
+      for (const m of src.matchAll(/https:\/\/([a-z0-9.-]+)/g)) origins.add(m[1]);
+      for (const host of origins) {
+        if (host.endsWith('.invalid') || host.includes('abcdefghijkl')) continue;  // examples
+        if (host.endsWith('supabase.co') && policy.includes('*.supabase.co')) continue;
+        if (host.endsWith('openapi.vercel.sh')) continue;
+        if (!policy.includes(host)) {
+          note('hosting', `the page loads from ${host} but the CSP does not allow it - ` +
+            `the policy has fallen behind the code`);
+        }
+      }
+    }
+  }
+}
+
+// ------------------------------------------------------- external resources
+// Anything loaded off a CDN runs on every angler's phone with the same
+// privileges as the app itself, so it has to be pinned to an exact version AND
+// checked against a hash. A floating range like "@2" means the newest release
+// upstream reaches the field unread, and the first anyone knows of a bad one is
+// on the water.
+for (const m of src.matchAll(/<(script|link)\b[^>]*?(?:src|href)="(https:\/\/[^"]+)"[^>]*>/g)) {
+  const [tag, kind, url] = [m[0], m[1], m[2]];
+  // Connection hints fetch nothing, so there is nothing to pin or hash.
+  if (/rel="(preconnect|dns-prefetch|preload)"/.test(tag)) continue;
+  // Google Fonts serves CSS whose content is negotiated per browser, so it has
+  // no stable hash to pin. It ships no script, and the CSP confines it.
+  if (/fonts\.(googleapis|gstatic)\.com/.test(url)) continue;
+  const version = url.match(/@(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+  if (!version || version[2] === undefined || version[3] === undefined) {
+    note('cdn', `${url} is not pinned to an exact version - a floating range ` +
+      `ships whatever upstream released last, to every phone, untested`);
+  }
+  if (!/\bintegrity="sha(256|384|512)-/.test(tag)) {
+    note('cdn', `${url} has no integrity hash, so a CDN serving different bytes ` +
+      `would be run rather than refused`);
+  }
+  if (!/\bcrossorigin=/.test(tag)) {
+    note('cdn', `${url} has an integrity hash but no crossorigin attribute - ` +
+      `the browser ignores the hash without it`);
+  }
+}
+
+// --------------------------------------------------------------- sync loop
+// The polling loop runs on real timers, so there is no unit test around its
+// mechanics - these are the guards it must not lose. Each one was a live bug:
+//
+//   inFlight     setInterval does not wait for an async callback, so slow ticks
+//                overlapped and piled up, and the extra concurrent fetches made
+//                a weak link weaker. A spiral, on the water, with one bar.
+//   document.hidden   a phone in a pocket polled all day.
+//   backoff      an unreachable server was retried every 5s forever.
+//   no setInterval(tick)   the loop must reschedule itself AFTER each pass
+//                finishes, which setInterval cannot do.
+const startBody = (script.match(/start\(onRows\)\{([\s\S]*?)\n    \},/) || ['', ''])[1];
+if (!startBody) {
+  note('sync', 'cannot find start(onRows) - the polling loop guards cannot be checked');
+} else {
+  const GUARDS = [
+    [/if\(inFlight\) return;/, 'the in-flight guard, so slow ticks can overlap and pile up'],
+    // Pinned to the guard's ROLE, not just the words: document.hidden also
+    // appears in the visibilitychange handler a few lines below, and
+    // `failures = 0` appears in both wake-up handlers. Matching those would
+    // let the guard be cut out of the tick itself and still pass.
+    [/document\.hidden\)\{\s*schedule\(\);\s*return;/,
+     'the hidden-page early return, so a phone in a pocket polls all day'],
+    [/SYNC_BACKOFF_MAX_MS/, 'its backoff, so an unreachable server is retried every 5s forever'],
+    [/failures\s*\+\+/, 'its failure counter, so the backoff can never grow'],
+    [/failures = 0;\s*\n\s*if\(syncState/,
+     'the failure reset on a good pass, so the backoff never recovers after one blip']
+  ];
+  for (const [re, what] of GUARDS) {
+    if (!re.test(startBody)) note('sync', `the polling loop has lost ${what}`);
+  }
+  if (/setInterval\s*\(\s*tick/.test(startBody)) {
+    note('sync', 'the polling loop is back on setInterval, which does not wait for ' +
+      'an async tick - passes will overlap on a slow link');
+  }
+}
+// Every table read has to page. A bare select with no limit is a silent
+// truncation waiting for the catches table to outgrow one response.
+for (const m of script.matchAll(/'\/rest\/v1\/'\s*\+\s*[A-Za-z]+(?:\[[^\]]*\])?\s*\+\s*'\?select=[^']*'/g)) {
+  if (!m[0].includes('limit=')) {
+    const line = script.slice(0, m.index).split(NL).length;
+    note('sync', `line ${line}: reads a whole table with no limit - Supabase caps ` +
+      `the response silently, so this truncates as the table grows`);
+  }
+}
+
+// ------------------------------------------------------------ ranking ties
+// Every ranking of fish has to go through byLengthThenEarliest(). A bare
+// `b.length - a.length` leaves ties to the order rows arrived in, and that
+// order changes whenever a row is updated - so a tie could silently reorder
+// itself, and two phones could show different boards from the same data.
+// renderBigFish() is a render function with no test around it, so this is the
+// only thing standing between it and a quiet regression.
+for (const m of script.matchAll(/\.sort\(\s*\([^)]*\)\s*=>\s*[a-z]\.length\s*-\s*[a-z]\.length\s*\)/g)) {
+  const line = script.slice(0, m.index).split(NL).length;
+  note('ties', `line ${line}: ranks fish on length alone, so ties fall back to row ` +
+    `order - sort with byLengthThenEarliest instead`);
+}
+// The comparator itself must keep all three rungs, or it stops being total.
+const cmpBody = (script.match(/function byLengthThenEarliest\(a, b\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+if (cmpBody) {
+  for (const [needle, what] of [['b.length', 'length'], ['catchTime', 'the timestamp'],
+                                ['localeCompare', 'the id fallback']]) {
+    if (!cmpBody.includes(needle)) {
+      note('ties', `byLengthThenEarliest no longer compares ${what}, so ties are not fully ordered`);
+    }
+  }
+} else {
+  note('ties', 'byLengthThenEarliest is gone - every fish ranking depends on it');
 }
 
 // ------------------------------------------------------- serverless functions

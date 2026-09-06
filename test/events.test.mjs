@@ -107,7 +107,8 @@ globalThis.__t = {
   get serverClockOffset(){ return serverClockOffset; },
   set serverClockOffset(v){ serverClockOffset = v; },
   loadAwardsBudget, saveAwardsBudget, awardsBudgetMap,
-  standingsFor, eventDateRangeText, eventRowCounts, eventDayText,
+  standingsFor, byLengthThenEarliest, bySmallestThenEarliest, catchTime,
+  splitFor, PAYOUT_SHARES, eventDateRangeText, eventRowCounts, eventDayText,
   getMyAnglerId, setMyAnglerId, onRows, readOutbox
 };
 `;
@@ -573,6 +574,100 @@ check('"Other" is never ranked, whatever the target is',
 await t.saveEventSettings({ targetSpecies: 'Northern Pike' });
 check('a species nobody has logged ranks nobody',
   t.standingsFor('solo', cs, as).length, 0);
+
+// ============================================================
+section('17b. ties, and why they must not follow row order');
+// Rows come back from Postgres in whatever order it likes, and that order
+// CHANGES when a row is updated - so approving one catch could silently
+// reorder a tie somewhere else, and two phones could show different boards
+// from identical data. This is the regression test for that: the same fish in
+// a different order must rank the same way every time.
+const tieAnglers = [
+  { id: 'ta', handle: 'Alpha', division: 'solo' },
+  { id: 'tb', handle: 'Bravo', division: 'solo' }
+];
+const fish = (id, who, len, ts) => ({ id, anglerId: who, division: 'solo',
+  status: 'approved', species: 'Walleye', length: len, timestamp: ts });
+await setEvent(E1);
+await t.saveEventSettings({ targetSpecies: 'Walleye' });
+
+// Identical fish. Bravo landed theirs first, so Bravo takes it.
+const rowsA = [fish('c1', 'ta', 24, 5000), fish('c2', 'tb', 24, 1000)];
+const rowsB = [fish('c2', 'tb', 24, 1000), fish('c1', 'ta', 24, 5000)];
+const rank = rows => t.standingsFor('solo', rows, tieAnglers).map(r => r.name);
+check('a dead tie goes to the fish landed first', rank(rowsA), ['Bravo', 'Alpha']);
+check('and the row order cannot change that', rank(rowsB), rank(rowsA));
+
+// Tied on best AND on best-3 combined - the case that used to fall through to
+// arrival order with nothing left to decide it.
+const deepA = [fish('x1','ta',24,100), fish('x2','ta',20,101),
+               fish('y1','tb',24,200), fish('y2','tb',20,201)];
+const deepB = [fish('y1','tb',24,200), fish('y2','tb',20,201),
+               fish('x1','ta',24,100), fish('x2','ta',20,101)];
+check('tied on best and on best-3, the earlier best fish wins',
+  rank(deepA), ['Alpha', 'Bravo']);
+check('still independent of row order', rank(deepB), rank(deepA));
+
+// best-3 must still outrank the timestamp: a later fish with more behind it wins.
+const depth = [fish('d1','ta',24,100),
+               fish('d2','tb',24,900), fish('d3','tb',23,901), fish('d4','tb',22,902)];
+check('a bigger best-3 still beats an earlier fish',
+  rank(depth), ['Bravo', 'Alpha']);
+
+// bestAt is the time of the BEST fish, not the earliest fish in the bag.
+const bag = t.standingsFor('solo',
+  [fish('b1','ta',18,10), fish('b2','ta',26,900)], tieAnglers)[0];
+check('bestAt tracks the best fish, not the first one', bag.bestAt, 900);
+
+// A missing timestamp must never WIN a tie by accident.
+check('a catch with no timestamp sorts last, not first',
+  rank([fish('n1','ta',24,undefined), fish('n2','tb',24,7000)]), ['Bravo', 'Alpha']);
+check('and a junk timestamp is treated the same way',
+  rank([fish('j1','ta',24,'not-a-time'), fish('j2','tb',24,7000)]), ['Bravo', 'Alpha']);
+// Two of them tie on everything, including having no time at all. The order
+// still has to be total - MAX_SAFE_INTEGER minus itself is 0, not NaN, so this
+// falls through to the key rather than going undefined.
+const noTime = rank([fish('z1','tb',24,undefined), fish('z2','ta',24,undefined)]);
+check('two untimed fish still sort to a fixed order', noTime.length, 2);
+check('and it does not depend on row order',
+  rank([fish('z2','ta',24,undefined), fish('z1','tb',24,undefined)]), noTime);
+
+// The single-fish comparator, shared by Big Fish and the state form.
+check('the winning fish is the longest',
+  (t.winningFish(rowsA, tieAnglers) || {}).id, 'c2');
+check('and a tie there goes to the earlier catch too',
+  (t.winningFish(rowsB, tieAnglers) || {}).id, 'c2');
+check('the form and the leaderboard agree on who won',
+  (t.winningFish(rowsA, tieAnglers) || {}).anglerId,
+  tieAnglers.find(a => a.handle === rank(rowsA)[0]).id);
+// Big Fish ranks single fish with the same comparator.
+check('sorting single fish is longest, then earliest, then id',
+  [fish('m3','ta',22,50), fish('m1','tb',24,900), fish('m2','ta',24,300)]
+    .sort(t.byLengthThenEarliest).map(c => c.id), ['m2', 'm1', 'm3']);
+// Same length AND the same instant - only the id is left to decide. Without a
+// final fallback here the order would be arrival order again, which is the
+// whole thing this rule exists to stop.
+check('two identical fish at the same instant still get a fixed order',
+  [{ id: 'm9', length: 24, timestamp: 500 }, { id: 'm4', length: 24, timestamp: 500 }]
+    .sort(t.byLengthThenEarliest).map(c => c.id), ['m4', 'm9']);
+check('and reversing the input does not change it',
+  [{ id: 'm4', length: 24, timestamp: 500 }, { id: 'm9', length: 24, timestamp: 500 }]
+    .sort(t.byLengthThenEarliest).map(c => c.id), ['m4', 'm9']);
+// The smallest-fish side bet pays out, so its ties need settling too - same
+// rule, read from the other end of the tape.
+const smalls = [{ id:'s3', length:12, timestamp:100 },
+                { id:'s1', length:9,  timestamp:900 },
+                { id:'s2', length:9,  timestamp:400 }];
+check('the smallest fish wins that bet, earliest breaking the tie',
+  smalls.slice().sort(t.bySmallestThenEarliest).map(c => c.id), ['s2', 's1', 's3']);
+check('and it does not depend on row order',
+  smalls.slice().reverse().sort(t.bySmallestThenEarliest).map(c => c.id), ['s2', 's1', 's3']);
+check('a smallest-bet tie at the same instant still resolves',
+  [{ id:'sb', length:9, timestamp:5 }, { id:'sa', length:9, timestamp:5 }]
+    .sort(t.bySmallestThenEarliest).map(c => c.id), ['sa', 'sb']);
+check('catchTime reads a real timestamp', t.catchTime({ timestamp: 42 }), 42);
+check('and pushes a missing one to the back',
+  t.catchTime({}) > Date.now() * 1000, true);
 
 // ============================================================
 section('18. drag-handle geometry');
@@ -1077,6 +1172,149 @@ try{
 } finally {
   globalThis.fetch = realFetch;
   t.noteAuthSession(null);
+}
+
+// ============================================================
+section('29b. reading a table that outgrew one response');
+// Supabase caps how many rows one response may carry, and it truncates
+// SILENTLY - a short read is a normal 200 and looks exactly like a small
+// table. The catches table grows with every event, so without paging, fish
+// would just stop reaching the leaderboard a season or two in.
+{
+  const realFetch2 = globalThis.fetch;
+  // Serve `total` rows out of a fake table, honouring limit/offset, and cap
+  // each page at `cap` rows however much was asked for - which is what a
+  // server-side Max rows setting does.
+  const serve = (total, cap)=>{
+    const seen = [];
+    globalThis.fetch = async (url)=>{
+      seen.push(String(url));
+      const q = new URL(String(url), 'https://x.invalid');
+      const limit = Number(q.searchParams.get('limit'));
+      const offset = Number(q.searchParams.get('offset') || 0);
+      const n = Math.min(cap, limit, Math.max(0, total - offset));
+      const rows = [];
+      for(let i = 0; i < n; i++) rows.push({ id: 'r' + (offset + i), data: { n: offset + i } });
+      return { ok: true, status: 200,
+        headers: { get: (h)=> h.toLowerCase() === 'content-range'
+          ? offset + '-' + (offset + n - 1) + '/' + total : null },
+        async json(){ return rows; }, async text(){ return ''; } };
+    };
+    return seen;
+  };
+  try{
+    const backend = t.supabaseBackend();
+
+    let seen = serve(2500, 1000);
+    let rows = await backend.fetchAll('catches');
+    check('a table larger than one page comes back whole', rows.length, 2500);
+    check('with no row fetched twice', new Set(rows.map(r => r.id)).size, 2500);
+    check('and the last row is really there',
+      rows.some(r => r.id === 'r2499'), true);
+    // 2500 rows in pages of 1000 is exactly three reads. A fourth would mean
+    // the count header was ignored and we paged until the server ran dry -
+    // correct, but a wasted round trip on every poll, on every phone.
+    check('the row count is used, so there is no wasted final read', seen.length, 3);
+    check('every read is ordered, or the pages would not line up',
+      seen.every(u => u.indexOf('order=id.asc') > -1), true);
+    check('and the first one asks for the count',
+      seen.length > 0, true);
+
+    // The nastier case: the server caps pages BELOW what we asked for. Stepping
+    // by the requested limit would skip every row in the gap.
+    seen = serve(2500, 400);
+    rows = await backend.fetchAll('catches');
+    check('a server-side cap below our page size loses nothing', rows.length, 2500);
+    check('and still no duplicates', new Set(rows.map(r => r.id)).size, 2500);
+
+    // Exactly one page, and exactly one page plus one.
+    serve(1000, 1000);
+    check('a table of exactly one page is not truncated',
+      (await backend.fetchAll('catches')).length, 1000);
+    serve(1001, 1000);
+    check('nor is one a single row over', (await backend.fetchAll('catches')).length, 1001);
+
+    serve(0, 1000);
+    check('an empty table reads as empty', (await backend.fetchAll('catches')).length, 0);
+
+    // A server that will not count still has to be paged correctly.
+    globalThis.fetch = async (url)=>{
+      const q = new URL(String(url), 'https://x.invalid');
+      const offset = Number(q.searchParams.get('offset') || 0);
+      const n = Math.min(1000, Math.max(0, 1500 - offset));
+      const rows = [];
+      for(let i = 0; i < n; i++) rows.push({ id: 'u' + (offset + i), data: {} });
+      return { ok: true, status: 200,
+        headers: { get: ()=> '*/*' },       // count refused
+        async json(){ return rows; }, async text(){ return ''; } };
+    };
+    check('a server that refuses to count is paged until it runs dry',
+      (await backend.fetchAll('catches')).length, 1500);
+  } finally {
+    globalThis.fetch = realFetch2;
+  }
+}
+
+// ============================================================
+section('29c. splitting a pool without losing a cent');
+// 50/30/20 of an odd pool does not divide evenly. Rounding each share on its
+// own used to hand out a cent MORE than the pool held, or strand one - money
+// that gets read out loud at a prizegiving.
+{
+  const cents = (n) => Math.round(n * 100);
+  const paid  = (rows) => rows.reduce((s, r) => s + cents(r.amount), 0);
+
+  // The headline invariant: with all three places filled, the parts add up to
+  // the whole. Swept across a range of realistic pools, cent by cent.
+  let worstOver = 0, worstUnder = 0, checked = 0;
+  for (let c = 0; c <= 5000; c++) {
+    const pool = 100 + c / 100;
+    const drift = paid(t.splitFor(3, pool)) - cents(pool);
+    if (drift > worstOver) worstOver = drift;
+    if (drift < worstUnder) worstUnder = drift;
+    checked++;
+  }
+  check('every pool from $100.00 to $150.00 was checked', checked, 5001);
+  check('no pool ever pays out more than it holds', worstOver, 0);
+  check('and none ever strands a cent', worstUnder, 0);
+
+  // The two cases that were actually wrong before.
+  check('$300.05 splits exactly', paid(t.splitFor(3, 300.05)), 30005);
+  check('$300.01 splits exactly', paid(t.splitFor(3, 300.01)), 30001);
+  // A leftover cent goes to the largest remainder, which is 1st place here.
+  check('the odd cent goes to the biggest share',
+    t.splitFor(3, 300.01).map(r => r.amount), [150.01, 90.00, 60.00]);
+
+  // A round pool still splits the obvious way.
+  check('a round pool is unchanged',
+    t.splitFor(3, 300).map(r => r.amount), [150, 90, 60]);
+
+  // An unfilled place must NOT be redistributed - it stays unawarded, and the
+  // screen says so. Spreading it would quietly pay 2nd place more than the
+  // rules promise.
+  const two = t.splitFor(2, 300);
+  check('two eligible pay two places', two.map(r => r.place), ['1st', '2nd']);
+  check('and the third place is not shared out', paid(two), cents(240));
+  const one = t.splitFor(1, 300);
+  check('one eligible pays one place', one.map(r => r.amount), [150]);
+  check('leaving the rest of the pool unawarded', paid(one), cents(150));
+
+  check('nobody eligible pays nobody', t.splitFor(0, 300), []);
+  check('more than three eligible still pays three', t.splitFor(9, 300).length, 3);
+  check('an empty pool pays out nothing',
+    t.splitFor(3, 0).map(r => r.amount), [0, 0, 0]);
+  check('and a junk pool does not produce NaN dollars',
+    t.splitFor(3, undefined).every(r => isFinite(r.amount)), true);
+  // Not reachable through the UI - donations and fees are both floored at zero
+  // - but a negative pool must never turn into a negative payout row that
+  // reads as money owed BY a winner.
+  check('a negative pool pays nothing rather than going negative',
+    t.splitFor(3, -50).map(r => r.amount), [0, 0, 0]);
+
+  // The shares themselves must stay 50/30/20 and add to the whole pool.
+  check('the shares are 50/30/20', t.PAYOUT_SHARES.map(x => x.share), [0.5, 0.3, 0.2]);
+  check('and they account for all of it',
+    Math.round(t.PAYOUT_SHARES.reduce((s, x) => s + x.share, 0) * 100), 100);
 }
 
 // ============================================================

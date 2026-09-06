@@ -11,7 +11,10 @@
 //
 // BUMP THE VERSION when index.html changes in a way that must reach phones
 // immediately. Everything else is handled by the network-first rule below.
-const VERSION = 'livewire-v1';
+// v2: the runtime cache is now capped (see trimRuntime). Bumping the version
+// also drops the uncapped v1 cache on activate, which is the only way to clear
+// the tiles already sitting on phones from before that limit existed.
+const VERSION = 'livewire-v2';
 const SHELL = VERSION + '-shell';
 const RUNTIME = VERSION + '-runtime';
 
@@ -83,6 +86,12 @@ self.addEventListener('fetch', (event) => {
 
   // Everything else - icons, the Leaflet bundle, map tiles - is versioned or
   // immutable, so cache first and only pay for it once.
+  //
+  // Map tiles are the reason this needs a ceiling. Every pan and zoom on the
+  // boundary editor is more tiles, they are never revisited, and nothing ever
+  // removed them - so the cache grew with every event until the browser
+  // started evicting site data on its own terms, which can take the offline
+  // shell with it. Capped, oldest out first.
   event.respondWith(
     caches.match(req).then((hit) => {
       if (hit) return hit;
@@ -91,13 +100,32 @@ self.addEventListener('fetch', (event) => {
         // is worth more than knowing whether it was a 200.
         if (res && (res.ok || res.type === 'opaque')) {
           const copy = res.clone();
-          caches.open(RUNTIME).then((c) => c.put(req, copy)).catch(() => {});
+          caches.open(RUNTIME)
+            .then((c) => c.put(req, copy).then(() => trimRuntime(c)))
+            .catch(() => {});
         }
         return res;
       }).catch(() => hit);
     })
   );
 });
+
+// How many runtime entries to keep. A few hundred tiles is a generous working
+// set for one reservoir; past that the oldest go. keys() comes back in
+// insertion order, so the front of the list is the oldest.
+const RUNTIME_MAX = 300;
+let trimming = false;
+function trimRuntime(cache) {
+  if (trimming) return Promise.resolve();      // one pass at a time
+  trimming = true;
+  return cache.keys()
+    .then((keys) => {
+      if (keys.length <= RUNTIME_MAX) return null;
+      return Promise.all(keys.slice(0, keys.length - RUNTIME_MAX).map((k) => cache.delete(k)));
+    })
+    .catch(() => null)
+    .then(() => { trimming = false; });
+}
 
 // Lets the page tell a waiting worker to take over immediately, so "Update"
 // means update rather than "close every tab and hope".
