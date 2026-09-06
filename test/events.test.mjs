@@ -69,6 +69,7 @@ globalThis.__t = {
   BET_TITLE_MAX, BET_OPEN_MAX, BET_SCORING, renderDqNotice,
   makeCode, codesInUse, takenCodes, codeBoxHtml, codeNoteHtml, anglerById,
   isConfirmed, normPhone, pendingNoticeHtml, bigFishEntrants, poolCounts,
+  overdueCheckouts, sortOverdue, eventTimeParts, FINAL_CHECKIN_SECONDS,
   claimEntry, claimErrorText, syncViewportInset,
   CODE_ALPHABET, CODE_LENGTH, duplicateEntryError, rosterIsLoaded, wipeEventData,
   countsSentence, SHARED_COLLECTIONS,
@@ -2039,6 +2040,96 @@ check('a not-yet-signed-in device is told to wait',
   /wait/i.test(t.claimErrorText({ status: 401 })), true);
 check('a network failure reads as a network failure',
   /signal/.test(t.claimErrorText(new Error('boom'))), true);
+
+// ============================================================
+section('49. who is still on the water');
+{
+// The app always knew who checked in and never checked out. It never said so,
+// and finding out meant scrolling a roster reading two-line summaries. At 1500
+// on a cold reservoir the question is not "what is each angler's status" but
+// "who is unaccounted for".
+
+// Build a real Date at a given local time on an event day, so the timezone
+// conversion inside eventTimeParts is exercised rather than bypassed.
+const DAY1 = t.EVENTS[0].dates[0];
+function atEventTime(dateKey, hhmm) {
+  // Denver is UTC-6 in September. Constructing in UTC and letting the formatter
+  // convert back is what proves the two agree.
+  const [Y, M, D] = dateKey.split('-').map(Number);
+  const [h, m] = hhmm.split(':').map(Number);
+  return new Date(Date.UTC(Y, M - 1, D, h + 6, m, 0));
+}
+check('the harness and the app agree on the clock',
+  t.eventTimeParts(atEventTime(DAY1, '15:30')).dateKey, DAY1);
+check('and on the time of day',
+  t.eventTimeParts(atEventTime(DAY1, '15:30')).seconds, 15 * 3600 + 30 * 60);
+check('the deadline is 1500', t.FINAL_CHECKIN_SECONDS, 15 * 3600);
+
+const IN_ONLY  = { day1: { in: 1, out: null }, day2: { in: null, out: null } };
+const IN_OUT   = { day1: { in: 1, out: 2 },    day2: { in: null, out: null } };
+const NEVER_IN = { day1: { in: null, out: null }, day2: { in: null, out: null } };
+const roster = [
+  { id: 'still-out', name: 'Ann Miller',  checkins: IN_ONLY },
+  { id: 'came-back', name: 'Bob Reyes',   checkins: IN_OUT },
+  { id: 'no-launch', name: 'Cal Fisher',  checkins: NEVER_IN },
+  { id: 'no-record', name: 'Dee Winter' }                       // no checkins at all
+];
+
+// Before the deadline, an angler who is still out is simply still fishing.
+check('nothing is overdue at 1400',
+  t.overdueCheckouts(roster, atEventTime(DAY1, '14:00')).length, 0);
+check('nothing is overdue one minute before the deadline',
+  t.overdueCheckouts(roster, atEventTime(DAY1, '14:59')).length, 0);
+
+const late = t.overdueCheckouts(roster, atEventTime(DAY1, '15:30'));
+check('after it, the one who never checked out is listed',
+  late.map(x => x.angler.id), ['still-out']);
+check('someone who checked out is not', late.some(x => x.angler.id === 'came-back'), false);
+// Never checked in means never launched. Listing them would send the director
+// looking for somebody who is at home.
+check('someone who never launched is not', late.some(x => x.angler.id === 'no-launch'), false);
+check('and a record with no check-ins at all does not throw',
+  late.some(x => x.angler.id === 'no-record'), false);
+check('how overdue is measured from the deadline', late[0].overdueSeconds, 30 * 60);
+
+// Off an event day this must stay silent, or every practice run ends in an alert.
+// Deliberately 16:00 local, PAST the deadline, so the event-day guard is the
+// only thing that can refuse it. At 14:00 the deadline guard would have caught
+// it and this would pass without testing anything.
+check('a day that is not an event day reports nothing',
+  t.overdueCheckouts(roster, new Date(Date.UTC(2027, 0, 5, 23, 0, 0))).length, 0);
+check('and that time really is past the deadline',
+  t.eventTimeParts(new Date(Date.UTC(2027, 0, 5, 23, 0, 0))).seconds > t.FINAL_CHECKIN_SECONDS, true);
+
+// Day 2 is tracked separately - day 1 being complete says nothing about today.
+const day2Roster = [{ id: 'd2', name: 'Eve Frost',
+  checkins: { day1: { in: 1, out: 2 }, day2: { in: 5, out: null } } }];
+const DAY2 = t.EVENTS[0].dates[1];
+const onDay2 = t.overdueCheckouts(day2Roster, atEventTime(DAY2, '15:30'));
+check('day 1 being complete does not clear day 2', onDay2.map(x => x.angler.id), ['d2']);
+check('and day 2 is read on day 2', (onDay2[0] || {}).dayKey, 'day2');
+check('while on day 1 that angler was accounted for',
+  t.overdueCheckouts(day2Roster, atEventTime(DAY1, '15:30')).length, 0);
+
+// ---- order ----
+// They all missed the same deadline, so the tiebreak that matters is who was
+// last SEEN. A stale fix is worse news than a fresh one.
+const three = [
+  { angler: { id: 'a', name: 'Fresh' } },
+  { angler: { id: 'b', name: 'Stale' } },
+  { angler: { id: 'c', name: 'Never' } }
+];
+const tNow = Date.now();
+const sigs = [
+  { id: 'a', at: tNow - 2 * 60 * 1000 },
+  { id: 'b', at: tNow - 90 * 60 * 1000 }
+];
+check('the oldest position comes first, and no position at all comes before that',
+  t.sortOverdue(three, sigs).map(x => x.angler.id), ['c', 'b', 'a']);
+check('with no signals at all it falls back to alphabetical',
+  t.sortOverdue(three, []).map(x => x.angler.name), ['Fresh', 'Never', 'Stale']);
+check('an empty list sorts to an empty list', t.sortOverdue([], sigs), []);
+}
 
 // ============================================================
 console.log('\n' + (fail === 0 ? 'ALL PASS' : fail + ' FAILED') + '  (' + pass + ' passed)');

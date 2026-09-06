@@ -575,6 +575,44 @@
     font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
     font-size:20px;letter-spacing:.14em;text-transform:uppercase;
   }
+  /* Loud on purpose. This only ever appears when somebody who launched has
+     not come back, and it should not be possible to scroll past it. */
+  .overdue{
+    border:2px solid var(--danger);border-radius:5px;background:#F7EFEC;
+    padding:14px;margin-bottom:14px;
+  }
+  .overdue-head{
+    font-weight:700;font-size:16px;color:var(--danger);
+    letter-spacing:.01em;margin-bottom:2px;
+  }
+  .overdue-sub{font-size:12px;color:var(--steel);margin-bottom:10px;}
+  .od-row{
+    border-top:1px solid #E2CFC9;padding:9px 0 8px;
+  }
+  .od-name{font-weight:600;font-size:15px;}
+  .od-id{font-weight:400;font-size:12px;color:var(--steel);}
+  .od-line{font-size:13px;margin-top:2px;}
+  .od-line a, .od-ice a{color:var(--danger);font-weight:600;}
+  .od-ice{font-size:12px;color:var(--steel);margin-top:3px;}
+  .overdue-foot{
+    font-size:11px;color:var(--steel);border-top:1px solid #E2CFC9;
+    margin-top:8px;padding-top:8px;line-height:1.5;
+  }
+  /* Above the tab bar, and it has to survive being the only thing the reader
+     notices - an app running a stale shell mid-tournament is a real problem. */
+  .sw-update{
+    position:fixed;left:8px;right:8px;z-index:1300;
+    bottom:calc(74px + env(safe-area-inset-bottom, 0px) + var(--vv-bottom, 0px));
+    max-width:480px;margin:0 auto;
+    display:flex;align-items:center;gap:10px;justify-content:space-between;
+    background:var(--deep);color:var(--white);
+    border-radius:8px;padding:10px 12px;font-size:13px;
+    box-shadow:0 8px 24px rgba(0,0,0,0.28);
+  }
+  .sw-update button{
+    width:auto;flex-shrink:0;padding:7px 13px;font-size:13px;
+    background:var(--gold);color:#241703;border:none;border-radius:5px;font-weight:600;
+  }
   .pending-notice{
     border:1px solid var(--gold);border-left-width:4px;background:#F9F3E6;
     border-radius:4px;padding:12px;margin-bottom:14px;
@@ -1084,6 +1122,16 @@
           <input type="tel" id="reg-phone" placeholder="406-555-0100">
           <p class="hint" style="margin:6px 0 0;">One entry per number. The director uses this to reach you if you are late back to the ramp &mdash; nobody else on the water ever sees it.</p>
         </div>
+        <!-- Required, because the one number guaranteed not to answer in an
+             emergency is the angler's own. Director-only, like the real name
+             and phone beside it. -->
+        <div class="field">
+          <label for="reg-ice-name">Emergency contact</label>
+          <input type="text" id="reg-ice-name" placeholder="Name of someone not on the water">
+          <label for="reg-ice-phone" style="margin-top:10px;">Emergency contact phone</label>
+          <input type="tel" id="reg-ice-phone" placeholder="406-555-0102">
+          <p class="hint" style="margin:6px 0 0;">Only the director ever sees this, and only if you are overdue off the water. Pick someone who is not fishing with you.</p>
+        </div>
         <div class="field">
           <label>Division</label>
           <div class="radiogroup" id="reg-division">
@@ -1494,6 +1542,9 @@
       </div>
 
       <div id="admin-panel" style="display:none;">
+        <!-- Above everything, including the sync line. Once the deadline has
+             passed this is the only thing on the screen that cannot wait. -->
+        <div id="overdue-alert" style="display:none;"></div>
         <div class="syncbanner" id="admin-auth-banner" style="display:none;"></div>
         <p class="hint" id="admin-sync-line" style="margin:0 0 12px;"></p>
         <button class="secondary" id="admin-signout" style="margin-bottom:12px;">Sign out</button>
@@ -2044,7 +2095,16 @@ let eventClockTimer = null;
 function startEventClock(){
   updateEventCountdown();
   if(!eventClockTimer) eventClockTimer = setInterval(updateEventCountdown, 1000);
+  // The overdue alert has to be able to APPEAR, not just be there on a repaint.
+  // The deadline passes while the director is looking at a screen they are not
+  // touching, and a minute is fine - this is about a 1500 cut-off, not seconds.
+  if(!overdueTimer) overdueTimer = setInterval(()=>{
+    if(adminUnlocked || authMode === 'director'){
+      try{ renderOverdueAlert(); }catch(e){ console.error(e); }
+    }
+  }, 60 * 1000);
 }
+let overdueTimer = null;
 
 function milesBetween(lat1, lng1, lat2, lng2){
   const R = 3958.8;
@@ -4474,7 +4534,7 @@ async function renderRegisterScreen(){
   renderRoster();   // the roster card is on this screen; keep it current
   const closed = isRegistrationClosed();
   document.getElementById('reg-closed-notice').style.display = closed ? 'block' : 'none';
-  ['reg-name','reg-phone','reg-partner','reg-bigfish'].forEach(id=>{
+  ['reg-name','reg-phone','reg-partner','reg-partner-phone','reg-ice-name','reg-ice-phone','reg-bigfish'].forEach(id=>{
     document.getElementById(id).disabled = closed;
   });
   document.querySelectorAll('#reg-division input[type=radio]').forEach(r=> r.disabled = closed);
@@ -4510,6 +4570,8 @@ bindEl('reg-submit','click', async ()=>{
   const division = document.querySelector('#reg-division label.active').dataset.val;
   const partnerName = document.getElementById('reg-partner').value.trim();
   const partnerPhone = document.getElementById('reg-partner-phone').value.trim();
+  const iceName = document.getElementById('reg-ice-name').value.trim();
+  const icePhone = document.getElementById('reg-ice-phone').value.trim();
   const bigfish = document.getElementById('reg-bigfish').checked;
   const errEl = document.getElementById('reg-err');
 
@@ -4522,6 +4584,14 @@ bindEl('reg-submit','click', async ()=>{
   // typo, loose enough not to argue about formatting at the ramp.
   if(normPhone(phone).length < 10){
     return fail('That does not look like a complete phone number. Include the area code.');
+  }
+  if(!iceName) return fail('Enter an emergency contact. If you are the one in the water, yours is the number that will not answer.');
+  if(normPhone(icePhone).length < 10){
+    return fail('Enter a complete phone number for your emergency contact, area code included.');
+  }
+  // Someone in the same boat is not an emergency contact.
+  if(normPhone(icePhone) === normPhone(phone)){
+    return fail('Your emergency contact needs to be someone else — that is your own number.');
   }
   if(division==='team' && !partnerName) return fail("Enter your partner's name for a team entry.");
   if(division==='team' && partnerPhone && normPhone(partnerPhone).length < 10){
@@ -4607,6 +4677,7 @@ bindEl('reg-submit','click', async ()=>{
     id: captainId, name, phone, division, partner: division==='team'?partnerName:'', bigfish,
     tournamentId, role: division==='team' ? 'captain' : 'solo', teamId: null,
     anglerCode: makeCode(codePool), teamCode,
+    emergencyName: iceName, emergencyPhone: icePhone,
     // Pending until the director confirms the fee arrived. See isConfirmed().
     pending: true,
     handle: pendingHandle || uniqueHandle(anglers),
@@ -4628,6 +4699,9 @@ bindEl('reg-submit','click', async ()=>{
       // Same team code, different personal code. That difference is the whole
       // point: it is what tells two anglers fishing one entry apart on a board.
       anglerCode: makeCode(codePool), teamCode,
+      // The same contact covers both: one boat, one call to shore. A partner
+      // with nobody to ring is exactly the gap this field exists to close.
+      emergencyName: iceName, emergencyPhone: icePhone,
       // Rolled against the list including the captain just pushed, so
       // teammates can never land on the same handle as each other.
       handle: uniqueHandle(anglers),
@@ -4662,6 +4736,8 @@ bindEl('reg-submit','click', async ()=>{
   document.getElementById('reg-phone').value='';
   document.getElementById('reg-partner').value='';
   document.getElementById('reg-partner-phone').value='';
+  document.getElementById('reg-ice-name').value='';
+  document.getElementById('reg-ice-phone').value='';
   document.getElementById('reg-bigfish').checked=false;
   const soloLabel = document.querySelector('#reg-division label[data-val="solo"]');
   if(soloLabel){
@@ -4736,6 +4812,45 @@ async function renderCheckinBody(){
       await saveAnglers(anglers);
       renderCheckinBody();
     });
+  });
+}
+
+// ---- who is still on the water ----
+// The app has always known who checked in and never checked out. It just never
+// said so, and the roster shows it two lines deep on a row you have to scroll
+// to. At 1500 on a cold reservoir the useful question is not "what is each
+// angler's status" but "who is unaccounted for", and that is a different
+// screen.
+//
+// Returns [] until the final check-in deadline passes, because before then an
+// angler who is still out is simply still fishing.
+function overdueCheckouts(anglers, now){
+  const parts = eventTimeParts(now || new Date());
+  const dayIndex = eventDates().indexOf(parts.dateKey);
+  if(dayIndex === -1) return [];                       // not an event day
+  if(parts.seconds < FINAL_CHECKIN_SECONDS) return []; // not due back yet
+
+  const dayKey = 'day' + (dayIndex + 1);
+  const overdueBy = parts.seconds - FINAL_CHECKIN_SECONDS;
+  return (anglers || []).filter(a=>{
+    const rec = (a.checkins && a.checkins[dayKey]) || {};
+    // Checked in and not back out. Someone who never checked in never launched.
+    return !!rec.in && !rec.out;
+  }).map(a=> ({ angler: a, dayKey: dayKey, overdueSeconds: overdueBy }));
+}
+
+// Longest unaccounted for first - but they all came off the water at the same
+// deadline, so within a day the tiebreak that matters is who was last SEEN.
+// A stale position is worse news than a fresh one.
+function sortOverdue(list, signals){
+  const byId = {};
+  (signals || []).forEach(s=>{ byId[s.id] = s; });
+  return (list || []).slice().sort((x, y)=>{
+    const ax = byId[x.angler.id], ay = byId[y.angler.id];
+    const mx = ax ? signalAgeMinutes(ax) : Infinity;
+    const my = ay ? signalAgeMinutes(ay) : Infinity;
+    if(mx !== my) return my - mx;                    // oldest fix first
+    return String(x.angler.name).localeCompare(String(y.angler.name));
   });
 }
 
@@ -5390,6 +5505,64 @@ async function renderBigFish(){
   el.innerHTML = sorted.map((c,i)=>
     '<div class="lbrow"><div class="rank">'+(i+1)+'</div><div class="who"><div class="name">'+escapeHtml(displayHandle(byId[c.anglerId]))+'</div><div class="sub">'+(c.division==='team'?'Team':'Solo')+' division</div></div><div class="len">'+c.length.toFixed(2)+'"</div></div>'
   ).join('');
+}
+
+// Painted at the top of the director panel, above the sync line, because once
+// the deadline has passed nothing else on that screen matters as much.
+//
+// Real names and phone numbers, deliberately: this is the director's own
+// screen and the whole point is being able to ring somebody.
+async function renderOverdueAlert(){
+  const el = document.getElementById('overdue-alert');
+  if(!el) return;
+  const anglers = await loadAnglers();
+  const list = overdueCheckouts(anglers, new Date());
+  if(list.length === 0){ el.style.display = 'none'; el.innerHTML = ''; return; }
+
+  const signals = await loadSignals();
+  const byId = {};
+  signals.forEach(s=>{ byId[s.id] = s; });
+  const sorted = sortOverdue(list, signals);
+  const mins = Math.floor(sorted[0].overdueSeconds / 60);
+
+  const rows = sorted.map(item=>{
+    const a = item.angler;
+    const sig = byId[a.id];
+    const where = sig
+      ? 'Last seen ' + escapeHtml(signalAgeText(sig)) +
+        (sig.lat != null && sig.lng != null
+          ? ' &middot; ' + Number(sig.lat).toFixed(4) + ', ' + Number(sig.lng).toFixed(4)
+          : '')
+      : '<strong>No position ever recorded</strong>';
+    const phone = a.phone
+      ? '<a href="tel:' + escapeHtml(String(a.phone).replace(/[^\d+]/g, '')) + '">' + escapeHtml(a.phone) + '</a>'
+      : 'no phone on file';
+    // The number to ring when the angler's own does not answer.
+    const ice = a.emergencyPhone
+      ? '<div class="od-ice">Emergency: ' + escapeHtml(a.emergencyName || 'contact') + ' &middot; ' +
+        '<a href="tel:' + escapeHtml(String(a.emergencyPhone).replace(/[^\d+]/g, '')) + '">' +
+        escapeHtml(a.emergencyPhone) + '</a></div>'
+      : '<div class="od-ice">No emergency contact on file</div>';
+    return '<div class="od-row">' +
+      '<div class="od-name">' + escapeHtml(a.name) +
+        ' <span class="od-id">' + escapeHtml(a.tournamentId) + '</span></div>' +
+      '<div class="od-line">' + phone + '</div>' +
+      '<div class="od-line">' + where + '</div>' +
+      ice +
+    '</div>';
+  }).join('');
+
+  el.innerHTML =
+    '<div class="overdue">' +
+      '<div class="overdue-head">' + sorted.length +
+        (sorted.length === 1 ? ' angler has' : ' anglers have') + ' not checked out</div>' +
+      '<div class="overdue-sub">Final check-in was ' + mins + ' minute' + (mins===1?'':'s') +
+        ' ago. Oldest position first.</div>' +
+      rows +
+      '<div class="overdue-foot">This clears itself as each one checks out. ' +
+        'You can also check someone out for them from Contestants.</div>' +
+    '</div>';
+  el.style.display = 'block';
 }
 
 // ---- position signals ----
@@ -7529,6 +7702,7 @@ async function renderPositionsAdmin(){
 }
 
 async function renderAdmin(){
+  renderOverdueAlert();   // fire and forget; it paints itself when it resolves
   if(!adminUnlocked) return;
   await renderPositionsAdmin();
   renderEventAdmin();
@@ -8144,6 +8318,56 @@ function wireContestantRows(){
   });
 }
 
+// ---- offline shell ----
+// Registers sw.js, which is what lets the installed app open with no signal at
+// all. Guarded three ways because none of this exists on a page opened straight
+// off the disk, and a throw here would take the whole startup with it.
+function registerServiceWorker(){
+  try{
+    if(!('serviceWorker' in navigator)) return;
+    const proto = window.location && window.location.protocol;
+    if(proto !== 'https:' && (window.location || {}).hostname !== 'localhost') return;
+
+    navigator.serviceWorker.register('sw.js').then(reg=>{
+      // A new version downloaded while the app was open. Saying so beats
+      // swapping the page out underneath somebody mid-catch.
+      reg.addEventListener('updatefound', ()=>{
+        const sw = reg.installing;
+        if(!sw) return;
+        sw.addEventListener('statechange', ()=>{
+          if(sw.state === 'installed' && navigator.serviceWorker.controller){
+            showUpdateBanner(sw);
+          }
+        });
+      });
+    }).catch(e=> console.error(e));
+
+    // The new worker took over - reload once, and only once, or a controller
+    // change during startup would loop.
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+      if(reloading) return;
+      reloading = true;
+      window.location.reload();
+    });
+  }catch(e){ console.error(e); }
+}
+
+function showUpdateBanner(worker){
+  if(document.getElementById('sw-update')) return;
+  const bar = document.createElement('div');
+  bar.id = 'sw-update';
+  bar.className = 'sw-update';
+  bar.innerHTML = '<span>A newer version of LiveWire is ready.</span>' +
+    '<button type="button" id="sw-update-go">Update</button>';
+  document.body.appendChild(bar);
+  const go = document.getElementById('sw-update-go');
+  if(go) go.addEventListener('click', ()=>{
+    bar.remove();
+    worker.postMessage('skip-waiting');
+  });
+}
+
 // ---- keeping the tab bar above the browser's own toolbar ----
 // A phone browser's bottom toolbar covers the bottom of the layout viewport,
 // and no CSS unit tracks it while it animates in and out on scroll - which is
@@ -8179,6 +8403,7 @@ if(window.visualViewport){
     const app = document.getElementById('app');
     if(app) app.dataset.theme = 'home';
     syncViewportInset();
+    registerServiceWorker();
     await loadMyAnglerId();
     // Paint the event's own name, dates and species before anything else, so the
     // first frame is not last year's copy waiting to be corrected by the sync.

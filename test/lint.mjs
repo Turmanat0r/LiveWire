@@ -54,6 +54,7 @@ for (const m of markup.matchAll(/\bid="([^"]+)"/g)) declared.add(m[1]);
 // markup. Anything listed here is a promise that the code really does build it.
 const RUNTIME_IDS = new Set([
   'boot-error',                                                // the error trap injects this
+  'sw-update', 'sw-update-go',                                 // the update banner builds itself
   'dq-reason',                                                 // inside a contestant row
   'ce-name', 'ce-phone', 'ce-handle', 'ce-bigfish', 'ce-err'   // director edit form
 ]);
@@ -160,6 +161,16 @@ for (const file of SQL) {
   const sql = fs.readFileSync(p, 'utf8');
   for (const c of collections) {
     if (!sql.includes('public.' + c)) note('sql', `${file} never mentions public.${c}`);
+  }
+}
+
+// --------------------------------------------------------- service worker
+// Registering a worker that is not there fails quietly - the promise rejects
+// into a console nobody is reading, and the app simply never works offline.
+for (const m of script.matchAll(/serviceWorker\.register\('([^']+)'\)/g)) {
+  const file = m[1].replace(/^\.?\//, '');
+  if (!fs.existsSync(path.join(HERE, '..', file))) {
+    note('sw', `the page registers ${m[1]} but there is no ${file} to register`);
   }
 }
 

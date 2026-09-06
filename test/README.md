@@ -65,6 +65,10 @@ The places where a mistake is silent and expensive:
   and that a server problem is never reported as a bad code. A code alone is
   four characters and is visible on the board in any photo the angler shows
   someone.
+- **Who is still on the water.** That the overdue alert stays silent before the
+  deadline and off event days, never lists someone who did not launch, reads
+  the right day, and sorts by who was last seen rather than by name. Getting
+  this wrong is either a false alarm or a search that starts too late.
 - **The roster gate.** `initStore()` is not awaited, so the register form is
   usable before the roster arrives — and a duplicate check against an empty
   roster passes every time. This is how one person registered twice from two
@@ -128,6 +132,11 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Let a claim match on the board code alone | 2 failures |
 | Let a blank board code claim a codeless angler | 1 failure |
 | Report a server error as a bad claim code | 4 failures |
+| Raise the overdue alert before the check-in deadline | 2 failures |
+| List anglers who never checked in as overdue | 3 failures |
+| Read day 1's check-out on day 2 | 2 failures |
+| Sort the freshest position first instead of the oldest | 1 failure |
+| Treat "no position ever" as a fresh one | 1 failure |
 | Read a missing `pending` flag as unconfirmed | 13 failures |
 | Let an unconfirmed entry into the standings | 1 failure |
 | Let an unconfirmed entry into the Big Fish pot | 2 failures |
@@ -148,6 +157,7 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Render a missing board code as blank | 1 failure |
 | Stop escaping board codes | 2 failures |
 | Set any form field's font-size under 16px | lint: 1 finding |
+| Delete `sw.js` while the page still registers it | lint: 1 finding |
 | Typo an element id | lint: 2 findings |
 | Delete `api/fish-i.js` | lint: 1 finding |
 
@@ -164,6 +174,13 @@ prompt clamp:
 | Let `normalize()` pass unknown fields through | 2 failures |
 
 Put it back afterwards.
+
+Two guards in the app are deliberately redundant, and a sabotage of either
+passes: the phone-length check in `claimEntry` (the equality check already
+refuses an empty number) and the event-day check in `overdueCheckouts` (a
+non-event day builds a `dayKey` that matches nothing). Both behaviours are
+enforced twice. A test that went red for them would be asserting the
+implementation rather than the rule, so there isn't one.
 
 That table exists because it has caught real gaps twice: replacing instead of
 merging produced **no** failures until an assertion was added for it, and the
