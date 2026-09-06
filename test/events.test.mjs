@@ -2565,6 +2565,16 @@ check('and the waterbody to the course label',
   defaulted.waterbody, 'Silos to the Ponds, Canyon Ferry');
 check('a saved value beats the default',
   t.reportWithDefaults({ waterbody: 'Hauser Lake' }).waterbody, 'Hauser Lake');
+// reportWithDefaults() is also where last year's contact details come in. It
+// has to be checked HERE and not only through lastFiledDetails(), or the two
+// can be wired apart without a test noticing.
+await t.saveReportSettings({ filerName: 'Carried Forward' });
+await setEvent(E2);
+check('and the filer carries into the next event through the same door',
+  t.reportWithDefaults({}).filerName, 'Carried Forward');
+check('while a name typed for this event wins',
+  t.reportWithDefaults({ filerName: 'This Year' }).filerName, 'This Year');
+await setEvent(E1);
 
 const defaultModel = t.buildReportModel(anglersNow, catchesNow, {});
 check('and the sheet is built from the same defaults',
@@ -2584,14 +2594,115 @@ t.resetReportForm();
 await t.renderFwpReport();
 const sheet = t.appDocument.getElementById('report-sheet').innerHTML;
 check('the sheet was built', sheet.length > 0, true);
-check('it leads with the contest name', sheet.indexOf('Contest name') > -1, true);
-check('the angler count reached it', sheet.indexOf('Total # of anglers') > -1, true);
-check('so did the hours table', sheet.indexOf('Total hours') > -1, true);
-check('and the species table', sheet.indexOf('Number of fish caught') > -1, true);
-check('and both size tables', sheet.indexOf('Size distribution') > -1, true);
+
+// The sheet is a rebuild of the state's form, so the WORDING is the thing to
+// pin down: a director reads the two side by side, and a box that has been
+// paraphrased is a box they have to stop and think about. Every label below is
+// copied off the June 2016 form.
+[['FISHING CONTEST REPORT', 'the title'],
+ ['Please return within', 'the return instruction'],
+ ['P.O. Box 200701', 'the Helena address'],
+ ['Contest Name', 'the contest name box'],
+ ['Contest Date(s) M/D/Y', 'the date box'],
+ ['Waterbody:', 'the waterbody box'],
+ ['Total # of Anglers:', 'the angler count'],
+ ['# of Teams', 'the team count'],
+ ['# Paid:', 'the paid count'],
+ ['# of Montana Residents:', 'the resident count'],
+ ['# of Non-Residents:', 'the non-resident count'],
+ ['# of Boats (if applicable):', 'the boat count'],
+ ['Size of Winning Fish:', 'the winning fish'],
+ ['Form Completed By:', 'the filer'],
+ ['Mailing Address:', 'the mailing address'],
+ ['Contest Sponsor:', 'the sponsor'],
+ ['HOURS FISHED:', 'the hours heading'],
+ ['# Fish Released', 'the released column'],
+ ['NUMBER OF FISH CAUGHT:', 'the fish heading'],
+ ['Minimum Length Required for Contest', 'the minimum length column'],
+ ['Number Died', 'the mortality column'],
+ ['OTHER INFORMATION: (if required)', 'the other-information heading'],
+ ['OPTIONAL INFORMATION:', 'the optional heading'],
+ ['Body of Water:', 'the body of water line'],
+ ['Semi-turbid', 'the clarity options'],
+ ['Degrees F', 'the temperature units'],
+ ['SIZE DISTRIBUTION OF FISH CAUGHT:', 'the size heading'],
+ ['Please record all fish caught that were 8 inches or longer.', 'the 8-inch instruction'],
+ ['Please record all fish caught that were 12 inches or longer.', 'the 12-inch instruction'],
+ ['List Species', 'the size table row label'],
+ ['Size in Inches', 'the size table column head'],
+ ['Page 1 of 2', 'the first page footer'],
+ ['Page 2 of 2', 'the second page footer']
+].forEach(([text, what]) => {
+  check('the form wording is kept for ' + what, sheet.indexOf(text) > -1, true);
+});
+
 check('the winning fish is printed to two places', sheet.indexOf('21.00&quot;') > -1, true);
-check('an unfilled box says so rather than printing a gap',
-  sheet.indexOf(t.SHEET_BLANK) > -1, true);
+// The words alone are not the behaviour: they have to be inside .rblank, which
+// is what the print stylesheet hides so the posted copy has a genuinely empty
+// box. Asserting the text on its own passed even with the wrapper stripped.
+check('an unfilled box is marked so the printed copy leaves it empty',
+  sheet.indexOf('<span class="rblank">' + t.SHEET_BLANK + '</span>') > -1, true);
+// The form has four day rows and six species rows whether or not there is
+// anything to put in them, so a one-day tournament still prints its shape.
+check('the day rows are padded to the four the form has',
+  (sheet.match(/<tr>/g) || []).length >= 4, true);
+check('and the page breaks between the two sheets', sheet.indexOf('fwp-break') > -1, true);
+
+// ---- the grid actually lines up ----
+// Every row of a fixed-layout table has to span the same number of columns. A
+// colspan that is one out does not throw and does not look broken in isolation
+// - it skews every row below it, which on a form that gets posted to the state
+// is a page nobody can read across. Counted here because nothing else can see
+// it without a browser.
+// `exact` matters: the size tables carry BOTH fwp-table and fwp-size, and a
+// loose match would drag them into the square-table check they are exempt from.
+function tableRows(html, cls, exact){
+  const open = exact ? '<table class="' + cls + '">' : '<table class="[^\"]*' + cls + '[^\"]*">';
+  const table = new RegExp(open + '([\\s\\S]*?)</table>', 'g');
+  const out = [];
+  let m;
+  while ((m = table.exec(html)) !== null){
+    const rows = m[1].split('<tr>').slice(1).map(r => {
+      let width = 0;
+      const cells = r.match(/<t[hd][^>]*>/g) || [];
+      cells.forEach(c => {
+        const span = /colspan="(\d+)"/.exec(c);
+        width += span ? Number(span[1]) : 1;
+      });
+      return width;
+    });
+    out.push(rows);
+  }
+  return out;
+}
+tableRows(sheet, 'fwp-grid').forEach((widths, i) => {
+  check('grid table ' + (i + 1) + ' has rows of one width',
+    widths.every(w => w === widths[0]), true);
+  check('and that width is the form\'s six columns', widths[0], 6);
+});
+tableRows(sheet, 'fwp-table', true).forEach((widths, i) => {
+  check('data table ' + (i + 1) + ' is square', widths.every(w => w === widths[0]), true);
+});
+// The size tables carry a rowspan on the species cell, so their first header
+// row is one narrower by design - it is checked against the inch count instead.
+const sizeWidths = tableRows(sheet, 'fwp-size');
+const smallCols = t.sizeColumns(t.SIZE_SMALL_MIN, t.SIZE_SMALL_MAX).length;
+// Row 0 is the "List Species" cell plus a "Size in Inches" cell spanning the
+// rest. If that colspan and the inch headers below it ever disagree, the table
+// prints with a column hanging off the end - and the tests said nothing until
+// this line compared them.
+check('the 8-inch table header spans every one of its columns',
+  (sizeWidths[0] || [])[0], smallCols + 1);
+check('the 8-inch table has a column per inch from 8 to 23',
+  (sizeWidths[0] || [])[1], smallCols);
+check('and its body rows carry the species cell too',
+  (sizeWidths[0] || [])[2], t.sizeColumns(t.SIZE_SMALL_MIN, t.SIZE_SMALL_MAX).length + 1);
+const largeCols = t.sizeColumns(t.SIZE_LARGE_MIN, t.SIZE_LARGE_MAX).length;
+check('the 12-inch table header spans every one of its columns',
+  (sizeWidths[1] || [])[0], largeCols + 1);
+check('the 12-inch table runs to the 30+ column',
+  (sizeWidths[1] || [])[1], largeCols);
+check('and it is labelled as a catch-all', sheet.indexOf('>30+<') > -1, true);
 
 // The copy button has to produce the same report without a printer. It reads
 // the rendered sheet, so a change to one cannot leave the other behind.
@@ -2601,7 +2712,7 @@ check('the text copy carries the contest name',
   asText.indexOf('Montana Kayak Walleye Open') > -1, true);
 check('and no markup came with it', /<[a-z]/i.test(asText), false);
 check('nor any raw entities', asText.indexOf('&quot;') === -1 && asText.indexOf('&amp;') === -1, true);
-check('and it kept the numbers', asText.indexOf('Total # of anglers') > -1, true);
+check('and it kept the numbers', asText.indexOf('Total # of Anglers:') > -1, true);
 }
 
 // ============================================================

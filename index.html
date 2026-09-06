@@ -170,28 +170,71 @@
   .hint{color:var(--steel);font-size:12px;margin-top:6px;line-height:1.5;}
 
   /* ---- FWP contest report ----
-     Read on a phone and then printed, so nothing here may depend on colour
-     surviving, and every table has to be able to get narrower than its
-     contents rather than widening the page. */
-  #report-sheet{border:1px solid var(--line);background:var(--white);padding:12px;font-size:13px;}
-  #report-sheet h3{
-    font-size:12px;letter-spacing:.09em;text-transform:uppercase;
-    color:var(--deep);margin:18px 0 6px;padding-bottom:4px;border-bottom:2px solid var(--deep);
+     The sheet is a rebuild of the state's paper form, not a styled summary of
+     it, so it deliberately drops out of the app's palette: black on white,
+     Arial, ruled boxes. It is read on a phone and then printed, and the
+     printed copy is the one that matters. */
+  #report-sheet{
+    background:#fff;color:#000;padding:14px;
+    font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.35;
+    border:1px solid var(--line);
   }
-  #report-sheet h3:first-child{margin-top:0;}
-  .rrow{display:flex;justify-content:space-between;gap:14px;padding:5px 0;border-bottom:1px solid var(--line);}
-  .rrow:last-child{border-bottom:none;}
-  .rlabel{color:var(--steel);}
-  .rval{font-weight:600;text-align:right;}
-  .rval.missing{font-weight:400;color:var(--danger);}
-  .rnote{color:var(--steel);font-size:12px;line-height:1.5;margin:6px 0 0;}
+  .fwp-page + .fwp-page{margin-top:24px;padding-top:20px;border-top:2px dashed var(--line);}
+  .fwp-region{text-align:right;font-weight:700;margin-bottom:8px;}
+  .fwp-title{
+    text-align:center;font-size:17px;font-weight:700;text-decoration:underline;
+    margin:0 0 14px;color:#000;
+  }
+  .fwp-return{font-weight:700;margin:0 0 8px;}
+  .fwp-address{margin:0 0 16px 30px;line-height:1.5;}
+  .fwp-head{
+    text-align:center;font-size:12px;font-weight:700;text-decoration:underline;
+    color:#000;margin:18px 0 6px;border:none;padding:0;letter-spacing:0;text-transform:none;
+  }
+  .fwp-head-note{font-weight:700;}
+  .fwp-sub{text-align:center;font-weight:700;margin:0 0 6px;}
+  .fwp-sub.em{font-style:italic;}
+  /* The label/value grids at the head of page 1. Fixed layout so a long
+     waterbody name wraps inside its box instead of widening the column. */
+  .fwp-grid,.fwp-table{border-collapse:collapse;width:100%;margin-bottom:14px;table-layout:fixed;}
+  .fwp-grid th,.fwp-grid td,.fwp-table th,.fwp-table td{
+    border:1px solid #000;padding:5px 6px;vertical-align:top;
+    overflow-wrap:anywhere;word-break:normal;
+  }
+  .fwp-grid th{background:#D9D9D9;text-align:center;font-weight:700;}
+  .fwp-table th{background:#fff;text-align:center;font-weight:700;}
+  .fwp-table td{height:22px;}
+  .fwp-grid td,.fwp-table td{text-align:left;}
+  #report-sheet td.num,#report-sheet th.num{text-align:center;}
   /* Twenty inch columns will never fit a phone. Scrolling the table beats
      scrolling the page sideways, which breaks the fixed nav. */
   .rscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
-  #report-sheet table{border-collapse:collapse;width:100%;font-size:12px;}
-  #report-sheet th,#report-sheet td{border:1px solid var(--line);padding:4px 6px;text-align:left;white-space:nowrap;}
-  #report-sheet th{background:var(--paper-2);}
-  #report-sheet td.num,#report-sheet th.num{text-align:center;}
+  .fwp-size{table-layout:auto;font-size:11px;}
+  .fwp-size th,.fwp-size td{padding:3px 2px;white-space:nowrap;}
+  .fwp-species-col{width:130px;text-align:center;}
+  /* Page 2's fill-in-the-blank lines. */
+  .fwp-line{margin:0 0 12px;}
+  .fwp-fill{
+    display:inline-block;min-width:150px;border-bottom:1px solid #000;
+    padding:0 4px;text-align:center;
+  }
+  .fwp-fill.wide{min-width:60%;}
+  .fwp-box{
+    display:inline-block;min-width:52px;border-bottom:1px solid #000;
+    padding:0 4px;text-align:center;font-weight:700;
+  }
+  .fwp-line .fwp-box{margin-left:14px;}
+  .fwp-gap{display:inline-block;width:36px;}
+  .fwp-box-area{border:1px solid #000;min-height:70px;padding:7px 8px;margin-bottom:14px;}
+  .fwp-foot{
+    display:flex;justify-content:space-between;gap:12px;
+    font-size:10px;font-weight:700;margin-top:16px;
+  }
+  /* Named on screen, empty on paper - see fwpValue(). A printed blank and a
+     printed "nothing" are the same thing, so the words exist to be read now. */
+  .rblank{color:#B00;font-style:italic;font-weight:400;}
+  .rnote{color:var(--steel);font-size:12px;line-height:1.5;margin:0 0 6px;}
+  #report-notes{margin-bottom:12px;}
   .rwarn{
     border-left:3px solid var(--gold);background:var(--paper-2);
     padding:9px 11px;margin-bottom:8px;font-size:13px;line-height:1.5;
@@ -1035,18 +1078,30 @@
      nested deep inside the director panel and display:none on any ancestor
      would take it with them. */
   @media print{
+    /* Printing exists for one thing: the FWP contest report. Everything else
+       is hidden by VISIBILITY rather than display, because the sheet is nested
+       deep inside the director panel and display:none on any ancestor would
+       take it with them. */
     body *{visibility:hidden !important;}
     #report-sheet,#report-sheet *{visibility:visible !important;}
     #report-sheet{
       position:absolute;left:0;top:0;width:100%;
-      border:none;padding:0;background:none;font-size:11pt;
+      border:none;padding:0;background:#fff;color:#000;font-size:10pt;
     }
+    /* An unfilled box prints EMPTY, the way the paper form would have been
+       handed over. The words are for the director, not for the state. */
+    .rblank{display:none !important;}
+    /* Two pages, and the form says which is which. */
+    .fwp-break{break-after:page;page-break-after:always;}
+    .fwp-page + .fwp-page{margin-top:0;padding-top:0;border-top:none;}
     /* Nothing to scroll on paper, and a clipped table would lose columns. */
     .rscroll{overflow:visible !important;}
-    #report-sheet table{font-size:8pt;}
-    #report-sheet th,#report-sheet td{padding:2px 3px;}
-    #report-sheet h3{break-after:avoid;page-break-after:avoid;}
-    #report-sheet table,.rday{break-inside:avoid;page-break-inside:avoid;}
+    .fwp-size{font-size:6.5pt;}
+    .fwp-size th,.fwp-size td{padding:2px 1px;}
+    .fwp-grid,.fwp-table{font-size:9pt;}
+    .fwp-head,.fwp-sub{break-after:avoid;page-break-after:avoid;}
+    .fwp-grid,.fwp-table,.fwp-box-area{break-inside:avoid;page-break-inside:avoid;}
+    .fwp-title{font-size:14pt;}
     .tabbar{display:none !important;}
     @page{margin:12mm;}
   }
@@ -1978,7 +2033,11 @@
 
           <hr class="divider">
           <h2 style="margin-bottom:8px;">The sheet</h2>
-          <p class="hint" style="margin-top:0;">In the same order as the paper form. Printing this gives you something to copy from and something to keep.</p>
+          <p class="hint" style="margin-top:0;">The state&rsquo;s form, rebuilt box for box. Print it and you have both a copy to work from and one to keep.</p>
+          <!-- Screen only. The sheet below is a copy of a state form and stays
+               one, so anything the app wants to say about the numbers is said
+               here instead of on the page that gets posted. -->
+          <div id="report-notes"></div>
           <!-- The only thing on the page the print stylesheet leaves visible. -->
           <div id="report-sheet"></div>
 
@@ -7259,21 +7318,51 @@ function renderReportResidency(res){
 }
 
 // ---- the sheet ----
+// A rebuild of the state's form rather than a summary of it: the same order,
+// the same wording, the same grid, so it can be held next to the paper copy
+// and read straight across. Row counts match the printed form too - four day
+// rows, six species rows - and pad out empty when there is less to say.
+//
+// Anything the app wants to SAY about the numbers - a species split across
+// both size tables, a released column it cannot fill in - is said on screen
+// above the sheet and never on the page that gets posted.
 
-function sheetRow(label, value, missing){
-  return '<div class="rrow"><span class="rlabel">' + escapeHtml(label) + '</span>' +
-    '<span class="rval' + (missing ? ' missing' : '') + '">' + escapeHtml(value) + '</span></div>';
-}
-// What a box that has not been filled in says. Naming it beats a blank line:
-// on a printed sheet an empty value and a value of nothing look identical.
+const FWP_HOURS_ROWS = 4;
+const FWP_SPECIES_ROWS = 6;
+const FWP_SIZE_SMALL_ROWS = 6;
+const FWP_SIZE_LARGE_ROWS = 7;
+const FWP_FOOTER = 'Send to: MT Fish, Wildlife and Parks - Attn: Fishing Contest Reporting- ' +
+                   'PO Box 200701 - Helena, MT 59620-0701';
+
+// What a box that has not been filled in says. Named on screen, and hidden by
+// the print stylesheet so the posted copy has a genuinely empty box in it -
+// which is what the paper form would have had.
 const SHEET_BLANK = 'not filled in';
 function sheetValue(v, blank){
   const s = reportValue(v).trim();
   return s === '' ? [blank || SHEET_BLANK, true] : [s, false];
 }
-function sheetField(label, v, blank){
+function fwpValue(v, blank){
   const [text, missing] = sheetValue(v, blank);
-  return sheetRow(label, text, missing);
+  return missing ? '<span class="rblank">' + escapeHtml(text) + '</span>' : escapeHtml(text);
+}
+// Blank rows, so a short tournament still prints a form the same shape as the
+// one it is copied onto.
+function fwpPad(have, want, cols){
+  let out = '';
+  for(let i = have; i < want; i++){
+    out += '<tr>' + new Array(cols + 1).join('<td>&nbsp;</td>') + '</tr>';
+  }
+  return out;
+}
+// The form's fill-in-the-blank options - Up / Down / Normal and the rest. The
+// answer goes in as an X on the blank, the way it would be written by hand.
+function fwpTick(actual, option){
+  const on = String(actual || '').toLowerCase() === option.toLowerCase();
+  return '<span class="fwp-box">' + (on ? 'X' : '&nbsp;') + '</span> ' + escapeHtml(option);
+}
+function fwpFill(v, blank){
+  return '<span class="fwp-fill">' + fwpValue(v, blank) + '</span>';
 }
 
 function sizeColumns(min, max){
@@ -7281,18 +7370,21 @@ function sizeColumns(min, max){
   for(let i = min; i <= max; i++) out.push(i);
   return out;
 }
-function sizeTableHtml(rows, min, max, plusLast){
+// One of page two's two tables. `plusLast` labels the final column "30+",
+// which is how the form writes its catch-all.
+function sizeTableHtml(rows, min, max, plusLast, padTo){
   const cols = sizeColumns(min, max);
-  const head = '<tr><th>Species</th>' +
-    cols.map(c=> '<th class="num">' + c + (plusLast && c === max ? '+' : '') + '</th>').join('') +
-    '<th class="num">Total</th></tr>';
-  const body = rows.map(r=>{
-    const total = cols.reduce((s, c)=> s + (r.counts[c] || 0), 0);
-    return '<tr><td>' + escapeHtml(r.species) + (r.split ? ' <span class="rlabel">(part)</span>' : '') + '</td>' +
-      cols.map(c=> '<td class="num">' + (r.counts[c] ? r.counts[c] : '') + '</td>').join('') +
-      '<td class="num">' + total + '</td></tr>';
-  }).join('');
-  return '<div class="rscroll"><table>' + head + body + '</table></div>';
+  const head =
+    '<tr><th rowspan="2" class="fwp-species-col">List Species</th>' +
+    '<th colspan="' + cols.length + '">Size in Inches</th></tr>' +
+    '<tr>' + cols.map(c=> '<th class="num">' + c + (plusLast && c === max ? '+' : '') + '</th>').join('') + '</tr>';
+  const body = rows.map(r=>
+    '<tr><td>' + escapeHtml(r.species) + '</td>' +
+    cols.map(c=> '<td class="num">' + (r.counts[c] ? r.counts[c] : '&nbsp;') + '</td>').join('') +
+    '</tr>'
+  ).join('');
+  return '<div class="rscroll"><table class="fwp-table fwp-size">' + head + body +
+    fwpPad(rows.length, padTo, cols.length + 1) + '</table></div>';
 }
 
 function renderReportSheet(model){
@@ -7302,95 +7394,153 @@ function renderReportSheet(model){
   const res = model.residency;
   const evt = model.event;
 
-  const head =
-    '<h3>Fishing contest report</h3>' +
-    sheetField('Region', cfg.region) +
-    sheetRow('Contest name', stripEntities(evt.name || '')) +
-    sheetRow('Contest date(s)', model.dates.length ? model.dates.join(', ') : 'no dates set') +
-    sheetField('Waterbody', model.waterbody) +
-    sheetRow('Total # of anglers', String(model.counts.anglers)) +
-    sheetRow('# of teams', String(model.counts.teams)) +
-    sheetRow('# paid', String(model.counts.paid)) +
-    sheetRow('# of Montana residents', res.unknown ? (res.resident + ' (' + res.unknown + ' unanswered)') : String(res.resident), !!res.unknown) +
-    sheetRow('# of non-residents', res.unknown ? (res.nonresident + ' (' + res.unknown + ' unanswered)') : String(res.nonresident), !!res.unknown) +
-    sheetRow('# of boats', String(model.boats) + (model.boatsDerived ? ' (one per angler)' : '')) +
-    sheetRow('Size of winning fish', model.winner ? Number(model.winner.length).toFixed(2) + '"' : 'no scoring catch');
+  // --- page 1 ---
+  const residentCell = res.unknown
+    ? escapeHtml(String(res.resident)) + '<span class="rblank"> (+' + res.unknown + ' unanswered)</span>'
+    : escapeHtml(String(res.resident));
+  const nonResidentCell = res.unknown
+    ? escapeHtml(String(res.nonresident)) + '<span class="rblank"> (+' + res.unknown + ' unanswered)</span>'
+    : escapeHtml(String(res.nonresident));
 
-  const filer =
-    '<h3>Filed by</h3>' +
-    sheetField('Form completed by', cfg.filerName) +
-    sheetRow('Date', new Date().toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' })) +
-    sheetField('Mailing address', (cfg.filerAddress || '').replace(/\s*\n\s*/g, ', ')) +
-    sheetField('Email address', cfg.filerEmail) +
-    sheetField('Telephone', cfg.filerPhone) +
-    sheetField('Contest sponsor', cfg.sponsor);
+  const dateText = model.dates.length
+    ? model.dates.map(d=> eventDayText(d, { month:'numeric', day:'numeric', year:'numeric' })).join(', ')
+    : '';
 
-  const hoursRows = model.days.map(d=>
+  const headTable =
+    '<table class="fwp-grid">' +
+      '<tr><th>Contest Name</th><td colspan="5">' + escapeHtml(stripEntities(evt.name || '')) + '</td></tr>' +
+      '<tr><th>Contest Date(s) M/D/Y</th><td colspan="2">' + fwpValue(dateText) + '</td>' +
+          '<th>Waterbody:</th><td colspan="2">' + fwpValue(model.waterbody) + '</td></tr>' +
+      '<tr><th>Total # of Anglers:</th><td>' + model.counts.anglers + '</td>' +
+          '<th># of Teams</th><td>' + model.counts.teams + '</td>' +
+          '<th># Paid:</th><td>' + model.counts.paid + '</td></tr>' +
+      '<tr><th># of Montana Residents:</th><td>' + residentCell + '</td>' +
+          '<th># of Non-Residents:</th><td>' + nonResidentCell + '</td>' +
+          '<th># of Boats (if applicable):</th><td>' + model.boats + '</td></tr>' +
+      '<tr><th>Size of Winning Fish:</th><td colspan="5">' +
+          (model.winner ? escapeHtml(Number(model.winner.length).toFixed(2) + '"') : fwpValue('')) +
+      '</td></tr>' +
+    '</table>';
+
+  const filerTable =
+    '<table class="fwp-grid">' +
+      '<tr><th>Form Completed By:</th><td colspan="3">' + fwpValue(cfg.filerName) + '</td>' +
+          '<th>Date:</th><td>' +
+          escapeHtml(new Date().toLocaleDateString('en-US', { month:'numeric', day:'numeric', year:'numeric' })) +
+      '</td></tr>' +
+      '<tr><th>Mailing Address:</th><td colspan="5">' +
+          fwpValue((cfg.filerAddress || '').replace(/\s*\n\s*/g, ', ')) + '</td></tr>' +
+      '<tr><th>Email Address:</th><td colspan="2">' + fwpValue(cfg.filerEmail) + '</td>' +
+          '<th>Telephone:</th><td colspan="2">' + fwpValue(cfg.filerPhone) + '</td></tr>' +
+      '<tr><th>Contest Sponsor:</th><td colspan="5">' + fwpValue(cfg.sponsor) + '</td></tr>' +
+    '</table>';
+
+  const hoursBody = model.days.map(d=>
     '<tr><td class="num">' + d.day + '</td>' +
-    '<td>' + escapeHtml(eventDayText(d.dateKey)) + '</td>' +
-    '<td class="num">' + escapeHtml(d.start || '—') + '</td>' +
-    '<td class="num">' + escapeHtml(d.stop || '—') + '</td>' +
-    '<td class="num">' + (d.hours === null ? '—' : d.hours.toFixed(2)) + '</td>' +
+    '<td class="num">' + fwpValue(d.start) + '</td>' +
+    '<td class="num">' + fwpValue(d.stop) + '</td>' +
+    '<td class="num">' + (d.hours === null ? fwpValue('') : d.hours.toFixed(2)) + '</td>' +
     '<td class="num">' + d.caught + '</td>' +
-    '<td class="num">' + (d.released === null ? '—' : d.released) + '</td></tr>'
+    '<td class="num">' + (d.released === null ? fwpValue('') : d.released) + '</td></tr>'
   ).join('');
-  const hours = '<h3>Hours fished</h3>' +
-    (model.days.length === 0 ? '<p class="rnote">This event has no dates set.</p>' :
-      '<div class="rscroll"><table>' +
-      '<tr><th class="num">Day</th><th>Date</th><th class="num">Start</th><th class="num">Stop</th>' +
-      '<th class="num">Total hours</th><th class="num"># caught</th><th class="num"># released</th></tr>' +
-      hoursRows + '</table></div>') +
-    (model.died > 0
-      ? '<p class="rnote">Released is blank per day because the app records which species did not survive, not which day. Split the ' +
-        model.died + ' across the days yourself.</p>'
-      : '');
+  const hoursTable =
+    '<h3 class="fwp-head">HOURS FISHED:</h3>' +
+    '<table class="fwp-table">' +
+      '<tr><th>Day</th><th>Start Time</th><th>Stop Time</th><th>Total Hours</th>' +
+      '<th># Fish Caught</th><th># Fish Released</th></tr>' +
+      hoursBody + fwpPad(model.days.length, FWP_HOURS_ROWS, 6) +
+    '</table>';
 
   const minLen = reportValue(cfg.minLength).trim();
-  const speciesRows = model.species.map(s=>
+  const speciesBody = model.species.map(s=>
     '<tr><td>' + escapeHtml(s.species) + '</td>' +
     '<td class="num">' + s.caught + '</td>' +
-    '<td class="num">' + (isScoringSpecies(s.species) && minLen ? minLen + '"' : '—') + '</td>' +
+    '<td class="num">' + (isScoringSpecies(s.species) && minLen ? escapeHtml(minLen + '"') : '&nbsp;') + '</td>' +
     '<td class="num">' + s.released + '</td>' +
     '<td class="num">' + s.died + '</td></tr>'
   ).join('');
-  const fish = '<h3>Number of fish caught</h3>' +
-    (model.species.length === 0 ? '<p class="rnote">No catches logged.</p>' :
-      '<div class="rscroll"><table>' +
-      '<tr><th>Species</th><th class="num">Total caught</th><th class="num">Min length</th>' +
-      '<th class="num">Released</th><th class="num">Died</th></tr>' + speciesRows +
-      '<tr><th>All species</th><th class="num">' + model.caught + '</th><th class="num">—</th>' +
-      '<th class="num">' + (model.caught - model.died) + '</th><th class="num">' + model.died + '</th></tr>' +
-      '</table></div>');
+  const speciesTable =
+    '<h3 class="fwp-head">NUMBER OF FISH CAUGHT: <span class="fwp-head-note">' +
+    '**Please attach a copy of your contest results if available.</span></h3>' +
+    '<table class="fwp-table">' +
+      '<tr><th>Species Type</th><th>Total Number Caught</th>' +
+      '<th>Minimum Length Required for Contest</th><th>Number Released</th><th>Number Died</th></tr>' +
+      speciesBody + fwpPad(model.species.length, FWP_SPECIES_ROWS, 5) +
+    '</table>';
+
+  const page1 =
+    '<div class="fwp-page fwp-break">' +
+      '<div class="fwp-region">Region: ' + fwpFill(cfg.region) + '</div>' +
+      '<h2 class="fwp-title">FISHING CONTEST REPORT</h2>' +
+      '<p class="fwp-return">Please return within <u>30 days</u> after the contest to:</p>' +
+      '<div class="fwp-address">Montana Fish, Wildlife &amp; Parks<br>' +
+        'Attn: Fishing Contest Reporting<br>Fisheries Division<br>' +
+        'P.O. Box 200701<br>Helena, MT 59620-0701</div>' +
+      headTable + filerTable + hoursTable + speciesTable +
+      '<div class="fwp-foot"><span>' + FWP_FOOTER + '</span><span>Page 1 of 2</span></div>' +
+    '</div>';
+
+  // --- page 2 ---
+  const notes =
+    '<h3 class="fwp-head">OTHER INFORMATION: (if required)</h3>' +
+    '<div class="fwp-box-area">' + fwpValue(cfg.otherInfo, 'nothing to report') + '</div>' +
+    '<h3 class="fwp-head">COMMENTS:</h3>' +
+    '<div class="fwp-box-area">' + fwpValue(cfg.comments, 'none') + '</div>';
 
   const optional =
-    '<h3>Optional information</h3>' +
-    sheetField('Body of water', model.waterbody) +
-    sheetField('Water level', cfg.waterLevel, 'not recorded') +
-    sheetField('Air temperature', reportValue(cfg.airTemp).trim() ? cfg.airTemp + ' °F' : '', 'not recorded') +
-    sheetField('Water temperature', reportValue(cfg.waterTemp).trim() ? cfg.waterTemp + ' °F' : '', 'not recorded') +
-    sheetField('Water clarity', cfg.clarity, 'not recorded');
+    '<h3 class="fwp-head">OPTIONAL INFORMATION:</h3>' +
+    '<p class="fwp-sub">The following information is optional, but would be of interest ' +
+    'for management purposes.</p>' +
+    '<div class="fwp-line"><strong>Body of Water:</strong> ' +
+      '<span class="fwp-fill wide">' + fwpValue(model.waterbody) + '</span></div>' +
+    '<div class="fwp-line"><strong>Water Level:</strong> ' +
+      fwpTick(cfg.waterLevel, 'Up') + fwpTick(cfg.waterLevel, 'Down') + fwpTick(cfg.waterLevel, 'Normal') +
+    '</div>' +
+    '<div class="fwp-line"><strong>Air Temperature:</strong> ' + fwpFill(cfg.airTemp, '') + ' Degrees F' +
+      '<span class="fwp-gap"></span><strong>Water Temperature:</strong> ' +
+      fwpFill(cfg.waterTemp, '') + ' Degrees F</div>' +
+    '<div class="fwp-line"><strong>Water Clarity:</strong> ' +
+      fwpTick(cfg.clarity, 'Clear') + fwpTick(cfg.clarity, 'Semi-turbid') + fwpTick(cfg.clarity, 'Muddy') +
+    '</div>';
 
-  const sizes = '<h3>Size distribution</h3>' +
-    '<p class="rnote">Every fish appears once. A species sits in whichever table has columns for its whole range, ' +
-    'so nothing is reported twice.</p>' +
-    '<p class="rnote"><strong>Fish 8 inches and over</strong></p>' +
-    (model.sizes.small.length === 0 ? '<p class="rnote">No fish under 12 inches.</p>' :
-      sizeTableHtml(model.sizes.small, SIZE_SMALL_MIN, SIZE_SMALL_MAX, false)) +
-    '<p class="rnote" style="margin-top:10px;"><strong>Fish 12 inches and over</strong></p>' +
-    (model.sizes.large.length === 0 ? '<p class="rnote">No fish 12 inches or over.</p>' :
-      sizeTableHtml(model.sizes.large, SIZE_LARGE_MIN, SIZE_LARGE_MAX, true)) +
-    (model.sizes.under8 > 0
-      ? '<p class="rnote">' + model.sizes.under8 + ' fish under 8 inches ' +
-        (model.sizes.under8 === 1 ? 'is' : 'are') + ' counted in the totals above but appear on neither table &mdash; ' +
-        'the form only asks for 8 inches and up.</p>'
-      : '');
+  const sizes =
+    '<h3 class="fwp-head">SIZE DISTRIBUTION OF FISH CAUGHT:</h3>' +
+    '<p class="fwp-sub em">Please record all fish caught that were 8 inches or longer.</p>' +
+    sizeTableHtml(model.sizes.small, SIZE_SMALL_MIN, SIZE_SMALL_MAX, false, FWP_SIZE_SMALL_ROWS) +
+    '<p class="fwp-sub em">Please record all fish caught that were 12 inches or longer.</p>' +
+    sizeTableHtml(model.sizes.large, SIZE_LARGE_MIN, SIZE_LARGE_MAX, true, FWP_SIZE_LARGE_ROWS);
 
-  const notes =
-    '<h3>Notes</h3>' +
-    sheetField('Other information', cfg.otherInfo, 'nothing to report') +
-    sheetField('Comments', cfg.comments, 'none');
+  const page2 =
+    '<div class="fwp-page">' + notes + optional + sizes +
+      '<div class="fwp-foot"><span>' + FWP_FOOTER + '</span><span>Page 2 of 2</span></div>' +
+    '</div>';
 
-  el.innerHTML = head + filer + hours + fish + optional + sizes + notes;
+  el.innerHTML = page1 + page2;
+}
+
+// What the form has no box for, said on screen only. The sheet above is a copy
+// of a state form and stays one; this is where the app gets to explain itself.
+function renderReportNotes(model){
+  const el = document.getElementById('report-notes');
+  if(!el) return;
+  const out = [];
+  if(model.died > 0){
+    out.push('Released is left blank per day: the app records which species did not survive, ' +
+      'not which day it happened on. Split the ' + model.died + ' across the day rows yourself.');
+  }
+  const split = model.sizes.small.filter(r=> r.split).map(r=> r.species);
+  if(split.length){
+    out.push(split.join(', ') + ' turned up both under 12 inches and over 23, which no single ' +
+      'size table has columns for. Those fish are split across both tables — every one is ' +
+      'reported exactly once, but the species appears on two rows.');
+  }
+  if(model.sizes.under8 > 0){
+    out.push(model.sizes.under8 + ' fish under 8 inches ' + (model.sizes.under8 === 1 ? 'is' : 'are') +
+      ' in the species totals but on neither size table. The form only asks for 8 inches and up.');
+  }
+  out.push('Boxes marked ' + SHEET_BLANK + ' print empty, exactly as they would on the paper form. ' +
+    'Fill them in above if the state needs them.');
+  el.innerHTML = out.map(n=> '<p class="rnote">' + escapeHtml(n) + '</p>').join('');
 }
 
 // The same sheet as plain text. Printing needs a printer; this needs nothing,
@@ -7430,6 +7580,7 @@ async function renderFwpReport(){
   renderReportDied(model.species, cfg);
   renderReportResidency(model.residency);
   renderReportSheet(model);
+  renderReportNotes(model);
 
   setText('report-tool-summary', model.warnings.length
     ? model.warnings.length + ' thing' + (model.warnings.length === 1 ? '' : 's') + ' to settle'
