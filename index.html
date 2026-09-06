@@ -169,6 +169,47 @@
   .err{color:var(--danger);font-size:12px;margin-top:4px;}
   .hint{color:var(--steel);font-size:12px;margin-top:6px;line-height:1.5;}
 
+  /* ---- FWP contest report ----
+     Read on a phone and then printed, so nothing here may depend on colour
+     surviving, and every table has to be able to get narrower than its
+     contents rather than widening the page. */
+  #report-sheet{border:1px solid var(--line);background:var(--white);padding:12px;font-size:13px;}
+  #report-sheet h3{
+    font-size:12px;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--deep);margin:18px 0 6px;padding-bottom:4px;border-bottom:2px solid var(--deep);
+  }
+  #report-sheet h3:first-child{margin-top:0;}
+  .rrow{display:flex;justify-content:space-between;gap:14px;padding:5px 0;border-bottom:1px solid var(--line);}
+  .rrow:last-child{border-bottom:none;}
+  .rlabel{color:var(--steel);}
+  .rval{font-weight:600;text-align:right;}
+  .rval.missing{font-weight:400;color:var(--danger);}
+  .rnote{color:var(--steel);font-size:12px;line-height:1.5;margin:6px 0 0;}
+  /* Twenty inch columns will never fit a phone. Scrolling the table beats
+     scrolling the page sideways, which breaks the fixed nav. */
+  .rscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  #report-sheet table{border-collapse:collapse;width:100%;font-size:12px;}
+  #report-sheet th,#report-sheet td{border:1px solid var(--line);padding:4px 6px;text-align:left;white-space:nowrap;}
+  #report-sheet th{background:var(--paper-2);}
+  #report-sheet td.num,#report-sheet th.num{text-align:center;}
+  .rwarn{
+    border-left:3px solid var(--gold);background:var(--paper-2);
+    padding:9px 11px;margin-bottom:8px;font-size:13px;line-height:1.5;
+  }
+  .rdue{
+    border:1px solid var(--line);border-left:3px solid var(--deep);background:var(--white);
+    padding:9px 11px;margin-bottom:10px;font-size:13px;
+  }
+  .rdue.late{border-left-color:var(--danger);color:var(--danger);font-weight:600;}
+  .rfix{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:7px 0;border-bottom:1px solid var(--line);
+  }
+  .rfix:last-child{border-bottom:none;}
+  .rday{border:1px solid var(--line);padding:10px;margin-bottom:8px;background:var(--white);}
+  .rday-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;}
+  .rday-name{font-weight:600;}
+
   .divtabs{display:flex;gap:8px;margin-bottom:14px;}
   .divtabs button{
     flex:1;
@@ -988,6 +1029,27 @@
   .home-signal.sync-ok{color:var(--gold);}
   .home-signal.sync-warn{color:#D5A33A;}
   .home-signal.sync-bad{color:#E03725;}
+
+  /* Printing exists for one thing: the FWP contest report. Everything else on
+     the page is hidden by VISIBILITY rather than display, because the sheet is
+     nested deep inside the director panel and display:none on any ancestor
+     would take it with them. */
+  @media print{
+    body *{visibility:hidden !important;}
+    #report-sheet,#report-sheet *{visibility:visible !important;}
+    #report-sheet{
+      position:absolute;left:0;top:0;width:100%;
+      border:none;padding:0;background:none;font-size:11pt;
+    }
+    /* Nothing to scroll on paper, and a clipped table would lose columns. */
+    .rscroll{overflow:visible !important;}
+    #report-sheet table{font-size:8pt;}
+    #report-sheet th,#report-sheet td{padding:2px 3px;}
+    #report-sheet h3{break-after:avoid;page-break-after:avoid;}
+    #report-sheet table,.rday{break-inside:avoid;page-break-inside:avoid;}
+    .tabbar{display:none !important;}
+    @page{margin:12mm;}
+  }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <!-- Leaflet, for drawing and viewing the course boundary. Both of these are
@@ -1132,6 +1194,20 @@
           <input type="tel" id="reg-ice-phone" placeholder="406-555-0102">
           <p class="hint" style="margin:6px 0 0;">Only the director ever sees this, and only if you are overdue off the water. Pick someone who is not fishing with you.</p>
         </div>
+        <!-- Montana FWP counts residents and non-residents separately on the
+             contest report the director has to file within 30 days. Nobody can
+             work it out afterwards from a name, so it is asked once, here. -->
+        <!-- Deliberately nothing pre-selected. A default here would quietly
+             file everyone who did not notice the question as whatever it was
+             set to, and this number goes to the state. -->
+        <div class="field">
+          <label>Montana resident?</label>
+          <div class="radiogroup" id="reg-resident">
+            <label data-val="yes"><input type="radio" name="res">Montana resident</label>
+            <label data-val="no"><input type="radio" name="res">Non-resident</label>
+          </div>
+          <p class="hint" style="margin:6px 0 0;">For the state&rsquo;s contest report only. It has no bearing on entry, scoring or payouts.</p>
+        </div>
         <div class="field">
           <label>Division</label>
           <div class="radiogroup" id="reg-division">
@@ -1145,6 +1221,13 @@
           <label for="reg-partner-phone" style="margin-top:10px;">Partner phone (optional)</label>
           <input type="tel" id="reg-partner-phone" placeholder="406-555-0101">
           <p class="hint" style="margin:6px 0 0;">Worth adding &mdash; you two may not stay within sight of each other, and it is the only way the director can reach your partner directly.</p>
+          <!-- Asked separately: residency is a fact about a person, and the two
+               halves of a team are not always from the same side of the line. -->
+          <label style="margin-top:10px;">Is your partner a Montana resident?</label>
+          <div class="radiogroup" id="reg-partner-resident">
+            <label data-val="yes"><input type="radio" name="pres">Montana resident</label>
+            <label data-val="no"><input type="radio" name="pres">Non-resident</label>
+          </div>
         </div>
         <div class="field">
           <label style="display:flex;align-items:center;gap:8px;font-weight:400;">
@@ -1569,6 +1652,10 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3.5v3M16 3.5v3"/><path d="m9 14.5 2 2 4-4"/></svg>
             <span class="director-tool-copy"><strong>Event</strong><span id="event-tool-summary">&mdash;</span></span>
           </button>
+          <button class="director-tool wide" type="button" data-admin-tool="report">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h8l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-16a1 1 0 0 1 1-1Z"/><path d="M14 3.5v4h4"/><path d="M8.5 12.5h7M8.5 16h4"/></svg>
+            <span class="director-tool-copy"><strong>FWP Report</strong><span id="report-tool-summary">&mdash;</span></span>
+          </button>
         </div>
 
         <div class="card" id="admin-tool-positions" style="display:none;">
@@ -1768,6 +1855,140 @@
           <button class="secondary" id="don-add">Add donation</button>
           <div id="don-list" style="margin-top:12px;"></div>
         </div>
+        <!-- Montana FWP wants a contest report within 30 days of the last day
+             fished. Everything the tournament recorded is filled in below; the
+             fields the app has no way to know are asked for here and saved per
+             event, so the form can be built up across those 30 days. -->
+        <div class="card" id="admin-tool-report" style="display:none;">
+          <h2>Montana FWP contest report</h2>
+          <p class="hint" style="margin-top:0;">Every box on the state&rsquo;s form that this tournament can answer, worked out from the roster, the check-ins and the catch log. Fill in the rest below and print the sheet &mdash; it is laid out in the same order as the paper form, so it copies across line by line.</p>
+          <div id="report-due"></div>
+          <div id="report-warnings"></div>
+
+          <hr class="divider">
+          <h2 style="margin-bottom:8px;">Who is filing</h2>
+          <p class="hint" style="margin-top:0;">Saved with the event, and next year&rsquo;s report opens holding these same answers.</p>
+          <div class="field">
+            <label for="report-filer-name">Form completed by</label>
+            <input type="text" id="report-filer-name" data-fwp="filerName" placeholder="Your full name" autocapitalize="words">
+          </div>
+          <div class="field">
+            <label for="report-filer-address">Mailing address</label>
+            <textarea id="report-filer-address" data-fwp="filerAddress" rows="2" placeholder="Street, city, state, ZIP"></textarea>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="report-filer-email">Email address</label>
+              <input type="email" id="report-filer-email" data-fwp="filerEmail" placeholder="you@example.com" autocapitalize="off" spellcheck="false">
+            </div>
+            <div class="field">
+              <label for="report-filer-phone">Telephone</label>
+              <input type="tel" id="report-filer-phone" data-fwp="filerPhone" placeholder="406-555-0100">
+            </div>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="report-sponsor">Contest sponsor</label>
+              <input type="text" id="report-sponsor" data-fwp="sponsor" placeholder="Sponsoring business or club">
+            </div>
+            <div class="field">
+              <label for="report-region">FWP region</label>
+              <input type="text" id="report-region" data-fwp="region" placeholder="3" maxlength="2">
+            </div>
+          </div>
+          <p class="hint" style="margin-top:0;">The region is printed on the contest permit FWP issued you &mdash; copy it from there rather than guessing.</p>
+
+          <hr class="divider">
+          <h2 style="margin-bottom:8px;">The water</h2>
+          <div class="field">
+            <label for="report-waterbody">Waterbody</label>
+            <input type="text" id="report-waterbody" data-fwp="waterbody" placeholder="Canyon Ferry Reservoir">
+            <p class="hint" style="margin:6px 0 0;">The name FWP knows it by, which is usually broader than the stretch you fished.</p>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="report-boats">Number of boats</label>
+              <input type="number" id="report-boats" data-fwp="boats" min="0" step="1" placeholder="0">
+            </div>
+            <div class="field">
+              <label for="report-minlength">Minimum length (in)</label>
+              <input type="number" id="report-minlength" data-fwp="minLength" min="0" step="0.5" placeholder="none">
+            </div>
+          </div>
+          <p class="hint" style="margin-top:0;">Boats defaults to one per angler, which is what a kayak field is. Minimum length is whatever your rules set as the shortest scoring fish &mdash; leave it empty if there is no floor.</p>
+
+          <hr class="divider">
+          <h2 style="margin-bottom:8px;">Hours fished</h2>
+          <p class="hint" style="margin-top:0;">Worked out from the first check-in and the last check-out of each day. Override either one if the times on your permit differ.</p>
+          <div id="report-hours"></div>
+
+          <hr class="divider">
+          <h2 style="margin-bottom:8px;">Fish that did not survive</h2>
+          <p class="hint" style="margin-top:0;">Catch-photo-release, so the app assumes every fish swam away and there is nothing to change here unless one did not.</p>
+          <div id="report-died"></div>
+
+          <hr class="divider">
+          <h2 style="margin-bottom:8px;">Residency</h2>
+          <p class="hint" style="margin-top:0;">Asked at registration from now on. Anyone who entered before that shows up here to be set once.</p>
+          <div id="report-residency"></div>
+
+          <hr class="divider">
+          <h2 style="margin-bottom:8px;">Conditions <span class="hint" style="font-weight:400;">(optional on the form)</span></h2>
+          <div class="row2">
+            <div class="field">
+              <label for="report-air-temp">Air temperature (&deg;F)</label>
+              <input type="number" id="report-air-temp" data-fwp="airTemp" step="1" placeholder="62">
+            </div>
+            <div class="field">
+              <label for="report-water-temp">Water temperature (&deg;F)</label>
+              <input type="number" id="report-water-temp" data-fwp="waterTemp" step="1" placeholder="58">
+            </div>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="report-water-level">Water level</label>
+              <select id="report-water-level" data-fwp="waterLevel">
+                <option value="">Not recorded</option>
+                <option value="Up">Up</option>
+                <option value="Down">Down</option>
+                <option value="Normal">Normal</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="report-clarity">Water clarity</label>
+              <select id="report-clarity" data-fwp="clarity">
+                <option value="">Not recorded</option>
+                <option value="Clear">Clear</option>
+                <option value="Semi-turbid">Semi-turbid</option>
+                <option value="Muddy">Muddy</option>
+              </select>
+            </div>
+          </div>
+
+          <hr class="divider">
+          <h2 style="margin-bottom:8px;">Notes</h2>
+          <div class="field">
+            <label for="report-other">Other information</label>
+            <textarea id="report-other" data-fwp="otherInfo" rows="3" placeholder="Anything the permit asked you to report back"></textarea>
+          </div>
+          <div class="field">
+            <label for="report-comments">Comments</label>
+            <textarea id="report-comments" data-fwp="comments" rows="3" placeholder="Optional"></textarea>
+          </div>
+
+          <hr class="divider">
+          <h2 style="margin-bottom:8px;">The sheet</h2>
+          <p class="hint" style="margin-top:0;">In the same order as the paper form. Printing this gives you something to copy from and something to keep.</p>
+          <!-- The only thing on the page the print stylesheet leaves visible. -->
+          <div id="report-sheet"></div>
+
+          <div class="actions" style="margin-top:14px;">
+            <button class="secondary" type="button" id="report-print">Print the sheet</button>
+            <button class="small" type="button" id="report-copy">Copy as text</button>
+          </div>
+          <p class="hint" id="report-copied" style="display:none;"></p>
+        </div>
+
         <div class="card">
           <h2>Pending catches</h2>
           <div id="admin-pending"></div>
@@ -4537,7 +4758,9 @@ async function renderRegisterScreen(){
   ['reg-name','reg-phone','reg-partner','reg-partner-phone','reg-ice-name','reg-ice-phone','reg-bigfish'].forEach(id=>{
     document.getElementById(id).disabled = closed;
   });
-  document.querySelectorAll('#reg-division input[type=radio]').forEach(r=> r.disabled = closed);
+  ['#reg-division','#reg-resident','#reg-partner-resident'].forEach(sel=>{
+    document.querySelectorAll(sel+' input[type=radio]').forEach(r=> r.disabled = closed);
+  });
   updateRegisterReadiness();
 }
 
@@ -4563,6 +4786,27 @@ document.querySelectorAll('#reg-division input[type=radio]').forEach(input=>{
     document.getElementById('reg-partner-field').style.display = lab.dataset.val==='team' ? 'block':'none';
   });
 });
+
+// The radio itself is hidden by the stylesheet, so `active` on the label is the
+// only thing that says which one is picked - it has to be kept in step here.
+['#reg-resident','#reg-partner-resident'].forEach(sel=>{
+  document.querySelectorAll(sel+' input[type=radio]').forEach(input=>{
+    input.addEventListener('change', ()=>{
+      const lab = input.closest('label');
+      document.querySelectorAll(sel+' label').forEach(l=>l.classList.remove('active'));
+      lab.classList.add('active');
+    });
+  });
+});
+
+// null when the question has not been answered, so the submit handler can
+// refuse rather than write a guess. An entry made through this form always
+// carries a real true or false; residencyCounts() reads a MISSING field as
+// "registered before the app asked", which is a different thing entirely.
+function pickedResidency(sel){
+  const lab = document.querySelector(sel + ' label.active');
+  return lab ? lab.dataset.val === 'yes' : null;
+}
 
 bindEl('reg-submit','click', async ()=>{
   const name = document.getElementById('reg-name').value.trim();
@@ -4593,7 +4837,17 @@ bindEl('reg-submit','click', async ()=>{
   if(normPhone(icePhone) === normPhone(phone)){
     return fail('Your emergency contact needs to be someone else — that is your own number.');
   }
+  // Asked rather than defaulted, so it has to be answered. The state counts
+  // residents and non-residents separately and nobody can work it out later.
+  const isResident = pickedResidency('#reg-resident');
+  if(isResident === null){
+    return fail('Say whether you are a Montana resident. The state asks for that count, and it changes nothing else about your entry.');
+  }
   if(division==='team' && !partnerName) return fail("Enter your partner's name for a team entry.");
+  const partnerResident = division==='team' ? pickedResidency('#reg-partner-resident') : null;
+  if(division==='team' && partnerResident === null){
+    return fail('Say whether your partner is a Montana resident. It is asked separately because a team does not have to be from one side of the state line.');
+  }
   if(division==='team' && partnerPhone && normPhone(partnerPhone).length < 10){
     return fail("That partner phone number looks incomplete. Include the area code, or leave it blank.");
   }
@@ -4678,6 +4932,8 @@ bindEl('reg-submit','click', async ()=>{
     tournamentId, role: division==='team' ? 'captain' : 'solo', teamId: null,
     anglerCode: makeCode(codePool), teamCode,
     emergencyName: iceName, emergencyPhone: icePhone,
+    // Only ever read by the FWP contest report. See residencyCounts().
+    resident: isResident,
     // Pending until the director confirms the fee arrived. See isConfirmed().
     pending: true,
     handle: pendingHandle || uniqueHandle(anglers),
@@ -4702,6 +4958,8 @@ bindEl('reg-submit','click', async ()=>{
       // The same contact covers both: one boat, one call to shore. A partner
       // with nobody to ring is exactly the gap this field exists to close.
       emergencyName: iceName, emergencyPhone: icePhone,
+      // Asked about separately on the form - a team can straddle the state line.
+      resident: partnerResident,
       // Rolled against the list including the captain just pushed, so
       // teammates can never land on the same handle as each other.
       handle: uniqueHandle(anglers),
@@ -4746,6 +5004,13 @@ bindEl('reg-submit','click', async ()=>{
     const soloRadio = soloLabel.querySelector('input[type=radio]');
     if(soloRadio) soloRadio.checked = true;
   }
+  // Cleared rather than reset to a default, for the same reason the form has
+  // no default in the first place: a second entry on this device has to ASK
+  // again, not inherit the last person's answer.
+  ['#reg-resident','#reg-partner-resident'].forEach(sel=>{
+    document.querySelectorAll(sel + ' label').forEach(l=>l.classList.remove('active'));
+    document.querySelectorAll(sel + ' input[type=radio]').forEach(r=>{ r.checked = false; });
+  });
   document.getElementById('reg-partner-field').style.display = 'none';
 
   await renderRoster();
@@ -6168,12 +6433,13 @@ function showAdminTool(name){
   document.querySelectorAll('[data-admin-tool]').forEach(btn=>{
     btn.classList.toggle('active', btn.dataset.adminTool===name);
   });
-  ['gps','payout','contestants','event','positions'].forEach(tool=>{
+  ['gps','payout','contestants','event','positions','report'].forEach(tool=>{
     document.getElementById('admin-tool-'+tool).style.display = tool===name ? 'block' : 'none';
   });
   // Maps built inside a hidden card have no size until now.
   if(name === 'event') renderBoundaryEditor();
   if(name === 'positions') renderPositionsAdmin();
+  if(name === 'report') renderFwpReport();
 }
 
 document.querySelectorAll('[data-admin-tool]').forEach(btn=>{
@@ -6518,6 +6784,719 @@ function poolCounts(anglers){
   };
 }
 
+// ============================================================
+// Montana FWP fishing contest report
+//
+// Montana Fish, Wildlife & Parks requires a contest report within 30 days of
+// the last day fished. Everything on that form that the tournament actually
+// recorded is derived here; the rest - the filer's address, water temperature,
+// the sponsor - is the director's to type, and is saved per event so the form
+// can be built up over those 30 days instead of in one sitting.
+//
+// The rule this whole section follows: never guess a number that goes to the
+// state. Where the app cannot know something it says so and asks, and where a
+// count had to leave records out it says which ones. reportWarnings() is that
+// promise made visible.
+// ============================================================
+
+const FWP_DEADLINE_DAYS = 30;
+
+// Everything is filed on CONFIRMED entries. An unconfirmed one never paid and
+// in every case so far never fished, so counting it would overstate the field
+// to the state. reportWarnings() surfaces the ones being left out.
+
+// Per-event, in the shared config, so the half-finished form is on every one of
+// the director's devices rather than the one they started it on.
+function reportSettings(id){
+  const all = (liveCache.config && liveCache.config.fwpReports) || {};
+  return Object.assign({}, all[id || activeEventId()] || {});
+}
+async function saveReportSettings(patch){
+  const all = Object.assign({}, (liveCache.config && liveCache.config.fwpReports) || {});
+  const id = activeEventId();
+  all[id] = Object.assign({}, all[id] || {}, patch, { savedAt: Date.now() });
+  return await saveConfig({ fwpReports: all });
+}
+
+// A director's name, address and phone do not change between tournaments, so
+// next year's form opens already holding this year's answers. Only the contact
+// block is carried - water temperature and fish counts obviously are not.
+const REPORT_FILER_FIELDS = ['filerName','filerAddress','filerEmail','filerPhone','sponsor','region'];
+function lastFiledDetails(){
+  const all = (liveCache.config && liveCache.config.fwpReports) || {};
+  const here = activeEventId();
+  let best = null;
+  Object.keys(all).forEach(key=>{
+    if(key === here) return;
+    const r = all[key];
+    if(!r || !r.filerName) return;
+    if(!best || (r.savedAt || 0) > (best.savedAt || 0)) best = r;
+  });
+  const out = {};
+  if(best) REPORT_FILER_FIELDS.forEach(f=>{ if(best[f]) out[f] = best[f]; });
+  return out;
+}
+
+// Residency is asked at registration, so anyone who entered before the question
+// existed reads as unknown. Filing them as non-residents would be a guess on a
+// form that goes to the state, so they are counted apart and named - the
+// director can set them from the report screen.
+function residencyCounts(anglers){
+  const out = { resident:0, nonresident:0, unknown:0, unknownAnglers:[] };
+  (anglers || []).filter(isConfirmed).forEach(a=>{
+    if(a.resident === true) out.resident++;
+    else if(a.resident === false) out.nonresident++;
+    else { out.unknown++; out.unknownAnglers.push(a); }
+  });
+  return out;
+}
+
+// The head of the form. `anglers` is people, `teams` is entries - a team of two
+// is one entry and two anglers, and the form asks for both.
+function reportFieldCounts(anglers){
+  const list = anglers || [];
+  const confirmed = list.filter(isConfirmed);
+  return {
+    anglers: confirmed.length,
+    teams: confirmed.filter(a=> a.division === 'team' && a.role !== 'partner').length,
+    // Every confirmed angler paid in; a team's single fee covers both halves,
+    // so this is people who paid, not fees collected.
+    paid: confirmed.length,
+    unconfirmed: list.length - confirmed.length
+  };
+}
+
+// Rejected catches are left out everywhere below. The usual reason a catch is
+// rejected is that it is the same fish photographed twice, and counting those
+// would report more fish to the state than came out of the water. Pending is
+// counted - by filing time it means reviewed-and-fine far more often than it
+// means unreviewed, and reportWarnings() flags any that are still open.
+function reportableCatches(catches){
+  return (catches || []).filter(c=> c && c.status !== 'rejected');
+}
+
+// A catch belongs to the day it was landed read in the EVENT's time zone. A
+// 9pm Montana catch is not the next day, whatever the phone reading this is
+// set to.
+function catchDayKey(c){
+  return eventTimeParts(new Date(c.timestamp)).dateKey;
+}
+
+// HOURS FISHED. The form wants the hours the field was actually on the water,
+// and check-in to check-out is exactly that: first line in, last boat off.
+function contestDayHours(anglers, dates){
+  const confirmed = (anglers || []).filter(isConfirmed);
+  return (dates || []).map((dateKey, i)=>{
+    const dayKey = 'day' + (i + 1);
+    let start = null, stop = null;
+    confirmed.forEach(a=>{
+      const rec = (a.checkins && a.checkins[dayKey]) || {};
+      if(rec.in && (start === null || rec.in < start)) start = rec.in;
+      if(rec.out && (stop === null || rec.out > stop)) stop = rec.out;
+    });
+    const hours = (start !== null && stop !== null && stop > start)
+      ? (stop - start) / 3600000
+      : null;
+    return { day: i + 1, dateKey, dayKey, start, stop, hours };
+  });
+}
+
+// Fish per day, plus a count of anything landed outside the event dates. Those
+// are almost always test entries, and they are reported rather than dropped -
+// a total that does not add up should be visible, not tidied away.
+function catchesPerDay(catches, dates){
+  const counts = {};
+  (dates || []).forEach(d=>{ counts[d] = 0; });
+  let offDays = 0;
+  reportableCatches(catches).forEach(c=>{
+    const key = catchDayKey(c);
+    if(counts[key] === undefined) offDays++;
+    else counts[key]++;
+  });
+  return { counts, offDays };
+}
+
+// NUMBER OF FISH CAUGHT, one row per species. `died` is the director's number:
+// this is a catch-photo-release tournament, so the app has no field for a fish
+// that did not swim away, and zero is the honest default rather than an
+// assumption dressed up as data.
+function speciesTally(catches, died){
+  const deaths = died || {};
+  const rows = new Map();
+  reportableCatches(catches).forEach(c=>{
+    const name = c.species || 'Unknown';
+    if(!rows.has(name)) rows.set(name, { species: name, caught: 0, longest: 0 });
+    const row = rows.get(name);
+    row.caught++;
+    if(Number(c.length) > row.longest) row.longest = Number(c.length);
+  });
+  return [...rows.values()].map(row=>{
+    // Clamped: more deaths than fish is a typo, and it would make `released`
+    // negative on a form going to the state.
+    const d = Math.max(0, Math.min(row.caught, Math.floor(Number(deaths[row.species]) || 0)));
+    return Object.assign({}, row, { died: d, released: row.caught - d });
+  }).sort((a, b)=> b.caught - a.caught || a.species.localeCompare(b.species));
+}
+
+// SIZE DISTRIBUTION. Page 2 carries two tables - one with columns 8 to 23, one
+// with 12 to 30+ - and asks for every fish 8 inches and up in the first, every
+// fish 12 and up in the second. Taken literally a 15" walleye belongs in both,
+// which would report it twice, so each species goes in whichever ONE table has
+// columns for the whole of its range.
+const SIZE_SMALL_MIN = 8;
+const SIZE_SMALL_MAX = 23;
+const SIZE_LARGE_MIN = 12;
+const SIZE_LARGE_MAX = 30;   // the last column is "30+", so anything longer folds into it
+
+function sizeDistribution(catches){
+  const byName = new Map();
+  let under8 = 0;
+  reportableCatches(catches).forEach(c=>{
+    const len = Number(c.length);
+    if(!(len > 0)) return;
+    // Down to the whole inch: the form's columns are whole inches, and a 12.75"
+    // fish is a fish in the 12 column.
+    const inch = Math.floor(len);
+    if(inch < SIZE_SMALL_MIN){ under8++; return; }
+    const name = c.species || 'Unknown';
+    if(!byName.has(name)) byName.set(name, []);
+    byName.get(name).push(inch);
+  });
+
+  const tally = (list, max)=> list.reduce((m, i)=>{
+    const col = Math.min(i, max);
+    m[col] = (m[col] || 0) + 1;
+    return m;
+  }, {});
+
+  const small = [], large = [];
+  [...byName.keys()].sort().forEach(name=>{
+    const inches = byName.get(name);
+    const min = Math.min.apply(null, inches);
+    const max = Math.max.apply(null, inches);
+    const needsSmall = min < SIZE_LARGE_MIN;     // has a fish only the 8-23 table has a column for
+    const needsLarge = max > SIZE_SMALL_MAX;     // has a fish only the 12-30+ table has a column for
+    if(needsSmall && needsLarge){
+      // An 8-incher and a 24-incher of the same species. Neither table can hold
+      // that range, so it is split across both and the report says which rows.
+      small.push({ species: name, counts: tally(inches.filter(i=> i < SIZE_LARGE_MIN), SIZE_SMALL_MAX), split: true });
+      large.push({ species: name, counts: tally(inches.filter(i=> i >= SIZE_LARGE_MIN), SIZE_LARGE_MAX), split: true });
+    } else if(needsSmall){
+      small.push({ species: name, counts: tally(inches, SIZE_SMALL_MAX), split: false });
+    } else {
+      large.push({ species: name, counts: tally(inches, SIZE_LARGE_MAX), split: false });
+    }
+  });
+  return { small, large, under8 };
+}
+
+// SIZE OF WINNING FISH. The same test the standings use - approved, the species
+// this event scores, and not from an entry that was disqualified or never
+// confirmed - so the form can never disagree with the trophy.
+function winningFish(catches, anglers){
+  const byId = {};
+  (anglers || []).forEach(a=>{ byId[a.id] = a; });
+  return (catches || []).filter(c=>{
+    if(c.status !== 'approved' || !isScoringSpecies(c.species)) return false;
+    const a = byId[c.anglerId];
+    return !(a && (a.disqualified || !isConfirmed(a)));
+  }).sort((a, b)=> b.length - a.length)[0] || null;
+}
+
+// Thirty days from the last day fished.
+function reportDueDate(evt){
+  const dates = ((evt || activeEvent()).dates) || [];
+  if(dates.length === 0) return null;
+  const last = new Date(dates[dates.length - 1] + 'T00:00:00Z');
+  if(isNaN(last.getTime())) return null;
+  return new Date(last.getTime() + FWP_DEADLINE_DAYS * 86400000);
+}
+function reportDueText(evt, now){
+  const due = reportDueDate(evt);
+  if(!due) return 'This event has no dates set, so there is no deadline to count from.';
+  // Formatted in UTC to match the bare YYYY-MM-DD it was built from - see
+  // eventDayText() for the same trap.
+  const on = due.toLocaleDateString('en-US', { timeZone:'UTC', month:'long', day:'numeric', year:'numeric' });
+  const days = Math.ceil((due.getTime() - (now === undefined ? Date.now() : now)) / 86400000);
+  const plural = (n)=> Math.abs(n) === 1 ? 'day' : 'days';
+  if(days < 0) return 'Was due ' + on + ' — ' + Math.abs(days) + ' ' + plural(days) + ' ago.';
+  if(days === 0) return 'Due today, ' + on + '.';
+  return 'Due ' + on + ' — ' + days + ' ' + plural(days) + ' from now.';
+}
+
+// Everything the report knows it cannot vouch for. This is the part that keeps
+// the form honest: a number that had to leave records out says so here rather
+// than quietly being wrong.
+function reportWarnings(anglers, catches, dates){
+  const out = [];
+  const counts = reportFieldCounts(anglers);
+  const res = residencyCounts(anglers);
+  if(counts.unconfirmed > 0){
+    out.push(counts.unconfirmed + ' unconfirmed ' + (counts.unconfirmed === 1 ? 'entry is' : 'entries are') +
+      ' left out of every count below. Confirm or remove them before you file.');
+  }
+  if(res.unknown > 0){
+    out.push(res.unknown + ' angler' + (res.unknown === 1 ? '' : 's') + ' registered before the app asked about ' +
+      'residency. Set them below — the resident and non-resident boxes do not add up until you do.');
+  }
+  const pending = (catches || []).filter(c=> c.status === 'pending').length;
+  if(pending > 0){
+    out.push(pending + ' catch' + (pending === 1 ? ' is' : 'es are') + ' still awaiting review and ' +
+      (pending === 1 ? 'is' : 'are') + ' counted as caught. Review them if that is not right.');
+  }
+  const off = catchesPerDay(catches, dates).offDays;
+  if(off > 0){
+    out.push(off + ' catch' + (off === 1 ? '' : 'es') + ' fell outside the event dates, so ' +
+      (off === 1 ? 'it is' : 'they are') + ' in the species totals but on no day row. Usually a test entry.');
+  }
+  return out;
+}
+
+// ---- hours ----
+
+// "07:15", in the event's own time zone - which is also the format a time input
+// reads and writes, so a derived time and a typed one are the same string and
+// can be compared, saved and totalled without a second code path.
+function reportClockText(ms){
+  if(!ms) return '';
+  return new Date(ms).toLocaleTimeString('en-US', {
+    timeZone: activeEvent().timeZone, hour:'2-digit', minute:'2-digit', hourCycle:'h23'
+  });
+}
+function clockToMinutes(hhmm){
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm == null ? '' : hhmm).trim());
+  if(!m) return null;
+  const h = Number(m[1]), min = Number(m[2]);
+  if(h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+// One day's row. A saved override beats the check-in times, and the total is
+// always recomputed from whichever pair is in force - a corrected stop time
+// sitting next to a stale total is worse than no total at all.
+function reportDayRow(day, settings){
+  const saved = ((settings || {}).hours || {})[day.dayKey] || {};
+  const start = saved.start || reportClockText(day.start);
+  const stop  = saved.stop  || reportClockText(day.stop);
+  const from = clockToMinutes(start), to = clockToMinutes(stop);
+  return {
+    day: day.day, dateKey: day.dateKey, dayKey: day.dayKey, start, stop,
+    overridden: !!(saved.start || saved.stop),
+    hours: (from !== null && to !== null && to > from) ? (to - from) / 60 : null
+  };
+}
+
+// The one place that says what the report actually holds: what the director
+// has saved, over the top of what can be carried forward or derived.
+//
+// Both the input boxes and the printed sheet read THIS. They used not to - the
+// boxes showed a carried-forward name while the sheet printed "not filled in"
+// for the same field, because nothing is saved until the box loses focus and a
+// director who agreed with a default never touched it. A form going to the
+// state cannot say one thing on screen and another on paper.
+function reportWithDefaults(cfg){
+  const evt = activeEvent();
+  const out = Object.assign({}, lastFiledDetails(), cfg || {});
+  // These two are not guesses: the presenter line IS the sponsor, and the
+  // course label is the water. Clearing either falls back to them again, which
+  // is right - there is no version of this event where they are blank.
+  // Trailing "presents" and its like belong to the banner, not to the name of
+  // a sponsor - the form asks who sponsored the contest, not how they were
+  // announced at it.
+  // The alternation is written out in full rather than as `present(s|ed by)`:
+  // lint.mjs blanks strings but not regex literals, so a bare word followed by
+  // "(" inside one reads to it as a call to a function nobody wrote.
+  if(!out.sponsor) out.sponsor = stripEntities(evt.presenter || '').replace(/\s+(?:presents|presented by)\.?$/i, '');
+  if(!out.waterbody) out.waterbody = stripEntities(evt.courseLabelLong || '');
+  return out;
+}
+
+// ---- the whole report, in one object ----
+// The screen, the printed sheet and the copied text all read from this, so the
+// three of them cannot drift apart.
+function buildReportModel(anglers, catches, settings){
+  const evt = activeEvent();
+  const dates = evt.dates || [];
+  const cfg = reportWithDefaults(settings || reportSettings());
+  const counts = reportFieldCounts(anglers);
+  const perDay = catchesPerDay(catches, dates);
+  const species = speciesTally(catches, cfg.died);
+  const died = species.reduce((s, r)=> s + r.died, 0);
+  const caught = species.reduce((s, r)=> s + r.caught, 0);
+
+  const days = contestDayHours(anglers, dates).map(d=>{
+    const row = reportDayRow(d, cfg);
+    row.caught = perDay.counts[d.dateKey] || 0;
+    // The form wants fish released per day, but the only mortality the director
+    // records is per species - there is nothing that says which day a fish died
+    // on. So when nothing died, a day released everything it caught; when
+    // something did, this is left blank for the director rather than filled
+    // with a number nobody could stand behind.
+    row.released = died === 0 ? row.caught : null;
+    return row;
+  });
+
+  const boatsSet = cfg.boats !== undefined && cfg.boats !== null && cfg.boats !== '';
+  return {
+    event: evt,
+    settings: cfg,
+    dates, days,
+    waterbody: cfg.waterbody,
+    counts,
+    residency: residencyCounts(anglers),
+    // One angler, one kayak - which is what the field is, and still only a
+    // default the director can put right.
+    boats: boatsSet ? Number(cfg.boats) : counts.anglers,
+    boatsDerived: !boatsSet,
+    winner: winningFish(catches, anglers),
+    species, caught, died,
+    sizes: sizeDistribution(catches),
+    warnings: reportWarnings(anglers, catches, dates),
+    due: reportDueText(evt),
+    late: (function(){
+      const d = reportDueDate(evt);
+      return !!d && Date.now() > d.getTime();
+    })()
+  };
+}
+
+// ---- rendering ----
+// Split three ways so a phone never loses a keystroke: the fixed fields are
+// static markup filled once when the tool opens, the per-day and per-species
+// inputs are rebuilt only when their shape changes, and only the sheet is
+// repainted on every edit. Rebuilding a field under the finger tapping it is
+// exactly how a form eats an answer.
+let reportInputsFilled = false;
+let reportDiedShape = '';
+let reportHoursShape = '';
+
+// Called when the live event changes. Without this the report keeps last
+// tournament's answers in its boxes while reading this tournament's fish.
+function resetReportForm(){
+  reportInputsFilled = false;
+  reportDiedShape = '';
+  reportHoursShape = '';
+}
+
+function reportValue(v){ return v === undefined || v === null ? '' : String(v); }
+
+function fillReportInputs(cfg, anglerCount){
+  const values = reportWithDefaults(cfg);
+  document.querySelectorAll('#admin-tool-report [data-fwp]').forEach(el=>{
+    // reportValue() rather than `|| ''`, so a saved zero reaches the box as a
+    // zero instead of being wiped by its own falsiness.
+    el.value = reportValue(values[el.dataset.fwp]);
+  });
+  // Boats is the one field left showing its default as a PLACEHOLDER. It is
+  // derived from the roster rather than carried, so writing it in would freeze
+  // a number that should keep following the roster until the director
+  // deliberately overrides it.
+  const boats = document.getElementById('report-boats');
+  if(boats && !reportValue(values.boats)) boats.placeholder = String(anglerCount || 0);
+}
+
+function renderReportHours(days, cfg){
+  const el = document.getElementById('report-hours');
+  if(!el) return;
+  const shape = days.map(d=> d.dayKey + ':' + d.dateKey).join('|');
+  if(shape === reportHoursShape && el.innerHTML) return;   // typing into it right now
+  reportHoursShape = shape;
+  if(days.length === 0){
+    el.innerHTML = '<p class="empty">This event has no dates set.</p>';
+    return;
+  }
+  el.innerHTML = days.map(d=>{
+    const row = reportDayRow(d, cfg);
+    const total = row.hours === null ? 'no total yet' : row.hours.toFixed(2) + ' hours';
+    return '<div class="rday"><div class="rday-head">' +
+      '<span class="rday-name">Day ' + d.day + ' &middot; ' + escapeHtml(eventDayText(d.dateKey)) + '</span>' +
+      '<span class="hint" style="margin:0;">' + escapeHtml(total) + '</span></div>' +
+      '<div class="row2">' +
+        '<div class="field" style="margin-bottom:0;"><label for="report-start-' + d.dayKey + '">Start</label>' +
+        '<input type="time" id="report-start-' + d.dayKey + '" data-fwp-hour="' + d.dayKey + '.start" value="' + escapeHtml(row.start) + '"></div>' +
+        '<div class="field" style="margin-bottom:0;"><label for="report-stop-' + d.dayKey + '">Stop</label>' +
+        '<input type="time" id="report-stop-' + d.dayKey + '" data-fwp-hour="' + d.dayKey + '.stop" value="' + escapeHtml(row.stop) + '"></div>' +
+      '</div></div>';
+  }).join('');
+}
+
+function renderReportDied(species, cfg){
+  const el = document.getElementById('report-died');
+  if(!el) return;
+  const shape = species.map(s=> s.species).join('|');
+  if(shape === reportDiedShape && el.innerHTML) return;
+  reportDiedShape = shape;
+  if(species.length === 0){
+    el.innerHTML = '<p class="empty">No catches logged yet.</p>';
+    return;
+  }
+  const died = cfg.died || {};
+  el.innerHTML = species.map((s, i)=>
+    '<div class="field" style="margin-bottom:8px;">' +
+      '<label for="report-died-' + i + '">' + escapeHtml(s.species) + ' &mdash; ' + s.caught + ' caught</label>' +
+      '<input type="number" id="report-died-' + i + '" min="0" max="' + s.caught + '" step="1" ' +
+        'data-fwp-died="' + escapeHtml(s.species) + '" placeholder="0" value="' +
+        escapeHtml(reportValue(died[s.species] === 0 ? '' : died[s.species])) + '">' +
+    '</div>'
+  ).join('');
+}
+
+function renderReportResidency(res){
+  const el = document.getElementById('report-residency');
+  if(!el) return;
+  if(res.unknown === 0){
+    el.innerHTML = '<p class="rnote">' + res.resident + ' Montana ' +
+      (res.resident === 1 ? 'resident' : 'residents') + ', ' + res.nonresident +
+      ' non-' + (res.nonresident === 1 ? 'resident' : 'residents') + '. Nothing outstanding.</p>';
+    return;
+  }
+  el.innerHTML = res.unknownAnglers.map(a=>
+    '<div class="rfix"><span>' + escapeHtml(a.name || 'Unnamed') + '</span>' +
+    '<span class="actions" style="margin:0;">' +
+      '<button class="small" type="button" data-fwp-res="yes" data-angler="' + escapeHtml(a.id) + '">Montana</button>' +
+      '<button class="small" type="button" data-fwp-res="no" data-angler="' + escapeHtml(a.id) + '">Non-resident</button>' +
+    '</span></div>'
+  ).join('');
+}
+
+// ---- the sheet ----
+
+function sheetRow(label, value, missing){
+  return '<div class="rrow"><span class="rlabel">' + escapeHtml(label) + '</span>' +
+    '<span class="rval' + (missing ? ' missing' : '') + '">' + escapeHtml(value) + '</span></div>';
+}
+// What a box that has not been filled in says. Naming it beats a blank line:
+// on a printed sheet an empty value and a value of nothing look identical.
+const SHEET_BLANK = 'not filled in';
+function sheetValue(v, blank){
+  const s = reportValue(v).trim();
+  return s === '' ? [blank || SHEET_BLANK, true] : [s, false];
+}
+function sheetField(label, v, blank){
+  const [text, missing] = sheetValue(v, blank);
+  return sheetRow(label, text, missing);
+}
+
+function sizeColumns(min, max){
+  const out = [];
+  for(let i = min; i <= max; i++) out.push(i);
+  return out;
+}
+function sizeTableHtml(rows, min, max, plusLast){
+  const cols = sizeColumns(min, max);
+  const head = '<tr><th>Species</th>' +
+    cols.map(c=> '<th class="num">' + c + (plusLast && c === max ? '+' : '') + '</th>').join('') +
+    '<th class="num">Total</th></tr>';
+  const body = rows.map(r=>{
+    const total = cols.reduce((s, c)=> s + (r.counts[c] || 0), 0);
+    return '<tr><td>' + escapeHtml(r.species) + (r.split ? ' <span class="rlabel">(part)</span>' : '') + '</td>' +
+      cols.map(c=> '<td class="num">' + (r.counts[c] ? r.counts[c] : '') + '</td>').join('') +
+      '<td class="num">' + total + '</td></tr>';
+  }).join('');
+  return '<div class="rscroll"><table>' + head + body + '</table></div>';
+}
+
+function renderReportSheet(model){
+  const el = document.getElementById('report-sheet');
+  if(!el) return;
+  const cfg = model.settings;
+  const res = model.residency;
+  const evt = model.event;
+
+  const head =
+    '<h3>Fishing contest report</h3>' +
+    sheetField('Region', cfg.region) +
+    sheetRow('Contest name', stripEntities(evt.name || '')) +
+    sheetRow('Contest date(s)', model.dates.length ? model.dates.join(', ') : 'no dates set') +
+    sheetField('Waterbody', model.waterbody) +
+    sheetRow('Total # of anglers', String(model.counts.anglers)) +
+    sheetRow('# of teams', String(model.counts.teams)) +
+    sheetRow('# paid', String(model.counts.paid)) +
+    sheetRow('# of Montana residents', res.unknown ? (res.resident + ' (' + res.unknown + ' unanswered)') : String(res.resident), !!res.unknown) +
+    sheetRow('# of non-residents', res.unknown ? (res.nonresident + ' (' + res.unknown + ' unanswered)') : String(res.nonresident), !!res.unknown) +
+    sheetRow('# of boats', String(model.boats) + (model.boatsDerived ? ' (one per angler)' : '')) +
+    sheetRow('Size of winning fish', model.winner ? Number(model.winner.length).toFixed(2) + '"' : 'no scoring catch');
+
+  const filer =
+    '<h3>Filed by</h3>' +
+    sheetField('Form completed by', cfg.filerName) +
+    sheetRow('Date', new Date().toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' })) +
+    sheetField('Mailing address', (cfg.filerAddress || '').replace(/\s*\n\s*/g, ', ')) +
+    sheetField('Email address', cfg.filerEmail) +
+    sheetField('Telephone', cfg.filerPhone) +
+    sheetField('Contest sponsor', cfg.sponsor);
+
+  const hoursRows = model.days.map(d=>
+    '<tr><td class="num">' + d.day + '</td>' +
+    '<td>' + escapeHtml(eventDayText(d.dateKey)) + '</td>' +
+    '<td class="num">' + escapeHtml(d.start || '—') + '</td>' +
+    '<td class="num">' + escapeHtml(d.stop || '—') + '</td>' +
+    '<td class="num">' + (d.hours === null ? '—' : d.hours.toFixed(2)) + '</td>' +
+    '<td class="num">' + d.caught + '</td>' +
+    '<td class="num">' + (d.released === null ? '—' : d.released) + '</td></tr>'
+  ).join('');
+  const hours = '<h3>Hours fished</h3>' +
+    (model.days.length === 0 ? '<p class="rnote">This event has no dates set.</p>' :
+      '<div class="rscroll"><table>' +
+      '<tr><th class="num">Day</th><th>Date</th><th class="num">Start</th><th class="num">Stop</th>' +
+      '<th class="num">Total hours</th><th class="num"># caught</th><th class="num"># released</th></tr>' +
+      hoursRows + '</table></div>') +
+    (model.died > 0
+      ? '<p class="rnote">Released is blank per day because the app records which species did not survive, not which day. Split the ' +
+        model.died + ' across the days yourself.</p>'
+      : '');
+
+  const minLen = reportValue(cfg.minLength).trim();
+  const speciesRows = model.species.map(s=>
+    '<tr><td>' + escapeHtml(s.species) + '</td>' +
+    '<td class="num">' + s.caught + '</td>' +
+    '<td class="num">' + (isScoringSpecies(s.species) && minLen ? minLen + '"' : '—') + '</td>' +
+    '<td class="num">' + s.released + '</td>' +
+    '<td class="num">' + s.died + '</td></tr>'
+  ).join('');
+  const fish = '<h3>Number of fish caught</h3>' +
+    (model.species.length === 0 ? '<p class="rnote">No catches logged.</p>' :
+      '<div class="rscroll"><table>' +
+      '<tr><th>Species</th><th class="num">Total caught</th><th class="num">Min length</th>' +
+      '<th class="num">Released</th><th class="num">Died</th></tr>' + speciesRows +
+      '<tr><th>All species</th><th class="num">' + model.caught + '</th><th class="num">—</th>' +
+      '<th class="num">' + (model.caught - model.died) + '</th><th class="num">' + model.died + '</th></tr>' +
+      '</table></div>');
+
+  const optional =
+    '<h3>Optional information</h3>' +
+    sheetField('Body of water', model.waterbody) +
+    sheetField('Water level', cfg.waterLevel, 'not recorded') +
+    sheetField('Air temperature', reportValue(cfg.airTemp).trim() ? cfg.airTemp + ' °F' : '', 'not recorded') +
+    sheetField('Water temperature', reportValue(cfg.waterTemp).trim() ? cfg.waterTemp + ' °F' : '', 'not recorded') +
+    sheetField('Water clarity', cfg.clarity, 'not recorded');
+
+  const sizes = '<h3>Size distribution</h3>' +
+    '<p class="rnote">Every fish appears once. A species sits in whichever table has columns for its whole range, ' +
+    'so nothing is reported twice.</p>' +
+    '<p class="rnote"><strong>Fish 8 inches and over</strong></p>' +
+    (model.sizes.small.length === 0 ? '<p class="rnote">No fish under 12 inches.</p>' :
+      sizeTableHtml(model.sizes.small, SIZE_SMALL_MIN, SIZE_SMALL_MAX, false)) +
+    '<p class="rnote" style="margin-top:10px;"><strong>Fish 12 inches and over</strong></p>' +
+    (model.sizes.large.length === 0 ? '<p class="rnote">No fish 12 inches or over.</p>' :
+      sizeTableHtml(model.sizes.large, SIZE_LARGE_MIN, SIZE_LARGE_MAX, true)) +
+    (model.sizes.under8 > 0
+      ? '<p class="rnote">' + model.sizes.under8 + ' fish under 8 inches ' +
+        (model.sizes.under8 === 1 ? 'is' : 'are') + ' counted in the totals above but appear on neither table &mdash; ' +
+        'the form only asks for 8 inches and up.</p>'
+      : '');
+
+  const notes =
+    '<h3>Notes</h3>' +
+    sheetField('Other information', cfg.otherInfo, 'nothing to report') +
+    sheetField('Comments', cfg.comments, 'none');
+
+  el.innerHTML = head + filer + hours + fish + optional + sizes + notes;
+}
+
+// The same sheet as plain text. Printing needs a printer; this needs nothing,
+// and pastes straight into an email to the region office.
+function reportSheetText(model){
+  const el = document.getElementById('report-sheet');
+  const html = el ? el.innerHTML : '';
+  const lines = [];
+  html.split(/<\/(?:div|tr|p|h3)>/i).forEach(chunk=>{
+    const text = stripEntities(chunk.replace(/<[^>]*>/g, '\t'))
+      .replace(/\t+/g, '\t').replace(/^\t|\t$/g, '').trim();
+    if(text) lines.push(text);
+  });
+  const title = stripEntities((model.event && model.event.name) || 'Fishing contest report');
+  return title + '\n' + (model.dates || []).join(', ') + '\n\n' + lines.join('\n');
+}
+
+async function renderFwpReport(){
+  if(!document.getElementById('admin-tool-report')) return;
+  const anglers = await loadAnglers();
+  const catches = await loadCatches();
+  const cfg = reportSettings();
+  const model = buildReportModel(anglers, catches, cfg);
+
+  if(!reportInputsFilled){ fillReportInputs(cfg, model.counts.anglers); reportInputsFilled = true; }
+
+  const due = document.getElementById('report-due');
+  if(due) due.innerHTML = '<div class="rdue' + (model.late ? ' late' : '') + '">' + escapeHtml(model.due) + '</div>';
+
+  const warn = document.getElementById('report-warnings');
+  if(warn){
+    warn.innerHTML = model.warnings
+      .map(w=> '<div class="rwarn">' + escapeHtml(w) + '</div>').join('');
+  }
+
+  renderReportHours(contestDayHours(anglers, model.dates), cfg);
+  renderReportDied(model.species, cfg);
+  renderReportResidency(model.residency);
+  renderReportSheet(model);
+
+  setText('report-tool-summary', model.warnings.length
+    ? model.warnings.length + ' thing' + (model.warnings.length === 1 ? '' : 's') + ' to settle'
+    : model.due);
+}
+
+// One delegated listener for the whole card: the day and species fields are
+// rebuilt from time to time, and a listener bound to each of them would be lost
+// the moment they were.
+bindEl('admin-tool-report', 'change', async (e)=>{
+  const el = e.target;
+  if(!el || !el.dataset) return;
+  const cfg = reportSettings();
+
+  if(el.dataset.fwp){
+    await saveReportSettings({ [el.dataset.fwp]: el.value.trim() });
+  } else if(el.dataset.fwpHour){
+    const [dayKey, edge] = el.dataset.fwpHour.split('.');
+    const hours = Object.assign({}, cfg.hours || {});
+    hours[dayKey] = Object.assign({}, hours[dayKey] || {}, { [edge]: el.value.trim() });
+    await saveReportSettings({ hours });
+  } else if(el.dataset.fwpDied){
+    const died = Object.assign({}, cfg.died || {});
+    const n = Math.max(0, Math.floor(Number(el.value) || 0));
+    if(n === 0) delete died[el.dataset.fwpDied];
+    else died[el.dataset.fwpDied] = n;
+    await saveReportSettings({ died });
+  } else {
+    return;
+  }
+  // The inputs are already holding what was just typed, so only the derived
+  // half is repainted - see the note above renderFwpReport's helpers.
+  await renderFwpReport();
+});
+
+bindEl('admin-tool-report', 'click', async (e)=>{
+  const btn = e.target && e.target.closest ? e.target.closest('[data-fwp-res]') : null;
+  if(!btn) return;
+  const anglers = await loadAnglers();
+  const idx = anglers.findIndex(a=> a.id === btn.dataset.angler);
+  if(idx === -1) return;
+  anglers[idx].resident = btn.dataset.fwpRes === 'yes';
+  if(!await saveAnglers(anglers)){
+    setText('report-copied', 'That could not be saved. Check your signal and try again.');
+    document.getElementById('report-copied').style.display = 'block';
+    return;
+  }
+  await renderFwpReport();
+});
+
+bindEl('report-print', 'click', ()=>{ window.print(); });
+
+bindEl('report-copy', 'click', async ()=>{
+  const note = document.getElementById('report-copied');
+  const anglers = await loadAnglers();
+  const catches = await loadCatches();
+  const text = reportSheetText(buildReportModel(anglers, catches, reportSettings()));
+  const say = (msg)=>{ if(note){ note.textContent = msg; note.style.display = 'block'; } };
+  try{
+    await navigator.clipboard.writeText(text);
+    say('Copied. Paste it into an email or a document.');
+  }catch(err){
+    console.error(err);
+    say('This browser would not let the app reach the clipboard. Print the sheet instead, or select it by hand.');
+  }
+});
+
 async function renderPayoutCalculator(){
   const anglers = await loadAnglers();
   const donations = await loadDonations();
@@ -6817,6 +7796,10 @@ bindEl('event-apply','click', async ()=>{
     errEl.style.display = 'block';
     return;
   }
+  // The report form is per event and its fields are only filled once, so it has
+  // to be told to reload them - otherwise the new event opens holding the old
+  // one's water temperature.
+  resetReportForm();
   // The whole app is scoped to this, so repaint everything rather than just
   // this card - the roster, standings and payouts are all different now.
   refreshActiveScreen();
@@ -7059,10 +8042,28 @@ function renderEventForm(){
   }
 }
 
-// Course labels in EVENTS carry HTML entities (&middot;). The form is a plain
-// text box, so show and accept the characters themselves.
+// Course labels, presenter lines and event names in EVENTS carry HTML entities
+// (&middot;, &amp;) and the odd <br>, because they are written to be dropped
+// into markup. Two places need them as plain characters instead: the event
+// edit form, which is a text box, and the FWP report, which is a form going to
+// the state - "Silos &middot; Ponds" in a mailing address is a bug.
+//
+// toEntities() below is the way back, and only has to escape the ampersand:
+// nothing typed into a text box arrives as a tag.
 function stripEntities(s){
-  return String(s).replace(/&middot;/g, '·').replace(/&amp;/g, '&').replace(/&ndash;/g, '–');
+  return String(s == null ? '' : s)
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/&middot;/g, '·').replace(/&nbsp;/g, ' ')
+    .replace(/&mdash;/g, '—').replace(/&ndash;/g, '–')
+    // The escapeHtml() set as well, because the plain-text copy of the report
+    // is built by stripping tags out of the rendered sheet - so whatever went
+    // through escapeHtml on the way in has to come back out here.
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    // LAST, always. Unescaping it first would turn a literal "&amp;quot;" into
+    // a quote mark instead of leaving it as the text it is.
+    .replace(/&amp;/g, '&')
+    .trim();
 }
 function toEntities(s){
   return String(s).replace(/&/g, '&amp;');
@@ -7713,6 +8714,7 @@ async function renderAdmin(){
   renderBoundaryEditor();
   await renderPayoutCalculator();
   await renderContestants();
+  await renderFwpReport();
   const catches = await loadCatches();
   // Loaded once for both lists below: the duplicate-photo check reaches across
   // every event, everything else stays on the live one.

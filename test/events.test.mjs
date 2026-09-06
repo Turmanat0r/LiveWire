@@ -85,6 +85,16 @@ globalThis.__t = {
   get beaconTimer(){ return beaconTimer; },
   get authMode(){ return authMode; },
   get adminUnlocked(){ return adminUnlocked; }, set adminUnlocked(v){ adminUnlocked = v; },
+  reportSettings, saveReportSettings, lastFiledDetails, REPORT_FILER_FIELDS,
+  residencyCounts, reportFieldCounts, reportableCatches, catchDayKey,
+  contestDayHours, catchesPerDay, speciesTally, sizeDistribution, winningFish,
+  reportDueDate, reportDueText, reportWarnings, FWP_DEADLINE_DAYS,
+  reportClockText, clockToMinutes, reportDayRow, buildReportModel,
+  stripEntities, sizeColumns, sheetValue, resetReportForm, SHEET_BLANK, pickedResidency,
+  reportWithDefaults, fillReportInputs,
+  renderFwpReport, renderReportSheet, reportSheetText,
+  get appDocument(){ return document; },
+  SIZE_SMALL_MIN, SIZE_SMALL_MAX, SIZE_LARGE_MIN, SIZE_LARGE_MAX,
   loadAwardsBudget, saveAwardsBudget, awardsBudgetMap,
   standingsFor, eventDateRangeText, eventRowCounts, eventDayText,
   getMyAnglerId, setMyAnglerId, onRows, readOutbox
@@ -1935,6 +1945,28 @@ check('and the legacy angler still ranks',
 check('a pending angler is still on the roster', aAll.map(a => a.id).sort(), ['no', 'ok', 'old']);
 check('and their catch is still stored', cAll.some(c => c.anglerId === 'no'), true);
 
+// ---- disqualification ----
+// The other gate on the same line, and until a sabotage run went looking for it
+// there was no test on this at all: removing the disqualified check left every
+// board unchanged and every test green. Taking someone's placing away is one of
+// the few director actions that cannot be quietly undone, so it is checked.
+const dqAnglers = [
+  { id: 'clean', name: 'Clean', handle: 'Clean Handle', division: 'solo' },
+  { id: 'dqd', name: 'Cheat', handle: 'Cheat Handle', division: 'solo', disqualified: true }
+];
+const dqCatches = [
+  { id: 'dc1', anglerId: 'clean', division: 'solo', status: 'approved', species: 'Walleye', length: 20 },
+  { id: 'dc2', anglerId: 'dqd', division: 'solo', status: 'approved', species: 'Walleye', length: 29 }
+];
+const dqBoard = t.standingsFor('solo', dqCatches, dqAnglers);
+check('a disqualified angler does not rank', dqBoard.map(r => r.name), ['Clean Handle']);
+check('even holding the longest fish in the division',
+  Math.max.apply(null, dqCatches.map(c => c.length)), 29);
+check('and their fish is not somebody else\'s best either',
+  dqBoard.every(r => r.best !== 29), true);
+// Their entry fee stays in the pool - forfeiting a placing is not a refund.
+check('but they are still a confirmed entry', t.poolCounts(dqAnglers).solo, 2);
+
 // ---- the Big Fish pot ----
 // $10 a head, winner take all. An unconfirmed entry in here is somebody
 // collecting a pot they never paid into.
@@ -2129,6 +2161,447 @@ check('the oldest position comes first, and no position at all comes before that
 check('with no signals at all it falls back to alphabetical',
   t.sortOverdue(three, []).map(x => x.angler.name), ['Fresh', 'Never', 'Stale']);
 check('an empty list sorts to an empty list', t.sortOverdue([], sigs), []);
+}
+
+// ============================================================
+section('50. the Montana FWP contest report');
+{
+// A form that goes to the state, due within 30 days of the last day fished.
+// The rule the whole feature follows is that it never guesses a number - so
+// most of what is checked here is that it declines to, and says which records
+// it had to leave out.
+
+const RDAY1 = t.EVENTS[0].dates[0];
+const RDAY2 = t.EVENTS[0].dates[1];
+function atDay(dateKey, hhmm) {
+  const [Y, M, D] = dateKey.split('-').map(Number);
+  const [h, m] = hhmm.split(':').map(Number);
+  return new Date(Date.UTC(Y, M - 1, D, h + 6, m, 0)).getTime();   // Denver, September
+}
+
+// ---- residency ----
+// The one number on the form nothing in the app could ever work out on its own,
+// so it is asked at registration. Anyone who entered before that question
+// existed has to read as unknown rather than as a non-resident.
+const resRoster = [
+  { id: 'r1', name: 'Ann', resident: true },
+  { id: 'r2', name: 'Bo', resident: false },
+  { id: 'r3', name: 'Cy' },                                   // registered before the question
+  { id: 'r4', name: 'Di', resident: true, pending: true }     // never paid
+];
+const res = t.residencyCounts(resRoster);
+check('Montana residents are counted', res.resident, 1);
+check('non-residents are counted', res.nonresident, 1);
+check('an unanswered entry is neither', res.unknown, 1);
+check('and it is named so it can be fixed', res.unknownAnglers.map(a => a.name), ['Cy']);
+check('an unconfirmed entry is in none of the three',
+  res.resident + res.nonresident + res.unknown, 3);
+
+// A missing field and an explicit false are different answers. Reading one as
+// the other is the exact mistake that would put a wrong number on the form.
+check('undefined is not false',
+  t.residencyCounts([{ id: 'x' }]).nonresident, 0);
+check('false is not undefined',
+  t.residencyCounts([{ id: 'x', resident: false }]).unknown, 0);
+
+// An unanswered question has to come back as null, not as a guess. The form
+// refuses to submit on this, which is the only thing standing between a
+// distracted angler and a wrong number on a state form. The stub DOM has
+// nothing selected, which is exactly the case that matters.
+check('nothing picked is null, never a default',
+  t.pickedResidency('#reg-resident'), null);
+check('and the same for the partner', t.pickedResidency('#reg-partner-resident'), null);
+
+// The form refusing to submit is the front door, and it lives inside a click
+// handler this harness cannot reach - see test/README.md. So the thing worth
+// pinning down is what happens if that door is ever left open: a null must
+// read as UNANSWERED and raise a warning, never as a quiet Montana resident.
+check('a null residency is unknown, not a resident',
+  t.residencyCounts([{ id: 'n', resident: null }]).unknown, 1);
+check('and it is counted as neither', 
+  t.residencyCounts([{ id: 'n', resident: null }]).resident +
+  t.residencyCounts([{ id: 'n', resident: null }]).nonresident, 0);
+check('so the report says so out loud',
+  t.reportWarnings([{ id: 'n', resident: null }], [], []).some(w => w.indexOf('residency') > -1), true);
+
+// ---- the head of the form ----
+const headRoster = [
+  { id: 'h1', name: 'Solo One', division: 'solo', role: 'solo' },
+  { id: 'h2', name: 'Cap', division: 'team', role: 'captain', teamId: 'T1' },
+  { id: 'h3', name: 'Mate', division: 'team', role: 'partner', teamId: 'T1' },
+  { id: 'h4', name: 'Unpaid', division: 'solo', role: 'solo', pending: true }
+];
+const headCounts = t.reportFieldCounts(headRoster);
+check('anglers are people, so both halves of a team count', headCounts.anglers, 3);
+check('teams are entries, so a team of two counts once', headCounts.teams, 1);
+check('paid is people who paid in, not fees collected', headCounts.paid, 3);
+check('and the unconfirmed one is reported rather than dropped silently',
+  headCounts.unconfirmed, 1);
+
+// ---- which catches are reportable ----
+// A rejected catch is usually the same fish photographed twice. Counting those
+// would tell the state more fish came out of the water than actually did.
+const mixed = [
+  { id: 'm1', status: 'approved', species: 'Walleye', length: 20, timestamp: atDay(RDAY1, '09:00') },
+  { id: 'm2', status: 'pending', species: 'Walleye', length: 18, timestamp: atDay(RDAY1, '11:00') },
+  { id: 'm3', status: 'rejected', species: 'Walleye', length: 20, timestamp: atDay(RDAY1, '09:05') }
+];
+check('a rejected catch is left out', t.reportableCatches(mixed).map(c => c.id), ['m1', 'm2']);
+check('a pending one is counted', t.reportableCatches(mixed).length, 2);
+
+// ---- fish per day ----
+const perDay = t.catchesPerDay(mixed, [RDAY1, RDAY2]);
+check('fish land on the day they were caught', perDay.counts[RDAY1], 2);
+check('a day with nothing on it still gets a row', perDay.counts[RDAY2], 0);
+check('and nothing fell outside the event', perDay.offDays, 0);
+
+// Read in the EVENT's time zone, not the reader's. 9pm in Montana is still
+// today, and a phone in another zone must not move the fish to tomorrow.
+const lateFish = [{ id: 'late', status: 'approved', species: 'Walleye', length: 19,
+                    timestamp: atDay(RDAY1, '21:30') }];
+check('a 9pm catch belongs to the day it was landed',
+  t.catchesPerDay(lateFish, [RDAY1, RDAY2]).counts[RDAY1], 1);
+check('and catchDayKey agrees', t.catchDayKey(lateFish[0]), RDAY1);
+
+// A test entry logged in July is real data in the species totals but belongs
+// on no day row. Reported, not quietly dropped.
+const strayFish = [{ id: 'stray', status: 'approved', species: 'Walleye', length: 19,
+                     timestamp: Date.UTC(2027, 6, 4, 18, 0) }];
+check('a catch outside the event dates is counted apart',
+  t.catchesPerDay(strayFish, [RDAY1, RDAY2]).offDays, 1);
+check('and it is on no day row',
+  t.catchesPerDay(strayFish, [RDAY1, RDAY2]).counts[RDAY1], 0);
+
+// ---- hours fished ----
+// First line in the water to last boat off it, which is what check-in and
+// check-out already record.
+const hoursRoster = [
+  { id: 'w1', name: 'Early', checkins: { day1: { in: atDay(RDAY1, '06:15'), out: atDay(RDAY1, '14:00') } } },
+  { id: 'w2', name: 'Late',  checkins: { day1: { in: atDay(RDAY1, '07:00'), out: atDay(RDAY1, '14:45') } } },
+  { id: 'w3', name: 'Unpaid', pending: true,
+    checkins: { day1: { in: atDay(RDAY1, '04:00'), out: atDay(RDAY1, '23:00') } } }
+];
+const hrs = t.contestDayHours(hoursRoster, [RDAY1, RDAY2]);
+const day = (i) => hrs[i] || {};
+check('the day starts at the first check-in', t.reportClockText(day(0).start), '06:15');
+check('and ends at the last check-out', t.reportClockText(day(0).stop), '14:45');
+check('the span is the two of them', Number((day(0).hours || 0).toFixed(2)), 8.5);
+check('an unconfirmed entry cannot stretch the day', day(0).start, atDay(RDAY1, '06:15'));
+check('a day nobody fished has no hours', day(1).hours, null);
+check('and no start to show either', day(1).start, null);
+
+// Half a day recorded is not a day. A total built from one end of it would be
+// worse than no total.
+const halfDay = [{ id: 'p1', checkins: { day1: { in: atDay(RDAY1, '06:00'), out: null } } }];
+check('checked in and never out gives no total',
+  t.contestDayHours(halfDay, [RDAY1]).hours, undefined);
+check('really - no total', (t.contestDayHours(halfDay, [RDAY1])[0] || {}).hours, null);
+
+// ---- clock parsing and overrides ----
+check('a time reads as minutes', t.clockToMinutes('07:15'), 7 * 60 + 15);
+check('midnight is zero, not falsy-broken', t.clockToMinutes('00:00'), 0);
+check('an hour past 23 is not a time', t.clockToMinutes('24:00'), null);
+check('nor is a minute past 59', t.clockToMinutes('07:60'), null);
+check('nor is an empty box', t.clockToMinutes(''), null);
+check('nor is nonsense', t.clockToMinutes('morning'), null);
+
+const derivedDay = t.contestDayHours(hoursRoster, [RDAY1])[0];
+const plain = t.reportDayRow(derivedDay, {});
+check('with nothing typed the check-ins stand', [plain.start, plain.stop], ['06:15', '14:45']);
+check('and it is not marked as overridden', plain.overridden, false);
+
+// The permit's hours win over what the field actually did, and the total has to
+// follow the override rather than the times it replaced.
+const overridden = t.reportDayRow(derivedDay, { hours: { day1: { start: '07:00', stop: '15:00' } } });
+check('a typed start replaces the check-in', overridden.start, '07:00');
+check('a typed stop replaces the check-out', overridden.stop, '15:00');
+check('the total is rebuilt from the typed pair, not carried over', overridden.hours, 8);
+check('and the row says it was overridden', overridden.overridden, true);
+
+const halfOverride = t.reportDayRow(derivedDay, { hours: { day1: { stop: '16:00' } } });
+check('overriding one end keeps the other', halfOverride.start, '06:15');
+check('and still totals correctly', Number(halfOverride.hours.toFixed(2)), 9.75);
+
+// ---- species ----
+const speciesCatches = [
+  { id: 's1', status: 'approved', species: 'Walleye', length: 22, timestamp: atDay(RDAY1, '08:00') },
+  { id: 's2', status: 'approved', species: 'Walleye', length: 19, timestamp: atDay(RDAY1, '09:00') },
+  { id: 's3', status: 'approved', species: 'Yellow Perch', length: 10, timestamp: atDay(RDAY1, '10:00') },
+  { id: 's4', status: 'rejected', species: 'Walleye', length: 30, timestamp: atDay(RDAY1, '11:00') }
+];
+const tally = t.speciesTally(speciesCatches, {});
+check('one row per species, most caught first', tally.map(r => r.species), ['Walleye', 'Yellow Perch']);
+const walleyeRow = (rows) => rows.find(r => r.species === 'Walleye') || {};
+check('rejected fish are not in the count', walleyeRow(tally).caught, 2);
+check('and with nothing dead, everything was released', walleyeRow(tally).released, 2);
+check('the longest of each species is carried', walleyeRow(tally).longest, 22);
+
+const withDeaths = t.speciesTally(speciesCatches, { Walleye: 1 });
+check('a death comes off the released count', walleyeRow(withDeaths).released, 1);
+check('and is reported as a death', walleyeRow(withDeaths).died, 1);
+
+// More deaths than fish is a typo, and it would print a negative number on a
+// form going to the state.
+const overDeaths = t.speciesTally(speciesCatches, { Walleye: 99 });
+check('deaths cannot exceed the catch', walleyeRow(overDeaths).died, 2);
+check('so released can never go negative', walleyeRow(overDeaths).released, 0);
+check('and a negative death count is floored at zero',
+  walleyeRow(t.speciesTally(speciesCatches, { Walleye: -5 })).died, 0);
+
+// ---- size distribution ----
+// The form's two tables overlap: 8-23 and 12-30+. Filling both from the same
+// fish would report it twice, so each species goes in whichever ONE table has
+// columns for its whole range.
+const sized = [
+  { id: 'z1', status: 'approved', species: 'Walleye', length: 12.9 },
+  { id: 'z2', status: 'approved', species: 'Walleye', length: 25 },
+  { id: 'z3', status: 'approved', species: 'Yellow Perch', length: 9.5 },
+  { id: 'z4', status: 'approved', species: 'Yellow Perch', length: 11 }
+];
+// Looked up by species rather than by position, and never indexed blindly: a
+// sabotage that empties a table has to turn this section red, not kill the run
+// on `undefined.counts` and hide every test after it.
+const EMPTY_ROW = { counts: {}, split: null };
+const row = (rows, name) => rows.find(r => r.species === name) || EMPTY_ROW;
+const fishIn = (r) => Object.values(r.counts).reduce((a, b) => a + b, 0);
+
+const dist = t.sizeDistribution(sized);
+check('a species that fits 8-23 goes in the small table',
+  dist.small.map(r => r.species), ['Yellow Perch']);
+check('a species reaching past 23 goes in the large one',
+  dist.large.map(r => r.species), ['Walleye']);
+check('lengths land in the whole-inch column below them',
+  row(dist.small, 'Yellow Perch').counts[9], 1);
+check('so 12.9 inches is a 12, not a 13', row(dist.large, 'Walleye').counts[12], 1);
+check('and 11 inches is its own column', row(dist.small, 'Yellow Perch').counts[11], 1);
+check('nothing was double counted',
+  fishIn(row(dist.small, 'Yellow Perch')) + fishIn(row(dist.large, 'Walleye')), 4);
+check('neither row was marked as split',
+  [row(dist.small, 'Yellow Perch').split, row(dist.large, 'Walleye').split], [false, false]);
+
+// The last column on the large table is "30+", so a fish longer than the table
+// has to fold into it rather than fall off the end.
+const monster = t.sizeDistribution([
+  { id: 'big', status: 'approved', species: 'Walleye', length: 34 },
+  { id: 'big2', status: 'approved', species: 'Walleye', length: 30 }
+]);
+check('a 34-inch fish folds into the 30+ column',
+  row(monster.large, 'Walleye').counts[t.SIZE_LARGE_MAX], 2);
+check('and there is no column past it',
+  Object.keys(row(monster.large, 'Walleye').counts).map(Number).filter(c => c > t.SIZE_LARGE_MAX), []);
+
+// One species holding both an 8-incher and a 24-incher fits neither table.
+// Splitting it is the only way to report every fish exactly once.
+const spanning = t.sizeDistribution([
+  { id: 'sp1', status: 'approved', species: 'Walleye', length: 9 },
+  { id: 'sp2', status: 'approved', species: 'Walleye', length: 26 }
+]);
+check('a species spanning both tables appears in both',
+  [spanning.small.length, spanning.large.length], [1, 1]);
+check('the short fish is in the small table', row(spanning.small, 'Walleye').counts[9], 1);
+check('the long one is in the large table', row(spanning.large, 'Walleye').counts[26], 1);
+check('and both rows are flagged as a split',
+  [row(spanning.small, 'Walleye').split, row(spanning.large, 'Walleye').split], [true, true]);
+check('still exactly two fish between them',
+  fishIn(row(spanning.small, 'Walleye')) + fishIn(row(spanning.large, 'Walleye')), 2);
+
+// The form asks for 8 inches and up. Smaller fish are real and stay in the
+// totals, but there is no column for them, so they are counted and named.
+const tiddlers = t.sizeDistribution([
+  { id: 'tt1', status: 'approved', species: 'Yellow Perch', length: 6 },
+  { id: 'tt2', status: 'approved', species: 'Yellow Perch', length: 8 }
+]);
+check('a fish under 8 inches is counted apart', tiddlers.under8, 1);
+check('and is on neither table', row(tiddlers.small, 'Yellow Perch').counts[6], undefined);
+check('while an 8-inch fish is on one', row(tiddlers.small, 'Yellow Perch').counts[8], 1);
+check('a rejected fish is in no size table',
+  t.sizeDistribution([{ id: 'r', status: 'rejected', species: 'Walleye', length: 20 }]).large, []);
+
+check('the small table runs 8 to 23',
+  [t.sizeColumns(t.SIZE_SMALL_MIN, t.SIZE_SMALL_MAX)[0],
+   t.sizeColumns(t.SIZE_SMALL_MIN, t.SIZE_SMALL_MAX).slice(-1)[0]], [8, 23]);
+check('and the large one 12 to 30',
+  [t.sizeColumns(t.SIZE_LARGE_MIN, t.SIZE_LARGE_MAX)[0],
+   t.sizeColumns(t.SIZE_LARGE_MIN, t.SIZE_LARGE_MAX).slice(-1)[0]], [12, 30]);
+
+// ---- the winning fish ----
+// Has to be the same fish that took the trophy, or the form and the payout
+// disagree in writing.
+const winRoster = [
+  { id: 'a', name: 'Winner' },
+  { id: 'b', name: 'Cheat', disqualified: true },
+  { id: 'c', name: 'Unpaid', pending: true }
+];
+const winCatches = [
+  { id: 'w-dq', anglerId: 'b', status: 'approved', species: 'Walleye', length: 31 },
+  { id: 'w-unpaid', anglerId: 'c', status: 'approved', species: 'Walleye', length: 30 },
+  { id: 'w-pending', anglerId: 'a', status: 'pending', species: 'Walleye', length: 29 },
+  { id: 'w-other', anglerId: 'a', status: 'approved', species: 'Northern Pike', length: 40 },
+  { id: 'w-real', anglerId: 'a', status: 'approved', species: 'Walleye', length: 24.5 }
+];
+check('the winning fish is the longest that actually scored',
+  (t.winningFish(winCatches, winRoster) || {}).id, 'w-real');
+check('with no scoring catch at all there is no winner',
+  t.winningFish([{ id: 'x', anglerId: 'a', status: 'approved', species: 'Northern Pike', length: 40 }], winRoster), null);
+
+// ---- the deadline ----
+const dueEvent = { dates: ['2027-09-18', '2027-09-19'] };
+check('thirty days runs from the LAST day fished',
+  t.reportDueDate(dueEvent).toISOString().slice(0, 10), '2027-10-19');
+check('and thirty is the number', t.FWP_DEADLINE_DAYS, 30);
+const dueAt = t.reportDueDate(dueEvent).getTime();
+check('a fortnight out it counts down',
+  t.reportDueText(dueEvent, dueAt - 14 * 86400000).indexOf('14 days from now') > -1, true);
+check('on the day it says so',
+  t.reportDueText(dueEvent, dueAt).indexOf('Due today') > -1, true);
+check('one day counts as a day, not days',
+  t.reportDueText(dueEvent, dueAt - 86400000).indexOf('1 day from now') > -1, true);
+check('and past it, it says how late',
+  t.reportDueText(dueEvent, dueAt + 3 * 86400000).indexOf('3 days ago') > -1, true);
+check('an event with no dates has no deadline', t.reportDueDate({ dates: [] }), null);
+check('and says so rather than throwing',
+  t.reportDueText({ dates: [] }, Date.now()).indexOf('no dates set') > -1, true);
+
+// ---- warnings ----
+// The promise the whole feature rests on: a count that had to leave records out
+// says which ones, rather than quietly being wrong.
+check('a clean tournament raises nothing',
+  t.reportWarnings([{ id: 'q', resident: true }], [], [RDAY1]), []);
+const warned = t.reportWarnings(
+  [{ id: 'q1', resident: true }, { id: 'q2', pending: true }, { id: 'q3' }],
+  [{ id: 'c1', status: 'pending', species: 'Walleye', length: 20, timestamp: atDay(RDAY1, '09:00') },
+   { id: 'c2', status: 'approved', species: 'Walleye', length: 20, timestamp: Date.UTC(2027, 6, 4, 18, 0) }],
+  [RDAY1, RDAY2]);
+check('four things are wrong and four are reported', warned.length, 4);
+check('the unconfirmed entry is one', warned.some(w => w.indexOf('unconfirmed') > -1), true);
+check('the unanswered residency is another', warned.some(w => w.indexOf('residency') > -1), true);
+check('so is a catch still awaiting review', warned.some(w => w.indexOf('awaiting review') > -1), true);
+check('and so is one logged outside the dates',
+  warned.some(w => w.indexOf('outside the event dates') > -1), true);
+
+// ---- entity stripping ----
+// Course and presenter labels are written for markup. A form field is plain
+// text, and "Silos &middot; Ponds" in a mailing address is a bug.
+check('a middot comes back as a dot', t.stripEntities('Silos &middot; Ponds'), 'Silos · Ponds');
+check('an ampersand comes back as one', t.stripEntities('Trailer &amp; Ironworks'), 'Trailer & Ironworks');
+check('a line break becomes a space', t.stripEntities('Montana Kayak<br>Walleye Open'), 'Montana Kayak Walleye Open');
+check('and nothing is left of an empty label', t.stripEntities(''), '');
+check('a null does not throw', t.stripEntities(null), '');
+
+// ---- blanks on the sheet ----
+// An unfilled box and a box holding nothing look identical on paper, so the
+// sheet names them instead of leaving a gap.
+check('an empty value is called out', t.sheetValue('')[1], true);
+check('and given words', t.sheetValue('')[0], 'not filled in');
+check('whitespace is still empty', t.sheetValue('   ')[1], true);
+check('a real value is left alone', t.sheetValue('Helena, MT'), ['Helena, MT', false]);
+check('a zero is a real value, not a blank', t.sheetValue(0), ['0', false]);
+check('and a caller can name the blank itself',
+  t.sheetValue('', 'not recorded')[0], 'not recorded');
+
+// ---- the whole model ----
+seed(
+  [{ id: 'b1', name: 'One', division: 'solo', role: 'solo', resident: true,
+     checkins: { day1: { in: atDay(RDAY1, '06:00'), out: atDay(RDAY1, '14:00') } } },
+   { id: 'b2', name: 'Two', division: 'team', role: 'captain', teamId: 'T', resident: false,
+     checkins: { day1: { in: atDay(RDAY1, '06:30'), out: atDay(RDAY1, '14:30') } } },
+   { id: 'b3', name: 'Three', division: 'team', role: 'partner', teamId: 'T', resident: true,
+     checkins: { day1: { in: atDay(RDAY1, '06:30'), out: atDay(RDAY1, '14:30') } } }],
+  [{ id: 'bc1', anglerId: 'b1', status: 'approved', species: 'Walleye', length: 21,
+     timestamp: atDay(RDAY1, '09:00') }],
+  [], {}
+);
+const anglersNow = await t.loadAnglers();
+const catchesNow = await t.loadCatches();
+const model = t.buildReportModel(anglersNow, catchesNow, {});
+check('the model counts three anglers', model.counts.anglers, 3);
+check('and one team', model.counts.teams, 1);
+check('boats default to one per angler', model.boats, 3);
+check('and the sheet says that is a default', model.boatsDerived, true);
+check('a typed boat count wins',
+  t.buildReportModel(anglersNow, catchesNow, { boats: 2 }).boats, 2);
+check('and is no longer a default',
+  t.buildReportModel(anglersNow, catchesNow, { boats: 2 }).boatsDerived, false);
+check('zero boats is a real answer, not an empty box',
+  t.buildReportModel(anglersNow, catchesNow, { boats: 0 }).boatsDerived, false);
+check('the waterbody starts from the course label, with its entities stripped',
+  model.waterbody.indexOf('&') === -1 && model.waterbody.length > 0, true);
+check('the winning fish is on the model', (model.winner || {}).id, 'bc1');
+check('one fish caught', model.caught, 1);
+check('none died', model.died, 0);
+check('so day one released what it caught', (model.days[0] || {}).released, 1);
+
+// With a death recorded there is nothing that says WHICH day it happened on,
+// so the per-day released column is left for the director rather than guessed.
+const withDeath = t.buildReportModel(anglersNow, catchesNow, { died: { Walleye: 1 } });
+check('a recorded death empties the per-day released column', (withDeath.days[0] || {}).released, null);
+check('but the day still knows what it caught', (withDeath.days[0] || {}).caught, 1);
+check('and the total released is still right', withDeath.caught - withDeath.died, 0);
+
+// ---- saved settings ----
+await t.saveReportSettings({ filerName: 'Daniel Turman', waterTemp: '58' });
+check('the report saves per event', t.reportSettings().filerName, 'Daniel Turman');
+check('and remembers the rest of it', t.reportSettings().waterTemp, '58');
+await setEvent(E2);
+check('another event starts with a blank form', t.reportSettings().filerName, undefined);
+check('but carries the filer forward', t.lastFiledDetails().filerName, 'Daniel Turman');
+check('without carrying the water temperature', t.lastFiledDetails().waterTemp, undefined);
+await setEvent(E1);
+check('and the first event still holds its own', t.reportSettings().waterTemp, '58');
+
+// ---- defaults reach the sheet, not just the boxes ----
+// The boxes used to show a carried-forward filer name and a sponsor taken from
+// the presenter line while the SHEET printed "not filled in" for both, because
+// nothing is saved until a field loses focus and a director who agreed with a
+// default never touched it. One form cannot say two things.
+const defaulted = t.reportWithDefaults({});
+check('the sponsor falls back to the presenter line',
+  defaulted.sponsor, 'Turmanator Trailer & Ironworks');
+// The form asks who sponsored the contest, not how they were announced at it.
+check('without the banner word on the end',
+  t.reportWithDefaults({}).sponsor.indexOf('presents'), -1);
+check('with its entities already stripped', defaulted.sponsor.indexOf('&amp;'), -1);
+check('and the waterbody to the course label',
+  defaulted.waterbody, 'Silos to the Ponds, Canyon Ferry');
+check('a saved value beats the default',
+  t.reportWithDefaults({ waterbody: 'Hauser Lake' }).waterbody, 'Hauser Lake');
+
+const defaultModel = t.buildReportModel(anglersNow, catchesNow, {});
+check('and the sheet is built from the same defaults',
+  defaultModel.waterbody, defaulted.waterbody);
+t.resetReportForm();
+await t.renderFwpReport();
+const untouched = t.appDocument.getElementById('report-sheet').innerHTML;
+check('so an untouched sponsor prints rather than reading as unfilled',
+  untouched.indexOf('Turmanator') > -1, true);
+
+// ---- the render path ----
+// There is no browser here, so this cannot say the sheet LOOKS right. It can
+// say it was built without throwing and that the numbers reached the page,
+// which is the half that fails silently - a renderer that throws leaves the
+// card blank with the error in a console nobody on a boat ramp is reading.
+t.resetReportForm();
+await t.renderFwpReport();
+const sheet = t.appDocument.getElementById('report-sheet').innerHTML;
+check('the sheet was built', sheet.length > 0, true);
+check('it leads with the contest name', sheet.indexOf('Contest name') > -1, true);
+check('the angler count reached it', sheet.indexOf('Total # of anglers') > -1, true);
+check('so did the hours table', sheet.indexOf('Total hours') > -1, true);
+check('and the species table', sheet.indexOf('Number of fish caught') > -1, true);
+check('and both size tables', sheet.indexOf('Size distribution') > -1, true);
+check('the winning fish is printed to two places', sheet.indexOf('21.00&quot;') > -1, true);
+check('an unfilled box says so rather than printing a gap',
+  sheet.indexOf(t.SHEET_BLANK) > -1, true);
+
+// The copy button has to produce the same report without a printer. It reads
+// the rendered sheet, so a change to one cannot leave the other behind.
+const asText = t.reportSheetText(t.buildReportModel(
+  await t.loadAnglers(), await t.loadCatches(), t.reportSettings()));
+check('the text copy carries the contest name',
+  asText.indexOf('Montana Kayak Walleye Open') > -1, true);
+check('and no markup came with it', /<[a-z]/i.test(asText), false);
+check('nor any raw entities', asText.indexOf('&quot;') === -1 && asText.indexOf('&amp;') === -1, true);
+check('and it kept the numbers', asText.indexOf('Total # of anglers') > -1, true);
 }
 
 // ============================================================

@@ -83,11 +83,34 @@ const STYLE_ONLY = /^(app|screen-|home-event|reg-event|vf-guide|vf-fish|nohatch)
 const BUILT = [...script.matchAll(/getElementById\('([a-z-]+-)'\s*\+/g)].map(m => m[1]);
 const isBuilt = (id) => BUILT.some((pre) => id.startsWith(pre));
 
+// A selector held in a variable and concatenated later - ['#a','#b'].forEach(
+// sel => document.querySelectorAll(sel + ' label')) - is a real reference the
+// scan above cannot see, because there is no querySelector call with the id in
+// it. Checking for the quoted selector is safe in a way widening that scan is
+// not: this can only ever clear an id the markup already declares, so it can
+// never invent a missing-id finding out of a hex colour.
+const selectorLiteral = (id) => script.includes(`'#${id}'`) || script.includes(`"#${id}"`);
+
 const orphans = [...declared].filter((id) =>
   !referenced.has(id) && !LABEL_TARGETS.has(id) && !STYLE_ONLY.test(id) && !isBuilt(id) &&
-  !markup.includes(`data-goto="${id}"`) &&
+  !markup.includes(`data-goto="${id}"`) && !selectorLiteral(id) &&
   !script.includes(`'${id}'`) && !script.includes(`"${id}"`));
 if (orphans.length) note('unused-id', `declared but never referenced: ${orphans.join(', ')}`);
+
+// ------------------------------------------------------- redefined functions
+// Two top-level `function foo(){}` declarations in one script is not an error
+// in JavaScript: the later one wins, silently, everywhere - including in code
+// written above it that was reading the first. Every call still works, so
+// nothing throws and nothing is undefined; the app just quietly runs the wrong
+// version. One file with 8,000 lines in it makes this easy to do by accident,
+// and it happened while the FWP report was being written.
+const declaredFns = new Map();
+for (const m of code.matchAll(/^function\s+([A-Za-z_$][\w$]*)/gm)) {
+  declaredFns.set(m[1], (declaredFns.get(m[1]) || 0) + 1);
+}
+for (const [name, count] of declaredFns) {
+  if (count > 1) note('redefined', `function ${name}() is declared ${count}x — the last one silently wins`);
+}
 
 // -------------------------------------------------------------- calls vs defs
 const defined = new Set();

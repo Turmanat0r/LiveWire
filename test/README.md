@@ -16,7 +16,8 @@ single-file app with no build step has nothing else to catch: a
 `getElementById` naming an element nobody added, a `bindEl` on a renamed
 button, an unbalanced tag, a function called but never written, a store
 collection wired into the app but missed in the SQL, a `/api/...` call with no
-function in `api/` to answer it, a form field under 16px. Every one of those fails silently in a
+function in `api/` to answer it, a form field under 16px, the same function
+declared twice. Every one of those fails silently in a
 browser — no console error, just a feature that quietly does nothing.
 
 To check a copy other than `index.html`:
@@ -87,6 +88,13 @@ The places where a mistake is silent and expensive:
   *which* thing is wrong, and that the page never sends its own prompt — an
   endpoint that took one would be a free model proxy on the director's key,
   since the page's source ships to every phone.
+- **The Montana FWP contest report.** It goes to the state, so the rule it
+  follows is that it never guesses: residency asked rather than defaulted, a
+  count that had to leave records out saying which ones, deaths clamped so a
+  released figure can never go negative, the 30 days running from the last day
+  fished, and each fish appearing on exactly one of the form's two overlapping
+  size tables. The overlap is the subtle one — taken literally the form asks
+  for a 15" walleye in both.
 - **Which URLs the endpoint will fetch.** Gemini wants image bytes rather than
   a link, so the server does the fetching, and a server that fetches whatever
   URL it is handed can be pointed at addresses only it can reach. The allowlist
@@ -160,6 +168,30 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Delete `sw.js` while the page still registers it | lint: 1 finding |
 | Typo an element id | lint: 2 findings |
 | Delete `api/fish-i.js` | lint: 1 finding |
+| Declare the same function twice | lint: 1 finding |
+
+And on the FWP contest report, every count below measured rather than guessed:
+
+| Break this | Expect |
+|---|---|
+| Read an unanswered residency as a resident | 2 failures |
+| Count an unconfirmed entry on the form | 5 failures |
+| Count a rejected catch as a fish caught | 9 failures |
+| Let a death count exceed the fish caught | 3 failures |
+| Let a disqualified angler hold the winning fish | 1 failure |
+| Let a disqualified angler keep a standings place | 2 failures |
+| Run the 30 days from the first day fished | 1 failure |
+| Split the size tables at 8 inches instead of 12 | 10 failures |
+| Let a fish longer than the table fall off the end | 2 failures |
+| Round lengths up to the whole inch instead of down | 2 failures |
+| Ignore a typed contest-hours override | 2 failures |
+| Total a contest day from one end of it | 1 failure |
+| Date a catch in the reader's time zone | 2 failures |
+| Silence the report warnings | 6 failures |
+| Print an unfilled box as a blank gap | 5 failures |
+| Read the report of whichever event comes first | 1 failure |
+| Leave markup in the plain-text copy | 1 failure |
+| Stop the sheet being rendered at all | 9 failures |
 
 And in `fish-i.test.mjs`, all of which weaken the photo-URL allowlist or the
 prompt clamp:
@@ -181,6 +213,15 @@ refuses an empty number) and the event-day check in `overdueCheckouts` (a
 non-event day builds a `dayKey` that matches nothing). Both behaviours are
 enforced twice. A test that went red for them would be asserting the
 implementation rather than the rule, so there isn't one.
+
+**The registration form's own validation is not reachable from here.** Every
+one of those checks — the emergency contact, the partner phone, the residency
+question — lives inside the `reg-submit` click handler, and the stub DOM never
+fires it. Sabotaging any of them passes. What is tested instead is the layer
+underneath: `residencyCounts()` reads a null as *unanswered* and the report
+warns about it, so an answer skipped at the form still cannot become a wrong
+number on the state's paperwork. Pulling that validation out into a pure
+function would close the gap properly, and has not been done.
 
 That table exists because it has caught real gaps twice: replacing instead of
 merging produced **no** failures until an assertion was added for it, and the
