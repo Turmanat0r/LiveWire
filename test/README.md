@@ -40,6 +40,29 @@ of sync with it. Change `index.html` and the tests see the change immediately.
 
 The places where a mistake is silent and expensive:
 
+- **Who may act for an entry.** Every angler picker is scoped to the entries
+  this device is signed in to; only the director sees the whole field. A device
+  with no registration used to be handed the *whole field* instead — the
+  reasoning being that a wiped phone had no way back to its entry and being
+  locked out mid-event was worse than the exposure. There is a way back now
+  ("Sign in to my entry"), so that had stopped being a trade-off and become an
+  open door: anyone who opened the link could read, re-measure and withdraw
+  other people's catches. It now offers nobody and says how to sign in. The
+  write path checks `canActFor` again against a fresh roster before it saves,
+  because a `<select>` is markup in a page anyone can open the inspector on — a
+  lint rule fails the build if that check leaves `renderManageList`, which has
+  no test that can see it.
+- **Who may delete a message.** The author, or the director, and nobody else.
+  It used to read `ctx.mine`, which covers *both halves of a team* — right for
+  "show this as mine", wrong for "let this device delete it", and it let either
+  half of a team clear the other's messages. `canDeleteMessage` is now shared by
+  the button and by the write, and the handler re-checks before deleting; the
+  team-partner case is asserted directly, since that is the one that was broken.
+- **One verdict, one place.** `reviewCatch` applies approve, reject and delete
+  for both the list buttons and the full-size photo panel. Two copies of "what
+  reject means" is how a fish ends up rejected on one screen and approved on
+  another. An unknown action changes nothing rather than falling through to a
+  default, and a catch that has since gone is refused rather than reported done.
 - **Ties, and that they never follow row order.** Two anglers can land the same
   length — a bump board reads to the quarter inch. Ranking on length alone left
   the order to however the rows happened to arrive, and rows arrive in whatever
@@ -272,6 +295,22 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Drift the split off 50/30/20 | 10 failures |
 | Let a negative pool produce a negative payout | 1 failure |
 | Truncate cents instead of rounding | 1 failure |
+| Hand an unlinked device the whole field again | 3 failures |
+| Stop scoping the picker at all | 7 failures |
+| Take the full field away from the director | 1 failure |
+| Let `canActFor` approve anyone | 2 failures |
+| Drop the ownership check from a catch edit | lint |
+| Put chat delete back on the team-wide set | 2 failures |
+| Let anyone delete any message | 7 failures |
+| Stop the author deleting their own | 2 failures |
+| Count a missing identity as a match | 1 failure |
+| Take moderation away from the director | 2 failures |
+| Drop the re-check from the chat delete handler | lint |
+| Make reject quietly approve | 2 failures |
+| Let an unknown verdict save anyway | 1 failure |
+| Have reject delete the catch instead | crash |
+| Report a vanished catch as handled | 2 failures |
+| Drop the review tool from the switcher | crash |
 | Stop normalising phone numbers | 5 failures |
 | Compare phone numbers in full instead of last ten | 2 failures |
 | Never show the pending notice | 3 failures |
@@ -359,11 +398,12 @@ prompt clamp:
 
 Put it back afterwards.
 
-Five guards in the app are deliberately redundant, and a sabotage of any of
+Six guards in the app are deliberately redundant, and a sabotage of any of
 them passes: the phone-length check in `claimEntry` (the equality check already
 refuses an empty number), the event-day check in `overdueCheckouts` (a
-non-event day builds a `dayKey` that matches nothing), the `paid === 0` early
-return in `splitFor` (the general path returns `[]` for an empty share list
+non-event day builds a `dayKey` that matches nothing), the `!anglerId` guard in
+`canActFor` (an empty id is not in `myAnglerIds` either, so the lookup below
+already returns false), the `paid === 0` early return in `splitFor` (the general path returns `[]` for an empty share list
 anyway) and its `PAYOUT_SHARES.length` cap (the array holds three, so a literal
 `4` slices to the same three), and the `seen` check in
 `unpaidInTheMoney`'s division loop — `standingsFor` groups by angler, so one
@@ -371,7 +411,7 @@ person cannot appear twice in one division's top three. It is only reachable if
 an angler's catches straddle two divisions, which needs a division edit after
 they had already logged fish. The `seen` check in the same function's Big Fish
 block *is* load-bearing (someone can place and lead the pot at once) and is
-tested. All five behaviours are enforced twice. A test that went red for them would be asserting the
+tested. All six behaviours are enforced twice. A test that went red for them would be asserting the
 implementation rather than the rule, so there isn't one.
 
 **A test cannot see a time zone it is already in.** The machine this was

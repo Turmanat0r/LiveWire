@@ -374,6 +374,29 @@ for (const m of src.matchAll(/<(script|link)\b[^>]*?(?:src|href)="(https:\/\/[^"
   }
 }
 
+// ------------------------------------------------------------ acting for others
+// Two write paths decide whether THIS device may change somebody else's
+// record. Both are inside render functions, so there is no unit test that can
+// see them - these keep the check from being quietly dropped.
+//
+// The pickers and the delete button are filtered to the right set already, but
+// both are markup in a page anyone can open the inspector on. The list being
+// right is not the same as the write being guarded.
+for (const [fn, guard, why] of [
+  ['renderManageList', 'canActFor',
+   'lets any angler re-measure or withdraw a catch that is not theirs'],
+  ['wireChatActions', 'canDeleteMessage',
+   'lets any angler delete anybody\'s message']
+]) {
+  const body = (script.match(new RegExp(
+    '(?:async )?function ' + fn + '\\([^)]*\\)\\{([\\s\\S]*?)\\n\\}')) || ['', ''])[1];
+  if (!body) {
+    note('ownership', `cannot find ${fn} - its ownership check cannot be verified`);
+  } else if (!body.includes(guard + '(')) {
+    note('ownership', `${fn} no longer calls ${guard}(), which ${why}`);
+  }
+}
+
 // --------------------------------------------------------------- sync loop
 // The polling loop runs on real timers, so there is no unit test around its
 // mechanics - these are the guards it must not lose. Each one was a live bug:

@@ -61,7 +61,7 @@ globalThis.__t = {
   supabaseBackend,
   generateHandle, uniqueHandle, displayHandle,
   loadMessages, saveMessages, chatAuthor, chatUnreadCount, chatLastSeen,
-  markChatSeen, chatItemHtml, chatBragHtml, announceCatch, CHAT_MAX,
+  markChatSeen, chatItemHtml, chatBragHtml, announceCatch, CHAT_MAX, canDeleteMessage,
   loadSignals, saveSignals, publishSignal, activeBeacons, myBeacon,
   signalAgeMinutes, signalIsFresh, signalAgeText, compassFrom, SIGNAL_STALE_MINUTES,
   beaconTick, startBeaconTracking, stopBeaconTracking, resumeBeaconTracking,
@@ -108,6 +108,7 @@ globalThis.__t = {
   set serverClockOffset(v){ serverClockOffset = v; },
   loadAwardsBudget, saveAwardsBudget, awardsBudgetMap,
   standingsFor, byLengthThenEarliest, bySmallestThenEarliest, catchTime,
+  canActFor, reviewCatch, showAdminTool,
   splitFor, PAYOUT_SHARES, eventDateRangeText, eventRowCounts, eventDayText,
   getMyAnglerId, setMyAnglerId, onRows, readOutbox
 };
@@ -1025,8 +1026,12 @@ check('and the reason is stated',
   /Director access/.test(elById.get('checkin-angler-note').textContent), true);
 t.adminUnlocked = false;
 
-// A wiped or replaced phone has no registration to scope to. It keeps the full
-// list rather than being locked out mid-event, and says why.
+// A wiped or replaced phone has no registration to scope to. It used to be
+// handed the WHOLE FIELD - on the grounds that there was no way back to your
+// entry and being locked out mid-event was worse. There is a way back now
+// ("Sign in to my entry"), so that fallback had stopped being a trade-off and
+// become an open door: anyone who opened the link could read, re-measure and
+// withdraw other people's catches from the manage screen.
 seed(ROSTER, [], [], {});
 const wiped = boot(new Map());
 wiped.liveCache.config = { activeEventId: E1 };
@@ -1034,10 +1039,25 @@ wiped.liveCache.anglers = ROSTER;
 wiped.loadedIds.anglers = null;
 check('an unlinked device owns nothing', wiped.myAnglerIds(ROSTER), []);
 await wiped.populateAnglerSelect('sub-angler', 'sub-angler-note');
-check('so it falls back to the whole field',
-  (elById.get('sub-angler').innerHTML.match(/<option/g) || []).length, 4);
-check('and says the device is unlinked',
-  /no registration on it/.test(elById.get('sub-angler-note').textContent), true);
+check('and is offered nobody to act as',
+  (elById.get('sub-angler').innerHTML.match(/<option value="[^"]+"/g) || []).length, 0);
+check('the whole field is NOT listed',
+  /solo1|cap1|par1/.test(elById.get('sub-angler').innerHTML), false);
+check('and it is told how to sign in rather than left guessing',
+  /Sign in to my entry/.test(elById.get('sub-angler-note').textContent), true);
+
+// The write path checks again, because a <select> is markup anyone can edit.
+check('an unlinked device may not act for anyone',
+  wiped.canActFor('solo1', ROSTER), false);
+t.setMyAnglerId('cap1');
+check('a captain may act for themselves', t.canActFor('cap1', ROSTER), true);
+check('and for their partner, who shares the entry',
+  t.canActFor('par1', ROSTER), true);
+check('but not for a stranger', t.canActFor('solo1', ROSTER), false);
+check('and not for an empty id', t.canActFor('', ROSTER), false);
+t.adminUnlocked = true;
+check('the director may act for anyone', t.canActFor('solo1', ROSTER), true);
+t.adminUnlocked = false;
 
 // ============================================================
 section('28. untrusted catch fields are escaped');
@@ -1318,6 +1338,63 @@ section('29c. splitting a pool without losing a cent');
 }
 
 // ============================================================
+section('29d. judging a fish');
+// The list buttons and the full-size photo panel both apply a verdict, so they
+// go through one function - two copies of "what reject means" is how a fish
+// ends up rejected in one place and approved in another.
+{
+  await setEvent(E1);
+  const judged = [
+    { id: 'j1', eventId: E1, anglerId: 'jx', anglerName: 'Jo', species: 'Walleye',
+      length: 21, status: 'pending', timestamp: 1000 },
+    { id: 'j2', eventId: E1, anglerId: 'jx', anglerName: 'Jo', species: 'Walleye',
+      length: 22, status: 'pending', timestamp: 2000 }
+  ];
+  seed([], judged, [], {});
+
+  check('approving marks it approved', await t.reviewCatch('j1', 'approve'), true);
+  check('and it sticks', (await t.loadCatches()).find(c => c.id === 'j1').status, 'approved');
+  check('rejecting marks it rejected', await t.reviewCatch('j2', 'reject'), true);
+  check('and that sticks too', (await t.loadCatches()).find(c => c.id === 'j2').status, 'rejected');
+  check('a rejected catch is still on the list, not gone',
+    (await t.loadCatches()).length, 2);
+
+  check('deleting removes it', await t.reviewCatch('j1', 'delete'), true);
+  check('and it is really gone', (await t.loadCatches()).some(c => c.id === 'j1'), false);
+
+  // The lightbox passes whatever the button carried; an unknown verdict must
+  // change nothing rather than fall through to a default.
+  check('an unknown action is refused', await t.reviewCatch('j2', 'maybe'), false);
+  check('and changes nothing',
+    (await t.loadCatches()).find(c => c.id === 'j2').status, 'rejected');
+  check('a catch that is gone is refused', await t.reviewCatch('j1', 'approve'), false);
+  check('and an id nobody has', await t.reviewCatch('nope', 'approve'), false);
+}
+
+// ============================================================
+section('29e. the director panel opens on the fish');
+// Pending catches used to sit outside the tool switcher, below whichever tool
+// was open - so choosing Contestants put the review queue underneath it and it
+// read as part of that screen.
+{
+  t.showAdminTool('review');
+  check('the review tool is shown',
+    elById.get('admin-tool-review').style.display, 'block');
+  check('and contestants is not',
+    elById.get('admin-tool-contestants').style.display, 'none');
+  t.showAdminTool('contestants');
+  check('choosing contestants hides the review queue',
+    elById.get('admin-tool-review').style.display, 'none');
+  check('rather than leaving it stacked underneath',
+    elById.get('admin-tool-contestants').style.display, 'block');
+  // Every tool the switcher lists has to exist, or selecting it throws and the
+  // panel is stuck on whatever was open.
+  ['gps','payout','contestants','event','positions','report','review'].forEach(tool=>{
+    check('the ' + tool + ' tool has a card', !!elById.get('admin-tool-' + tool), true);
+  });
+}
+
+// ============================================================
 section('30. competitor handles');
 const H_ROSTER = [];
 for(let i = 0; i < 300; i++){
@@ -1418,16 +1495,38 @@ check('the payload survives as escaped text', /&lt;img/.test(html), true);
 check('a handle cannot inject either', /<script/.test(html), false);
 check('escaped instead', /&lt;script/.test(html), true);
 
-// Moderation affordances.
-check('you can delete your own', /data-chat-act="delete"/.test(
-  t.chatItemHtml({ id:'m2', anglerId:'a1', kind:'chat', text:'x', timestamp:1 },
-    { anglerById:{}, catches:[], mine:new Set(['a1']), isDirector:false, repliesByParent:{} }, false)), true);
-check('not someone else\'s', /data-chat-act="delete"/.test(
-  t.chatItemHtml({ id:'m1', anglerId:'a2', kind:'chat', text:'x', timestamp:1 },
-    { anglerById:{}, catches:[], mine:new Set(['a1']), isDirector:false, repliesByParent:{} }, false)), false);
-check('but the director can delete anything', /data-chat-act="delete"/.test(
-  t.chatItemHtml({ id:'m1', anglerId:'a2', kind:'chat', text:'x', timestamp:1 },
-    { anglerById:{}, catches:[], mine:new Set(['a1']), isDirector:true, repliesByParent:{} }, false)), true);
+// Moderation affordances. `mine` covers BOTH halves of a team - which is right
+// for "show this as mine" and wrong for "let this device delete it" - so the
+// delete button reads meId, the posting identity, and nothing else.
+const chatCtx = (over)=> Object.assign(
+  { anglerById:{}, catches:[], mine:new Set(['a1','a1mate']), meId:'a1',
+    isDirector:false, repliesByParent:{} }, over || {});
+const msgFrom = (who)=> ({ id:'m-'+who, anglerId:who, kind:'chat', text:'x', timestamp:1 });
+const canDel = (msg, over)=> /data-chat-act="delete"/.test(t.chatItemHtml(msg, chatCtx(over), false));
+
+check('you can delete your own', canDel(msgFrom('a1')), true);
+check('not someone elses', canDel(msgFrom('a2')), false);
+// The bug this rule exists for: one half of a team could clear the other's
+// messages, because a partner's entry is in `mine`.
+check('and not your team partners, even though you share an entry',
+  canDel(msgFrom('a1mate')), false);
+check('but the director can delete anything',
+  canDel(msgFrom('a2'), { isDirector:true }), true);
+check('a device with no entry signed in can delete nothing',
+  canDel(msgFrom('a1'), { meId:null }), false);
+
+// The same rule the write path runs, checked directly - the button is markup,
+// so the handler asks this again before it writes.
+check('the author may delete', t.canDeleteMessage(msgFrom('a1'), 'a1', false), true);
+check('a stranger may not', t.canDeleteMessage(msgFrom('a2'), 'a1', false), false);
+check('a partner may not', t.canDeleteMessage(msgFrom('a1mate'), 'a1', false), false);
+check('the director may', t.canDeleteMessage(msgFrom('a2'), 'a1', true), true);
+check('a missing message is never deletable',
+  t.canDeleteMessage(null, 'a1', true), false);
+check('and no identity plus no director access deletes nothing',
+  t.canDeleteMessage(msgFrom('a1'), null, false), false);
+check('an undefined id cannot match an authorless message',
+  t.canDeleteMessage({ id:'m0' }, undefined, false), false);
 check('replies cannot be replied to (one level only)', /data-chat-act="reply"/.test(
   t.chatItemHtml({ id:'r1', anglerId:'a2', kind:'chat', text:'x', timestamp:1 },
     { anglerById:{}, catches:[], mine:new Set(), isDirector:false, repliesByParent:{} }, true)), false);

@@ -1129,6 +1129,44 @@
      the page is hidden by VISIBILITY rather than display, because the sheet is
      nested deep inside the director panel and display:none on any ancestor
      would take it with them. */
+
+  /* ---- full-size catch photo ----
+     A 64px thumbnail cannot show whether a tail is pinched or where the nose
+     sits on the tape, and that is the whole of the judgement. Tapping a photo
+     in the director's lists opens it here, big, with the same approve and
+     reject actions on it. */
+  .lightbox{
+    position:fixed;inset:0;z-index:2000;background:#0C1412;
+    display:flex;flex-direction:column;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .lightbox[hidden]{display:none;}
+  .lightbox-bar{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:10px 12px;color:#F4F1E9;flex:0 0 auto;
+  }
+  .lightbox-title{font-weight:600;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  /* The stage scrolls, so a zoomed photo can be dragged around rather than
+     cropped to whatever fits. */
+  .lightbox-stage{
+    flex:1 1 auto;min-height:0;overflow:auto;
+    display:flex;align-items:center;justify-content:center;
+    -webkit-overflow-scrolling:touch;
+  }
+  .lightbox-stage img{display:block;max-width:100%;max-height:100%;object-fit:contain;cursor:zoom-in;}
+  /* Natural size, so the tape can actually be read. */
+  .lightbox.zoomed .lightbox-stage{align-items:flex-start;justify-content:flex-start;}
+  .lightbox.zoomed .lightbox-stage img{max-width:none;max-height:none;width:auto;cursor:zoom-out;}
+  .lightbox-meta{flex:0 0 auto;padding:8px 12px;color:#C8D3CC;font-size:11.5px;line-height:1.5;}
+  .lightbox-meta .badge{vertical-align:middle;}
+  .lightbox-actions{
+    flex:0 0 auto;display:flex;gap:8px;padding:10px 12px;
+    padding-bottom:calc(10px + env(safe-area-inset-bottom));
+  }
+  .lightbox-actions button{flex:1 1 0;min-height:46px;font-size:14px;}
+  .lightbox-empty{color:#C8D3CC;font-size:12px;padding:20px;text-align:center;}
+  /* Only the director's lists open one, so only those look tappable. */
+  #admin-pending .photoslot,#admin-all .photoslot{cursor:zoom-in;}
   @media print{
     /* Printing exists for one thing: the FWP contest report. Everything else
        is hidden by VISIBILITY rather than display, because the sheet is nested
@@ -1164,6 +1202,7 @@
     .fwp-head,.fwp-sub{break-after:avoid;page-break-after:avoid;}
     .fwp-grid,.fwp-table,.fwp-box-area{break-inside:avoid;page-break-inside:avoid;}
     .tabbar{display:none !important;}
+    .lightbox{display:none !important;}
     @page{margin:12mm;}
   }
 </style>
@@ -1787,6 +1826,10 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3.5v3M16 3.5v3"/><path d="m9 14.5 2 2 4-4"/></svg>
             <span class="director-tool-copy"><strong>Event</strong><span id="event-tool-summary">&mdash;</span></span>
           </button>
+          <button class="director-tool wide" type="button" data-admin-tool="review">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6Z"/><circle cx="12" cy="12" r="2.6"/></svg>
+            <span class="director-tool-copy"><strong>Fish to Review</strong><span id="review-tool-summary">Nothing waiting</span></span>
+          </button>
           <button class="director-tool wide" type="button" data-admin-tool="report">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h8l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-16a1 1 0 0 1 1-1Z"/><path d="M14 3.5v4h4"/><path d="M8.5 12.5h7M8.5 16h4"/></svg>
             <span class="director-tool-copy"><strong>FWP Report</strong><span id="report-tool-summary">&mdash;</span></span>
@@ -2139,13 +2182,20 @@
           <p class="hint" id="report-copied" style="display:none;"></p>
         </div>
 
-        <div class="card">
-          <h2>Pending catches</h2>
-          <div id="admin-pending"></div>
-        </div>
-        <div class="card">
-          <h2>All catches</h2>
-          <div id="admin-all"></div>
+        <!-- These two used to sit outside the tool switcher, below whichever
+             tool was open - so opening Contestants put the review queue
+             directly underneath it and it read as part of that screen. It is
+             the director's main job during an event, so it gets its own tool. -->
+        <div id="admin-tool-review" style="display:none;">
+          <div class="card">
+            <h2>Pending catches</h2>
+            <p class="hint" style="margin-top:0;">Tap a photo to open it full size and judge it there.</p>
+            <div id="admin-pending"></div>
+          </div>
+          <div class="card">
+            <h2>All catches</h2>
+            <div id="admin-all"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -2159,6 +2209,22 @@
     <button data-screen="chat"><span class="ico"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-8 8H7l-3 3v-6.5A8 8 0 1 1 20 12Z"/><path d="M8.5 11h7M8.5 14.5h4"/></svg></span>Chat<span class="chat-unread" id="chat-badge" hidden></span></button>
     <button data-screen="admin"><span class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.9a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V20a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.98 18.35a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87A1.7 1.7 0 0 0 3.06 12.9H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.65 7.87a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1.03-1.56V2a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V8a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.03Z"/></svg></span>Director</button>
   </nav>
+
+  <!-- Full-size catch photo, opened from the director's review lists. Outside
+       <main> so it covers the tab bar as well as the page. -->
+  <div class="lightbox" id="photo-lightbox" hidden>
+    <div class="lightbox-bar">
+      <span class="lightbox-title" id="lightbox-title"></span>
+      <button class="small" type="button" id="lightbox-close">Close</button>
+    </div>
+    <div class="lightbox-stage">
+      <img id="lightbox-img" alt="Catch photo on the bump board">
+      <p class="lightbox-empty" id="lightbox-missing" hidden>No photo reached the
+        server for this catch. It may still be queued on the angler&rsquo;s phone.</p>
+    </div>
+    <div class="lightbox-meta" id="lightbox-meta"></div>
+    <div class="lightbox-actions" id="lightbox-actions"></div>
+  </div>
 
 </div>
 
@@ -5654,11 +5720,26 @@ async function populateAnglerSelect(selectId, noteId){
   }
 
   const mineIds = myAnglerIds(anglers);
-  // A device with no registration on it - a replaced or wiped phone - keeps the
-  // full list, because there is no way to re-claim an entry and being locked
-  // out mid-event is worse than the exposure. The note below says so plainly.
-  const unscoped = adminUnlocked || mineIds.length === 0;
-  const list = unscoped ? anglers : anglers.filter(a=> mineIds.indexOf(a.id) !== -1);
+  // ONLY the director sees the whole field.
+  //
+  // A device with no registration on it used to get the full list too, on the
+  // grounds that a wiped or replaced phone had no way back to its entry and
+  // being locked out mid-event was worse than the exposure. There IS a way back
+  // now - "Sign in to my entry" on the register screen, which takes a
+  // tournament ID and the phone number on the entry - so that fallback had
+  // stopped being a trade-off and become an open door: anyone who opened the
+  // link could read, re-measure and withdraw other people's catches.
+  const list = adminUnlocked ? anglers : anglers.filter(a=> mineIds.indexOf(a.id) !== -1);
+
+  if(list.length === 0){
+    sel.innerHTML = '<option value="">No entry signed in on this device</option>';
+    if(noteId){
+      setText(noteId, 'This device is not signed in to an entry. Open Register and '+
+        'choose “Sign in to my entry” — you will need your tournament ID and '+
+        'the phone number you registered with.');
+    }
+    return anglers;
+  }
 
   const myId = getMyAnglerId();
   sel.innerHTML = list.map(a=>
@@ -5666,13 +5747,24 @@ async function populateAnglerSelect(selectId, noteId){
     escapeHtml(a.name)+' ('+escapeHtml(a.tournamentId)+')</option>').join('');
 
   if(noteId){
-    setText(noteId, !unscoped ? ''
-      : (adminUnlocked
-          ? 'Director access is unlocked, so this lists the whole field.'
-          : 'This device has no registration on it, so the whole field is listed. '+
-            'Register on this device, or ask the director, to tie it to your own entry.'));
+    setText(noteId, adminUnlocked
+      ? 'Director access is unlocked, so this lists the whole field.' : '');
   }
   return anglers;
+}
+
+// Whether this device may act for an entry: its own, its team partner's, or
+// anything at all once director access is unlocked.
+//
+// The pickers are filtered to exactly this set, but a <select> is markup in a
+// page anyone can open the inspector on, so every write checks again here
+// against a fresh roster read. Still not a security boundary - the anon key
+// ships in this page - but it stops the accident and the idle meddling, which
+// is what actually happens at a boat ramp.
+function canActFor(anglerId, anglers){
+  if(adminUnlocked) return true;
+  if(!anglerId) return false;
+  return myAnglerIds(anglers || []).indexOf(anglerId) !== -1;
 }
 
 // The one place a wrong clock can still be FIXED rather than just recorded. A
@@ -6124,8 +6216,14 @@ bindEl('man-angler','change', renderManageList);
 
 async function renderManageList(){
   const anglerId = document.getElementById('man-angler').value;
-  const catches = (await loadCatches()).filter(c=>c.anglerId===anglerId).sort((a,b)=>b.timestamp-a.timestamp);
   const el = document.getElementById('man-list');
+  // No entry signed in on this device: the picker is empty, so there is nothing
+  // to list and nothing this device may edit.
+  if(!anglerId){
+    el.innerHTML = '<p class="empty">Sign in to your entry to see and edit your catches.</p>';
+    return;
+  }
+  const catches = (await loadCatches()).filter(c=>c.anglerId===anglerId).sort((a,b)=>b.timestamp-a.timestamp);
   if(catches.length===0){ el.innerHTML = '<p class="empty">No catches submitted yet.</p>'; return; }
 
   el.innerHTML = catches.map(c=>{
@@ -6146,7 +6244,7 @@ async function renderManageList(){
   // background repaint that would have removed the buttons is suppressed while
   // an input has focus, which is exactly when the angler is typing a length. So
   // the check has to happen again here, against a fresh read.
-  const stillEditable = (catches, id)=>{
+  const stillEditable = (catches, anglers, id)=>{
     const idx = catches.findIndex(c=>c.id===id);
     if(idx === -1){
       setText('man-err', 'That catch is no longer on the list. Refreshing.');
@@ -6155,6 +6253,12 @@ async function renderManageList(){
     if(catches[idx].status !== 'pending'){
       setText('man-err', 'The director reviewed that catch while this page was open, '+
         'so it is locked now. Nothing was changed.');
+      return -1;
+    }
+    // The picker only offers entries this device is signed in to, but the
+    // picker is markup. Confirm the catch really is one of ours before writing.
+    if(!canActFor(catches[idx].anglerId, anglers)){
+      setText('man-err', 'That catch belongs to another angler, so nothing was changed.');
       return -1;
     }
     return idx;
@@ -6167,7 +6271,7 @@ async function renderManageList(){
       const newLen = parseFloat(input.value);
       if(!newLen || newLen<=0) return;
       const catches = await loadCatches();
-      const idx = stillEditable(catches, btn.dataset.id);
+      const idx = stillEditable(catches, await loadAnglers(), btn.dataset.id);
       if(idx === -1){ renderManageList(); return; }
       catches[idx].length = newLen;
       await saveCatches(catches);
@@ -6178,7 +6282,7 @@ async function renderManageList(){
     btn.addEventListener('click', async ()=>{
       setText('man-err', '');
       const catches = await loadCatches();
-      const idx = stillEditable(catches, btn.dataset.id);
+      const idx = stillEditable(catches, await loadAnglers(), btn.dataset.id);
       if(idx === -1){ renderManageList(); return; }
       if(!window.confirm('Withdraw this catch? It is removed along with its photo, and cannot be brought back.')) return;
       catches.splice(idx,1);
@@ -6197,8 +6301,12 @@ bindEl('lw-angler','change', renderLivewellList);
 
 async function renderLivewellList(){
   const anglerId = document.getElementById('lw-angler').value;
-  const catches = (await loadCatches()).filter(c=>c.anglerId===anglerId && isScoringSpecies(c.species)).sort(byLengthThenEarliest);
   const el = document.getElementById('lw-list');
+  if(!anglerId){
+    el.innerHTML = '<p class="empty">Sign in to your entry to see your livewell.</p>';
+    return;
+  }
+  const catches = (await loadCatches()).filter(c=>c.anglerId===anglerId && isScoringSpecies(c.species)).sort(byLengthThenEarliest);
   if(catches.length===0){ el.innerHTML = '<p class="empty">No '+escapeHtml(targetSpecies().toLowerCase())+' submitted yet.</p>'; return; }
 
   const bestApprovedId = (catches.find(c=>c.status==='approved') || {}).id;
@@ -6613,10 +6721,25 @@ function chatBragHtml(msg, catches){
     ' ' + statusHtml(c.status) + '</div>';
 }
 
+// Who may delete a message: whoever wrote it, or the director. Nobody else -
+// and that includes a team partner.
+//
+// This used to read `ctx.mine.has(msg.anglerId)`, and ctx.mine covers BOTH
+// halves of a team, because for "show this as mine" that is the right set. For
+// "let this device delete it" it is the wrong one: it let either half of a team
+// clear the other's messages. A message has one author.
+//
+// Shared by the button and by the write, so the two cannot drift.
+function canDeleteMessage(msg, meId, isDirector){
+  if(!msg) return false;
+  if(isDirector) return true;
+  return !!meId && msg.anglerId === meId;
+}
+
 function chatItemHtml(msg, ctx, isReply){
   const angler = ctx.anglerById[msg.anglerId];
   const mine = ctx.mine.has(msg.anglerId);
-  const canDelete = mine || ctx.isDirector;
+  const canDelete = canDeleteMessage(msg, ctx.meId, ctx.isDirector);
   const body = msg.text
     ? '<div class="chat-text">' + escapeHtml(msg.text) + '</div>' : '';
   const brag = msg.kind === 'catch' ? chatBragHtml(msg, ctx.catches) : '';
@@ -6665,6 +6788,9 @@ async function renderChat(){
     anglerById: {},
     catches,
     mine: new Set(myAnglerIds(anglers)),
+    // The posting identity, which is the only one allowed to delete its own
+    // messages - narrower than `mine`, deliberately. See canDeleteMessage().
+    meId: me ? me.id : null,
     isDirector: adminUnlocked || authMode === 'director',
     repliesByParent: {}
   };
@@ -6702,6 +6828,15 @@ function wireChatActions(){
       const messages = await loadMessages();
       const msg = messages.find(m=> m.id === id);
       if(!msg) return;
+      // The button is only drawn for a message this device may delete, but the
+      // button is markup in a page anyone can open the inspector on. Same rule,
+      // checked again against a fresh read, before anything is written.
+      const meNow = chatAuthor(await loadAnglers());
+      if(!canDeleteMessage(msg, meNow && meNow.id, adminUnlocked || authMode === 'director')){
+        window.alert('That message was posted by another angler, so it was not deleted.');
+        renderChat();
+        return;
+      }
       if(!window.confirm('Delete this message? Any replies to it go too.')) return;
       // A parent takes its replies with it, or they orphan into invisibility.
       const doomed = new Set([id]);
@@ -7014,14 +7149,16 @@ bindEl('bet-create','click', async ()=>{
 
 // ---- admin ----
 let adminUnlocked = false;
-let activeAdminTool = 'gps';
+// Reviewing fish is what a director actually does while the event is running,
+// so that is what the panel opens on.
+let activeAdminTool = 'review';
 
 function showAdminTool(name){
   activeAdminTool = name;
   document.querySelectorAll('[data-admin-tool]').forEach(btn=>{
     btn.classList.toggle('active', btn.dataset.adminTool===name);
   });
-  ['gps','payout','contestants','event','positions','report'].forEach(tool=>{
+  ['gps','payout','contestants','event','positions','report','review'].forEach(tool=>{
     document.getElementById('admin-tool-'+tool).style.display = tool===name ? 'block' : 'none';
   });
   // Maps built inside a hidden card have no size until now.
@@ -9629,6 +9766,134 @@ async function renderPositionsAdmin(){
   refreshMapSize(entry);
 }
 
+// ---- judging a fish at full size ----
+// The review lists show a 64px thumbnail, which is enough to tell a walleye
+// from a pike and nothing like enough to judge one: whether the tail is
+// pinched, whether the mouth is closed, where the nose actually sits on the
+// tape. Tapping the photo opens it here at full size, with the same approve
+// and reject on it, so the decision is made looking at the evidence rather
+// than at a stamp-sized version of it.
+
+// One place the three review actions are applied, used by the list buttons and
+// by the lightbox, so the two can never disagree about what "reject" does.
+async function reviewCatch(id, action){
+  const catches = await loadCatches();
+  const idx = catches.findIndex(c=> c.id === id);
+  if(idx === -1) return false;
+  if(action === 'approve') catches[idx].status = 'approved';
+  else if(action === 'reject') catches[idx].status = 'rejected';
+  else if(action === 'delete') catches.splice(idx, 1);
+  else return false;
+  await saveCatches(catches);
+  return true;
+}
+
+let lightboxCatchId = null;
+
+function closeLightbox(){
+  const box = document.getElementById('photo-lightbox');
+  if(!box) return;
+  box.hidden = true;
+  box.classList.remove('zoomed');
+  lightboxCatchId = null;
+  // Drop the image so a big photo is not held in memory behind a closed panel.
+  const img = document.getElementById('lightbox-img');
+  if(img) img.removeAttribute('src');
+}
+
+async function openLightbox(catchId){
+  const box = document.getElementById('photo-lightbox');
+  if(!box) return;
+  const c = (await loadCatches()).find(x=> x.id === catchId);
+  if(!c) return;
+  lightboxCatchId = catchId;
+  box.classList.remove('zoomed');
+  box.hidden = false;
+
+  setText('lightbox-title', c.anglerName + ' · ' + Number(c.length).toFixed(2) + '"');
+
+  const meta = document.getElementById('lightbox-meta');
+  if(meta){
+    meta.innerHTML = escapeHtml(c.species) + ' &middot; ' +
+      (c.division === 'team' ? 'Team' : 'Solo') + ' &middot; ' + statusHtml(c.status) +
+      '<div style="margin-top:6px;">' + boundaryBadgeHtml(c) + captureBadgeHtml(c) + '</div>';
+  }
+
+  const img = document.getElementById('lightbox-img');
+  if(img){
+    img.style.display = 'none';
+    setLightboxMissing(false);
+    loadPhoto(catchId).then(url=>{
+      // The panel may have been closed, or moved on to another fish, while the
+      // photo was still resolving.
+      if(lightboxCatchId !== catchId) return;
+      if(!url){ setLightboxMissing(true); return; }
+      img.onerror = ()=>{ if(lightboxCatchId === catchId) setLightboxMissing(true); };
+      img.onload = ()=>{ if(lightboxCatchId === catchId) img.style.display = 'block'; };
+      img.src = url;
+    }).catch(e=>{
+      console.error(e);
+      if(lightboxCatchId === catchId) setLightboxMissing(true);
+    });
+  }
+
+  const acts = document.getElementById('lightbox-actions');
+  if(acts){
+    acts.innerHTML = c.status === 'pending'
+      ? '<button class="small" data-lb-act="approve">Approve</button>' +
+        '<button class="small danger" data-lb-act="reject">Reject</button>'
+      : '<button class="secondary" data-lb-act="close">Done</button>';
+  }
+}
+
+// An object-storage URL can 404 while an upload is still queued on a phone with
+// no signal, which is a normal state here rather than an error.
+function setLightboxMissing(missing){
+  const note = document.getElementById('lightbox-missing');
+  if(note) note.hidden = !missing;
+  if(missing){
+    const img = document.getElementById('lightbox-img');
+    if(img) img.style.display = 'none';
+  }
+}
+
+// Bound once: both hosts are in the static markup, so delegation survives every
+// repaint of the lists inside them.
+['admin-pending','admin-all'].forEach(hostId=>{
+  const host = document.getElementById(hostId);
+  if(!host || !host.addEventListener) return;
+  host.addEventListener('click', (e)=>{
+    const slot = e.target && e.target.closest && e.target.closest('.photoslot[data-photo-for]');
+    if(!slot) return;
+    openLightbox(slot.dataset.photoFor);
+  });
+});
+
+bindEl('lightbox-close','click', closeLightbox);
+// Tap the photo to switch between fit-to-screen and natural size. Fitted, a
+// long fish is a couple of hundred pixels wide and the tape is unreadable.
+bindEl('lightbox-img','click', ()=>{
+  const box = document.getElementById('photo-lightbox');
+  if(box) box.classList.toggle('zoomed');
+});
+bindEl('lightbox-actions','click', async (e)=>{
+  const btn = e.target && e.target.closest && e.target.closest('[data-lb-act]');
+  if(!btn) return;
+  const act = btn.dataset.lbAct;
+  if(act === 'close'){ closeLightbox(); return; }
+  const id = lightboxCatchId;
+  if(!id) return;
+  btn.disabled = true;
+  const ok = await reviewCatch(id, act);
+  closeLightbox();
+  if(ok) renderAdmin();
+});
+if(typeof document !== 'undefined' && document.addEventListener){
+  document.addEventListener('keydown', (e)=>{
+    if(e.key === 'Escape' && lightboxCatchId) closeLightbox();
+  });
+}
+
 async function renderAdmin(){
   renderOverdueAlert();   // fire and forget; it paints itself when it resolves
   if(!adminUnlocked) return;
@@ -9648,6 +9913,8 @@ async function renderAdmin(){
   const dupCorpus = await loadCatchesAllEvents();
   renderGpsCheck(catches);
   const pending = catches.filter(c=>c.status==='pending').sort((a,b)=>a.timestamp-b.timestamp);
+  setText('review-tool-summary',
+    pending.length === 0 ? 'Nothing waiting' : pending.length + ' waiting');
   const pendEl = document.getElementById('admin-pending');
   pendEl.innerHTML = pending.length===0 ? '<p class="empty">Nothing pending review.</p>' :
     pending.map(c=>{
@@ -9686,13 +9953,7 @@ async function renderAdmin(){
         initFishI().then(()=>renderAdmin());
         return;
       }
-      const catches = await loadCatches();
-      const idx = catches.findIndex(c=>c.id===btn.dataset.id);
-      if(idx===-1) return;
-      if(btn.dataset.act==='approve') catches[idx].status='approved';
-      if(btn.dataset.act==='reject') catches[idx].status='rejected';
-      if(btn.dataset.act==='delete') catches.splice(idx,1);
-      await saveCatches(catches);
+      await reviewCatch(btn.dataset.id, btn.dataset.act);
       renderAdmin();
     });
   });
