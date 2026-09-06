@@ -56,7 +56,7 @@ globalThis.__t = {
   slugifyEventId, parseDateLines, isValidTimeZone,
   registrationCloseFromDate, registrationCloseToDate, isRegistrationClosed,
   registrationCloseText,
-  myAnglerIds, populateAnglerSelect, statusClass, statusHtml, lengthHtml, escapeHtml,
+  myAnglerIds, populateAnglerSelect, renderRoster, statusClass, statusHtml, lengthHtml, escapeHtml,
   bearerToken, authModeLabel, noteAuthSession, initAuth, SUPABASE_ANON_KEY,
   supabaseBackend,
   generateHandle, uniqueHandle, displayHandle,
@@ -68,7 +68,8 @@ globalThis.__t = {
   loadBets, saveBets, betRecords, betJoins, betHasJoined, betStanding, betCardHtml,
   BET_TITLE_MAX, BET_OPEN_MAX, BET_SCORING, renderDqNotice,
   makeCode, codesInUse, takenCodes, codeBoxHtml, codeNoteHtml, anglerById,
-  isConfirmed, normPhone, pendingNoticeHtml, bigFishEntrants, poolCounts,
+  feePaid, normPhone, pendingNoticeHtml, bigFishEntrants, poolCounts,
+  outstandingFees, unpaidInTheMoney, FEE_SOLO, FEE_TEAM, FEE_BIGFISH,
   overdueCheckouts, sortOverdue, eventTimeParts, FINAL_CHECKIN_SECONDS,
   claimEntry, claimErrorText, syncViewportInset,
   CODE_ALPHABET, CODE_LENGTH, duplicateEntryError, rosterIsLoaded, wipeEventData,
@@ -1916,16 +1917,16 @@ section('47. an entry does not count until the director confirms it');
 // Registering is not entering - the fee is, and it is collected outside the
 // app. Until the director ticks it off, an entry must not score, must not join
 // the Big Fish pot and must not inflate a pool.
-check('a new entry is pending', t.isConfirmed({ pending: true }), false);
-check('a confirmed one is not', t.isConfirmed({ pending: false }), true);
+check('a new entry is pending', t.feePaid({ pending: true }), false);
+check('a confirmed one is not', t.feePaid({ pending: false }), true);
 check('confirming deletes the flag rather than setting it false',
-  t.isConfirmed({ name: 'Ann' }), true);
+  t.feePaid({ name: 'Ann' }), true);
 
 // THE compatibility property. Every angler registered before this existed
 // carries no flag, and reading a missing flag as pending would empty the
 // standings of a tournament already under way.
-check('an angler from before this existed still counts', t.isConfirmed({ id: 'old' }), true);
-check('and so does one that is nothing at all', t.isConfirmed(undefined), true);
+check('an angler from before this existed still counts', t.feePaid({ id: 'old' }), true);
+check('and so does one that is nothing at all', t.feePaid(undefined), true);
 
 // ---- what confirmation actually gates ----
 seed(
@@ -1940,20 +1941,144 @@ seed(
 await setEvent(E1);
 const cAll = await t.loadCatches(), aAll = await t.loadAnglers();
 
-// The pending angler has the biggest fish, so if the gate is missing they win.
+// ---- what an unmatched fee does NOT do any more ----
+// This section used to assert the opposite: that an entry with no fee matched
+// to it stayed out of the standings until the director ticked it off. That gate
+// is gone. It was doing two jobs - fee tracking and blocking duplicate
+// registrations - and the second is now handled by the roster gate, the
+// name/phone checks and the database's unique indexes. What was left was money
+// gating a leaderboard, which meant a missed tick showed up as an angler asking
+// why their fish was not on the board, mid-event, at a ramp.
+//
+// Eligibility is `disqualified` and always was. Fees are money. See feePaid().
 const confirmBoard = t.standingsFor('solo', cAll, aAll);
-check('an unconfirmed entry does not rank', confirmBoard.map(r => r.name),
-  ['Legacy Handle', 'Paid Handle']);
-check('even though its fish is the longest',
+check('an entry with no fee matched still ranks', confirmBoard.map(r => r.name),
+  ['Pending Handle', 'Legacy Handle', 'Paid Handle']);
+check('and it ranks on the fish, not on the paperwork',
   Math.max.apply(null, cAll.map(c => c.length)), 30);
-check('and the legacy angler still ranks',
+check('the paid angler still ranks too',
+  confirmBoard.some(r => r.name === 'Paid Handle'), true);
+check('and so does the legacy one',
   confirmBoard.some(r => r.name === 'Legacy Handle'), true);
 
 // ---- what it must NOT gate ----
 // Blocking a pending angler from fishing would strand anyone whose fee has not
-// cleared by the ramp. They log catches; the catches count on confirmation.
+// cleared by the ramp. They log catches, and now those catches score.
 check('a pending angler is still on the roster', aAll.map(a => a.id).sort(), ['no', 'ok', 'old']);
 check('and their catch is still stored', cAll.some(c => c.anglerId === 'no'), true);
+check('and they are in the Big Fish pot if they opted in',
+  t.bigFishEntrants([{ id: 'x', bigfish: true, pending: true }]).length, 1);
+check('and they can hold the winning fish',
+  (t.winningFish([{ id: 'w', anglerId: 'no', status: 'approved', species: 'Walleye', length: 30 }],
+                 aAll) || {}).id, 'w');
+
+// ---- what it still gates: money ----
+// A pool is money that ARRIVED. An entry nobody has matched a payment to must
+// not inflate what the field thinks it is playing for.
+check('an unmatched entry is not counted in a pool',
+  t.poolCounts([{ id: 'p', division: 'solo', pending: true }]).solo, 0);
+check('a matched one is', t.poolCounts([{ id: 'p', division: 'solo' }]).solo, 1);
+
+const owing = t.outstandingFees([
+  { id: 'o1', division: 'solo', role: 'solo', pending: true },
+  { id: 'o2', division: 'solo', role: 'solo', pending: true, bigfish: true },
+  { id: 'o3', division: 'team', role: 'captain', teamId: 'T', pending: true },
+  { id: 'o4', division: 'team', role: 'partner', teamId: 'T', pending: true, bigfish: true },
+  { id: 'o5', division: 'solo', role: 'solo' }                       // already paid
+]);
+check('outstanding counts solo entries', owing.solo, 2);
+check('and bills a team once, not once per half', owing.teams, 1);
+check('but Big Fish per angler, including the partner', owing.bigfish, 2);
+check('entries are registrations, so the partner is not one', owing.entries, 3);
+check('and the total is real money',
+  owing.total, 2 * t.FEE_SOLO + 1 * t.FEE_TEAM + 2 * t.FEE_BIGFISH);
+check('the fees are the published ones',
+  [t.FEE_SOLO, t.FEE_TEAM, t.FEE_BIGFISH], [30, 50, 10]);
+check('a fully paid roster owes nothing',
+  t.outstandingFees([{ id: 'q', division: 'solo' }]).total, 0);
+check('and reports no entries outstanding',
+  t.outstandingFees([{ id: 'q', division: 'solo' }]).entries, 0);
+
+// ---- the one moment it has to be caught ----
+// Paying an entry that never paid in comes out of everybody else's share, and
+// this is the last point at which that is visible.
+const moneyRoster = [
+  { id: 'm1', name: 'Owes Money', handle: 'Owes Handle', division: 'solo', pending: true },
+  { id: 'm2', name: 'Paid Up', handle: 'Paid Handle', division: 'solo' }
+];
+const moneyCatches = [
+  { id: 'mc1', anglerId: 'm1', division: 'solo', status: 'approved', species: 'Walleye', length: 28 },
+  { id: 'mc2', anglerId: 'm2', division: 'solo', status: 'approved', species: 'Walleye', length: 20 }
+];
+const inMoney = t.unpaidInTheMoney(moneyRoster, moneyCatches);
+check('an unpaid angler in the money is named', inMoney.map(x => x.angler.name), ['Owes Money']);
+check('and so is the placing that puts them there',
+  inMoney[0].why, '1st in the solo division');
+check('a paid field raises nothing',
+  t.unpaidInTheMoney([moneyRoster[1]], [moneyCatches[1]]), []);
+// Off the podium is not "in the money", so a long roster of unpaid stragglers
+// does not bury the one that matters.
+const deepField = [
+  { id: 'd1', name: 'First', division: 'solo' }, { id: 'd2', name: 'Second', division: 'solo' },
+  { id: 'd3', name: 'Third', division: 'solo' }, { id: 'd4', name: 'Fourth', division: 'solo', pending: true }
+];
+const deepCatches = deepField.map((a, i) => ({
+  id: 'dc' + i, anglerId: a.id, division: 'solo', status: 'approved',
+  species: 'Walleye', length: 30 - i
+}));
+check('an unpaid angler off the podium is not in the money',
+  t.unpaidInTheMoney(deepField, deepCatches), []);
+// Big Fish is winner-take-all, so its leader is in the money whatever the
+// division standings say.
+// Three paid anglers ahead of them, so the pot is the ONLY thing putting this
+// one in the money - otherwise the division placing is what gets reported and
+// the Big Fish path is never exercised.
+const potMoneyRoster = [
+  { id: 'q1', name: 'Paid A', division: 'solo' },
+  { id: 'q2', name: 'Paid B', division: 'solo' },
+  { id: 'q3', name: 'Paid C', division: 'solo' },
+  { id: 'bf', name: 'Pot Leader', division: 'solo', bigfish: true, pending: true }];
+const potMoneyCatches = [
+  { id: 'pc1', anglerId: 'q1', division: 'solo', status: 'approved', species: 'Walleye', length: 32 },
+  { id: 'pc2', anglerId: 'q2', division: 'solo', status: 'approved', species: 'Walleye', length: 31 },
+  { id: 'pc3', anglerId: 'q3', division: 'solo', status: 'approved', species: 'Walleye', length: 30 },
+  { id: 'pc4', anglerId: 'bf', division: 'solo', status: 'approved', species: 'Walleye', length: 22 }
+];
+const potFlag = t.unpaidInTheMoney(potMoneyRoster, potMoneyCatches);
+check('an unpaid Big Fish leader is flagged', potFlag.map(x => x.angler.name), ['Pot Leader']);
+check('and told why', potFlag[0].why, 'leading the Big Fish pot');
+// Named once, however many ways they are in the money.
+const doubleUp = t.unpaidInTheMoney(
+  [{ id: 'x1', name: 'Both', division: 'solo', bigfish: true, pending: true }],
+  [{ id: 'xc', anglerId: 'x1', division: 'solo', status: 'approved', species: 'Walleye', length: 25 }]);
+check('someone in the money twice is listed once', doubleUp.length, 1);
+
+// A disqualified angler cannot be in the money, so their unpaid fee is not a
+// payout problem - it is already handled.
+check('a disqualified unpaid angler is not in the money',
+  t.unpaidInTheMoney(
+    [{ id: 'dq1', name: 'Out', division: 'solo', pending: true, disqualified: true }],
+    [{ id: 'dqc', anglerId: 'dq1', division: 'solo', status: 'approved', species: 'Walleye', length: 30 }]), []);
+
+// ---- what the FIELD is allowed to see ----
+// The roster is public: every angler reads it. It used to print "unconfirmed"
+// next to a handle, which published one person's payment status to everybody
+// for no good reason. With the scoring gate gone there is not even a bad reason
+// left, and money is between the angler and the director.
+seed([
+  { id:'pr1', name:'Owes Money', handle:'Owes Handle', division:'solo', role:'solo',
+    tournamentId:'MKWO-001', anglerCode:'7K4M', pending:true },
+  { id:'pr2', name:'Paid Up', handle:'Paid Handle', division:'solo', role:'solo',
+    tournamentId:'MKWO-002', anglerCode:'9QRT' }
+], [], [], {});
+await t.renderRoster();
+const rosterHtml = t.appDocument.getElementById('reg-roster').innerHTML;
+check('the public roster lists both anglers',
+  rosterHtml.indexOf('Owes Handle') > -1 && rosterHtml.indexOf('Paid Handle') > -1, true);
+check('and says nothing about who has paid',
+  /unpaid|unconfirmed|not matched|fee/i.test(rosterHtml), false);
+// Same rule as everywhere else public: handles out, real names never.
+check('nor does it leak a real name', /Owes Money|Paid Up/.test(rosterHtml), false);
 
 // ---- disqualification ----
 // The other gate on the same line, and until a sabotage run went looking for it
@@ -1978,8 +2103,12 @@ check('and their fish is not somebody else\'s best either',
 check('but they are still a confirmed entry', t.poolCounts(dqAnglers).solo, 2);
 
 // ---- the Big Fish pot ----
-// $10 a head, winner take all. An unconfirmed entry in here is somebody
-// collecting a pot they never paid into.
+// $10 a head, winner take all. Opting in is what puts an angler in the pot, and
+// disqualification is what takes them out - an unmatched fee does neither. It
+// used to: this section asserted the pot "takes confirmed buy-ins only", which
+// meant a missed tick quietly removed somebody from a pot they had entered.
+// unpaidInTheMoney() is what covers the real risk now, by naming an unpaid
+// angler who is actually leading it.
 const potRoster = [
   { id: 'p1', bigfish: true },
   { id: 'p2', bigfish: true, pending: true },
@@ -1987,14 +2116,22 @@ const potRoster = [
   { id: 'p4', bigfish: false },
   { id: 'p5', bigfish: true }                       // legacy, no flag
 ];
-check('the pot takes confirmed buy-ins only',
-  t.bigFishEntrants(potRoster).map(a => a.id), ['p1', 'p5']);
-check('an unconfirmed buy-in is out',
-  t.bigFishEntrants(potRoster).some(a => a.id === 'p2'), false);
-check('a disqualified one is out too',
+check('the pot takes everyone who opted in',
+  t.bigFishEntrants(potRoster).map(a => a.id), ['p1', 'p2', 'p5']);
+check('an unmatched fee does not remove a buy-in',
+  t.bigFishEntrants(potRoster).some(a => a.id === 'p2'), true);
+check('but a disqualified one is out',
   t.bigFishEntrants(potRoster).some(a => a.id === 'p3'), false);
+check('someone who never opted in stays out',
+  t.bigFishEntrants(potRoster).some(a => a.id === 'p4'), false);
 check('and a legacy entry is in', t.bigFishEntrants(potRoster).some(a => a.id === 'p5'), true);
 check('an empty roster is an empty pot', t.bigFishEntrants([]), []);
+// The pot's MONEY is still only what arrived, which is the distinction the
+// whole change rests on: on the board, not in the bank.
+// p1, p3 and p5 all paid. p3 is disqualified, and a forfeited place is not a
+// refund - their $10 stays in the pot. Only p2's unmatched fee is missing.
+check('but the pot money counts only matched buy-ins',
+  t.poolCounts(potRoster).bigfish, 3);
 
 // ---- the payout pools ----
 // The pool is what the field is told it is playing for. Counting an entry
@@ -2026,9 +2163,15 @@ check('an empty roster is an empty pool', t.poolCounts([]), { solo: 0, teams: 0,
 
 // ---- what they are told ----
 const notice = t.pendingNoticeHtml({ pending: true });
-check('a pending angler is told the entry is not live', /not confirmed/i.test(notice), true);
-check('and told it is the fee, not a mistake they made', /fee/i.test(notice), true);
-check('and told to keep fishing', /still/i.test(notice), true);
+check('an angler with no fee matched is told so', /not matched up/i.test(notice), true);
+check('and told it is about the fee, not a mistake they made', /fee/i.test(notice), true);
+// The old notice told them they were OUT of the standings until ticked off.
+// That is no longer true, and telling an angler their fish do not count when
+// they do is the worst possible version of this message.
+check('and told plainly that their catches score', /catches score normally/i.test(notice), true);
+check('and that a paid-up angler need do nothing', /nothing to do/i.test(notice), true);
+check('and it never claims they are out of the standings',
+  /not appear|do not score|will not appear/i.test(notice), false);
 check('a confirmed angler is told nothing', t.pendingNoticeHtml({ name: 'Ann' }), '');
 check('and neither is a legacy one', t.pendingNoticeHtml({}), '');
 
@@ -2200,12 +2343,15 @@ const resRoster = [
   { id: 'r4', name: 'Di', resident: true, pending: true }     // never paid
 ];
 const res = t.residencyCounts(resRoster);
-check('Montana residents are counted', res.resident, 1);
+check('Montana residents are counted', res.resident, 2);
 check('non-residents are counted', res.nonresident, 1);
 check('an unanswered entry is neither', res.unknown, 1);
 check('and it is named so it can be fixed', res.unknownAnglers.map(a => a.name), ['Cy']);
-check('an unconfirmed entry is in none of the three',
-  res.resident + res.nonresident + res.unknown, 3);
+// The state is counting people who fished. Whether the director has ticked a
+// PayPal payment off against an entry says nothing about whether somebody
+// launched, so everyone on the roster is counted.
+check('an entry with no fee matched is still counted',
+  res.resident + res.nonresident + res.unknown, 4);
 
 // A missing field and an explicit false are different answers. Reading one as
 // the other is the exact mistake that would put a wrong number on the form.
@@ -2242,11 +2388,11 @@ const headRoster = [
   { id: 'h4', name: 'Unpaid', division: 'solo', role: 'solo', pending: true }
 ];
 const headCounts = t.reportFieldCounts(headRoster);
-check('anglers are people, so both halves of a team count', headCounts.anglers, 3);
+check('anglers are people, so both halves of a team count', headCounts.anglers, 4);
 check('teams are entries, so a team of two counts once', headCounts.teams, 1);
-check('paid is people who paid in, not fees collected', headCounts.paid, 3);
-check('and the unconfirmed one is reported rather than dropped silently',
-  headCounts.unconfirmed, 1);
+// The one box on the form that is actually about money.
+check('paid counts only the entries with a fee matched', headCounts.paid, 3);
+check('and the shortfall is reported rather than hidden', headCounts.unpaid, 1);
 
 // ---- which catches are reportable ----
 // A rejected catch is usually the same fish photographed twice. Counting those
@@ -2287,16 +2433,21 @@ check('and it is on no day row',
 // check-out already record.
 const hoursRoster = [
   { id: 'w1', name: 'Early', checkins: { day1: { in: atDay(RDAY1, '06:15'), out: atDay(RDAY1, '14:00') } } },
-  { id: 'w2', name: 'Late',  checkins: { day1: { in: atDay(RDAY1, '07:00'), out: atDay(RDAY1, '14:45') } } },
-  { id: 'w3', name: 'Unpaid', pending: true,
-    checkins: { day1: { in: atDay(RDAY1, '04:00'), out: atDay(RDAY1, '23:00') } } }
+  { id: 'w2', name: 'Late',  checkins: { day1: { in: atDay(RDAY1, '07:00'), out: atDay(RDAY1, '14:45') } } }
 ];
 const hrs = t.contestDayHours(hoursRoster, [RDAY1, RDAY2]);
 const day = (i) => hrs[i] || {};
 check('the day starts at the first check-in', t.reportClockText(day(0).start), '06:15');
 check('and ends at the last check-out', t.reportClockText(day(0).stop), '14:45');
 check('the span is the two of them', Number((day(0).hours || 0).toFixed(2)), 8.5);
-check('an unconfirmed entry cannot stretch the day', day(0).start, atDay(RDAY1, '06:15'));
+// An angler whose fee has not been matched was still on the water, and the form
+// asks for the hours the field fished. They used to be left out of this, which
+// meant a missed tick shortened the contest hours filed with the state.
+check('an entry with no fee matched still counts toward the hours',
+  t.reportClockText(t.contestDayHours(
+    hoursRoster.concat([{ id: 'w3', name: 'Owes', pending: true,
+      checkins: { day1: { in: atDay(RDAY1, '05:30'), out: atDay(RDAY1, '15:15') } } }]),
+    [RDAY1])[0].start), '05:30');
 check('a day nobody fished has no hours', day(1).hours, null);
 check('and no start to show either', day(1).start, null);
 
@@ -2439,18 +2590,22 @@ check('and the large one 12 to 30',
 // disagree in writing.
 const winRoster = [
   { id: 'a', name: 'Winner' },
-  { id: 'b', name: 'Cheat', disqualified: true },
-  { id: 'c', name: 'Unpaid', pending: true }
+  { id: 'b', name: 'Cheat', disqualified: true }
 ];
 const winCatches = [
   { id: 'w-dq', anglerId: 'b', status: 'approved', species: 'Walleye', length: 31 },
-  { id: 'w-unpaid', anglerId: 'c', status: 'approved', species: 'Walleye', length: 30 },
   { id: 'w-pending', anglerId: 'a', status: 'pending', species: 'Walleye', length: 29 },
   { id: 'w-other', anglerId: 'a', status: 'approved', species: 'Northern Pike', length: 40 },
   { id: 'w-real', anglerId: 'a', status: 'approved', species: 'Walleye', length: 24.5 }
 ];
 check('the winning fish is the longest that actually scored',
   (t.winningFish(winCatches, winRoster) || {}).id, 'w-real');
+// An unmatched fee used to take the trophy away, silently. Now it does not -
+// it is a payout question, and unpaidInTheMoney() is what raises it.
+check('an entry with no fee matched can hold the winning fish',
+  (t.winningFish(
+    [{ id: 'w-owes', anglerId: 'z', status: 'approved', species: 'Walleye', length: 33 }],
+    [{ id: 'z', name: 'Owes', pending: true }]) || {}).id, 'w-owes');
 check('with no scoring catch at all there is no winner',
   t.winningFish([{ id: 'x', anglerId: 'a', status: 'approved', species: 'Northern Pike', length: 40 }], winRoster), null);
 
@@ -2483,7 +2638,7 @@ const warned = t.reportWarnings(
    { id: 'c2', status: 'approved', species: 'Walleye', length: 20, timestamp: Date.UTC(2027, 6, 4, 18, 0) }],
   [RDAY1, RDAY2]);
 check('four things are wrong and four are reported', warned.length, 4);
-check('the unconfirmed entry is one', warned.some(w => w.indexOf('unconfirmed') > -1), true);
+check('the unmatched fee is one', warned.some(w => w.indexOf('no fee matched') > -1), true);
 check('the unanswered residency is another', warned.some(w => w.indexOf('residency') > -1), true);
 check('so is a catch still awaiting review', warned.some(w => w.indexOf('awaiting review') > -1), true);
 check('and so is one logged outside the dates',

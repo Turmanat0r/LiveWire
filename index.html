@@ -687,9 +687,9 @@
     margin-left:6px;font-size:9px;font-weight:700;letter-spacing:.06em;
     background:#F1D6D0;color:var(--danger);padding:2px 5px;border-radius:3px;vertical-align:middle;
   }
-  /* Amber, not red: unconfirmed is "not in yet", which is a different thing
+  /* Amber, not red: an unmatched fee is bookkeeping, which is a different thing
      from disqualified and must not read like a punishment. */
-  .crow.unconfirmed{border-left-color:var(--gold);background:#F7F1E4;}
+  .crow.unpaid{border-left-color:var(--gold);background:#F7F1E4;}
   .crow-name .pendtag{
     margin-left:6px;font-size:9px;font-weight:700;letter-spacing:.06em;
     background:#F3E3C4;color:var(--gold-deep);padding:2px 5px;border-radius:3px;vertical-align:middle;
@@ -1916,7 +1916,7 @@
             <button class="active" data-cfilter="all">All</button>
             <button data-cfilter="solo">Solo</button>
             <button data-cfilter="team">Team</button>
-            <button data-cfilter="unconfirmed">Unconfirmed</button>
+            <button data-cfilter="unpaid">Fee outstanding</button>
             <button data-cfilter="dq">Disqualified</button>
           </div>
           <div id="contestants-body"></div>
@@ -1930,6 +1930,9 @@
           <h2>Payout calculator</h2>
           <p class="hint" style="margin-top:0;">Auto-calculated from the final roster, plus any donations logged below. Each division uses a 50/30/20 split. The optional $10-per-angler Big Fish pot is winner take all.</p>
           <div id="payout-body"></div>
+          <!-- Director-only: the public payout screen reuses #payout-body, and
+               who has paid is nobody else's business. -->
+          <div id="payout-outstanding"></div>
 
           <hr class="divider">
           <h2 style="margin-bottom:8px;">Planned awards budget</h2>
@@ -2862,7 +2865,27 @@ function uniqueHandle(anglers){
 // Absence means confirmed, deliberately. Every angler who registered before
 // this existed carries no flag, and reading a missing flag as "pending" would
 // empty the standings of a tournament already under way.
-function isConfirmed(a){ return !(a && a.pending); }
+// Whether the entry fee has been matched against this entry. NOT whether the
+// angler may compete - that was the old meaning and it was the wrong one.
+//
+// WHY IT CHANGED. This flag started out doing two jobs: tracking fees, and
+// blocking the duplicate-registration problem. The second job is now done three
+// other ways - the roster gate, the name and phone checks, and the unique
+// indexes in the database - so all that was left was money. But it was still
+// gating the standings, which meant an entry the director had not yet ticked
+// off dropped out of the leaderboard mid-event, and the first anyone heard was
+// an angler asking why their fish was missing. Nothing was ever lost (catches
+// score the moment the tick lands) but a wrong board at a boat ramp costs more
+// than an unreconciled line in a list.
+//
+// So: fees are money, disqualification is eligibility, and they are separate
+// things. `disqualified` already says "this person does not score", explicitly
+// and on purpose, which is where that decision belongs.
+//
+// The STORED field is still `pending`, and absence still means paid - renaming
+// it would orphan every record already written. Only the meaning and the
+// wording changed.
+function feePaid(a){ return !(a && a.pending); }
 
 // Digits only, last ten. Two people are the same person here if their numbers
 // match once punctuation and a country code are off - 406-555-0100,
@@ -2971,15 +2994,18 @@ function codeBoxHtml(a){
 // Shown on the angler's own registration card. They need to know their entry
 // is not live yet, and they need to know it is not a mistake they made - the
 // director simply has not ticked it off against the fee.
+// Shown on the angler's own registration card. Deliberately mild: their entry
+// is live and their fish score, so this is a note about the director's
+// bookkeeping, not a warning about their standing. Saying more than that would
+// worry people who have already paid and are just waiting to be ticked off.
 function pendingNoticeHtml(a){
-  if(isConfirmed(a)) return '';
+  if(feePaid(a)) return '';
   return '<div class="pending-notice">'+
-    '<strong>Entry received — not confirmed yet</strong>'+
-    'The director confirms entries as fees come in. Until yours is confirmed you '+
-    'will not appear in the standings, the Big Fish pot or the payout split.<br><br>'+
-    'You can still check in, log catches and use the chat, and everything you log '+
-    'counts the moment the entry is confirmed. Nothing is lost by fishing in the '+
-    'meantime — see the director if it has not cleared by the rules meeting.'+
+    '<strong>Entry fee not matched up yet</strong>'+
+    'You are on the roster and your catches score normally — this is only the '+
+    'director ticking payments off against entries.<br><br>'+
+    'If you have already paid, there is nothing to do. If you are not sure, '+
+    'check with the director before the rules meeting.'+
   '</div>';
 }
 
@@ -4975,7 +5001,9 @@ async function renderHome(){
     // card - otherwise the chat is full of a name they never chose to look at.
     // Both codes belong here too - this card is the fastest thing to reach on
     // the water when someone cannot remember what to write on the board.
-    const statusLine = isConfirmed(me) ? '' : '<br><strong>Entry not confirmed yet</strong>';
+    // Low-key on purpose. It is a bookkeeping note, not a problem with their
+    // entry - they are on the board either way.
+    const statusLine = feePaid(me) ? '' : '<br>Entry fee not matched up yet';
     const codeLine = me.anglerCode
       ? '<br>' + (me.teamCode ? 'Team ' + escapeHtml(me.teamCode) + ' &middot; ' : '') +
         'Tournament ID ' + escapeHtml(me.anglerCode)
@@ -5084,7 +5112,7 @@ async function renderRegisteredCard(){
     ['Handle', displayHandle(me)],
     ['User ID', me.tournamentId],
     ['Division', me.division === 'team' ? 'Team' : 'Solo'],
-    ['Status', isConfirmed(me) ? 'Confirmed' : 'Waiting on the director']
+    ['Entry fee', feePaid(me) ? 'Received' : 'Not matched up yet']
   ];
   if(mate) rows.push(['Partner', mate.name + ' (' + displayHandle(mate) + ')']);
   rows.push(['Big Fish pot', me.bigfish ? 'Entered' : 'Not entered']);
@@ -5282,7 +5310,8 @@ bindEl('reg-submit','click', async ()=>{
     emergencyName: iceName, emergencyPhone: icePhone,
     // Only ever read by the FWP contest report. See residencyCounts().
     resident: isResident,
-    // Pending until the director confirms the fee arrived. See isConfirmed().
+    // Set until the director matches a payment to this entry. It gates money
+    // and nothing else - see feePaid().
     pending: true,
     handle: pendingHandle || uniqueHandle(anglers),
     registeredAt: Date.now(), checkins: freshCheckins()
@@ -5377,7 +5406,7 @@ async function renderRoster(){
       ? escapeHtml(displayHandle(a)) + ' &amp; ' + escapeHtml(mate ? displayHandle(mate) : 'partner')
       : escapeHtml(displayHandle(a));
     const sub = (a.division==='team' ? 'Team' : 'Solo') + ' &middot; ' + a.tournamentId;
-    return '<div class="lbrow"><div class="who"><div class="name">'+displayName+'</div><div class="sub">'+sub+(a.bigfish?' &middot; Big Fish pot':'')+(isConfirmed(a)?'':' &middot; unconfirmed')+'</div></div></div>';
+    return '<div class="lbrow"><div class="who"><div class="name">'+displayName+'</div><div class="sub">'+sub+(a.bigfish?' &middot; Big Fish pot':'')+'</div></div></div>';
   }).join('');
 }
 
@@ -6081,9 +6110,9 @@ function standingsFor(division, catches, anglers){
   const eligible = catches.filter(c=>{
     if(c.status!=='approved' || !isScoringSpecies(c.species) || c.division!==division) return false;
     const a = anglerById[c.anglerId];
-    // Pending as well as disqualified: an unconfirmed entry has not paid in,
-    // so it cannot take a placement from someone who has.
-    return !(a && (a.disqualified || !isConfirmed(a)));
+    // Disqualification only. An entry whose fee has not been matched yet still
+    // scores: see feePaid() for why that gate was removed.
+    return !(a && a.disqualified);
   });
 
   const groups = {};
@@ -6145,7 +6174,7 @@ async function renderLeaderboard(){
 // out of the render so the rule is testable without a browser - a pot that
 // quietly included an unpaid entry would only show up in a payout dispute.
 function bigFishEntrants(anglers){
-  return (anglers || []).filter(a=> a.bigfish && !a.disqualified && isConfirmed(a));
+  return (anglers || []).filter(a=> a.bigfish && !a.disqualified);
 }
 
 async function renderBigFish(){
@@ -7160,11 +7189,77 @@ async function renderPublicGps(){
   }).join('');
 }
 
-// What each pool is built from. A pool is money that actually arrived, so an
-// unconfirmed entry must never inflate what the field thinks it is playing for.
+// The entry fees, named once. They were written as bare 30 / 50 / 10 inside the
+// payout maths, which was fine while that was the only place they appeared -
+// outstandingFees() needs the same three numbers, and two copies of a price is
+// how a tournament ends up quoting one figure and banking another.
+const FEE_SOLO = 30;
+const FEE_TEAM = 50;
+const FEE_BIGFISH = 10;
+
+// Money the roster implies that nobody has matched a payment to yet. The pools
+// only ever count what arrived - this is the gap, shown next to them so it is a
+// number the director can act on rather than a silent absence.
+function outstandingFees(anglers){
+  const owing = (anglers || []).filter(a=> !feePaid(a));
+  const solo = owing.filter(a=> a.division === 'solo').length;
+  // One fee per team, so the partner record is not billed a second time.
+  const teams = owing.filter(a=> a.division === 'team' && a.role !== 'partner').length;
+  // Big Fish is per angler, and both halves of a team have their own record.
+  const bigfish = owing.filter(a=> a.bigfish).length;
+  return {
+    solo, teams, bigfish,
+    entries: owing.filter(a=> a.role !== 'partner').length,
+    anglers: owing,
+    total: solo * FEE_SOLO + teams * FEE_TEAM + bigfish * FEE_BIGFISH
+  };
+}
+
+// Anyone placing, or leading the Big Fish pot, whose fee has not been matched.
+// This is the one moment the flag genuinely matters: money paid out to an entry
+// that never paid in comes out of everybody else's share, and it is the last
+// point at which that can be caught.
+function unpaidInTheMoney(anglers, catches){
+  const roster = anglers || [];
+  const byId = {};
+  roster.forEach(a=>{ byId[a.id] = a; });
+  const out = [], seen = {};
+  const place = ['1st', '2nd', '3rd'];
+
+  ['solo', 'team'].forEach(division=>{
+    standingsFor(division, catches || [], roster).slice(0, 3).forEach((row, i)=>{
+      (row.anglerIds || []).forEach(id=>{
+        const a = byId[id];
+        if(!a || feePaid(a) || seen[a.id]) return;
+        seen[a.id] = true;
+        out.push({ angler: a, why: place[i] + ' in the ' + division + ' division' });
+      });
+    });
+  });
+
+  const inPot = {};
+  bigFishEntrants(roster).forEach(a=>{ inPot[a.id] = true; });
+  const best = (catches || [])
+    .filter(c=> c.status === 'approved' && isScoringSpecies(c.species) && inPot[c.anglerId])
+    .sort((a, b)=> b.length - a.length)[0];
+  if(best){
+    const a = byId[best.anglerId];
+    if(a && !feePaid(a) && !seen[a.id]){
+      seen[a.id] = true;
+      out.push({ angler: a, why: 'leading the Big Fish pot' });
+    }
+  }
+  return out;
+}
+
+// What each pool is built from. A pool is money that actually ARRIVED, so this
+// is the one place the fee flag still decides a number - an entry nobody has
+// matched a payment to must not inflate what the field thinks it is playing
+// for. renderPayoutCalculator() shows the unmatched total alongside it, so the
+// gap is visible rather than silently missing.
 // Split out of the render for the same reason as bigFishEntrants().
 function poolCounts(anglers){
-  const confirmed = (anglers || []).filter(isConfirmed);
+  const confirmed = (anglers || []).filter(feePaid);
   return {
     solo:    confirmed.filter(a=> a.division === 'solo').length,
     // A team is one entry fee, so the partner record is not counted again.
@@ -7191,9 +7286,10 @@ function poolCounts(anglers){
 
 const FWP_DEADLINE_DAYS = 30;
 
-// Everything is filed on CONFIRMED entries. An unconfirmed one never paid and
-// in every case so far never fished, so counting it would overstate the field
-// to the state. reportWarnings() surfaces the ones being left out.
+// Filed on the whole roster: the state is counting people who fished, and an
+// entry fee the director has not ticked off yet says nothing about whether
+// somebody launched. The one exception is the "# Paid" box, which is the only
+// question on the form that is actually about money.
 
 // Per-event, in the shared config, so the half-finished form is on every one of
 // the director's devices rather than the one they started it on.
@@ -7233,7 +7329,9 @@ function lastFiledDetails(){
 // director can set them from the report screen.
 function residencyCounts(anglers){
   const out = { resident:0, nonresident:0, unknown:0, unknownAnglers:[] };
-  (anglers || []).filter(isConfirmed).forEach(a=>{
+  // Everyone on the roster. The state is counting people who fished, not
+  // people whose PayPal has been matched up.
+  (anglers || []).forEach(a=>{
     if(a.resident === true) out.resident++;
     else if(a.resident === false) out.nonresident++;
     else { out.unknown++; out.unknownAnglers.push(a); }
@@ -7245,14 +7343,16 @@ function residencyCounts(anglers){
 // is one entry and two anglers, and the form asks for both.
 function reportFieldCounts(anglers){
   const list = anglers || [];
-  const confirmed = list.filter(isConfirmed);
+  const settled = list.filter(feePaid);
   return {
-    anglers: confirmed.length,
-    teams: confirmed.filter(a=> a.division === 'team' && a.role !== 'partner').length,
-    // Every confirmed angler paid in; a team's single fee covers both halves,
-    // so this is people who paid, not fees collected.
-    paid: confirmed.length,
-    unconfirmed: list.length - confirmed.length
+    // Everyone on the roster fished, whatever state their fee is in.
+    anglers: list.length,
+    teams: list.filter(a=> a.division === 'team' && a.role !== 'partner').length,
+    // The ONE box on the form that is about money: people whose fee has been
+    // matched. A team's single fee covers both halves, so this counts people,
+    // not fees collected.
+    paid: settled.length,
+    unpaid: list.length - settled.length
   };
 }
 
@@ -7275,7 +7375,7 @@ function catchDayKey(c){
 // HOURS FISHED. The form wants the hours the field was actually on the water,
 // and check-in to check-out is exactly that: first line in, last boat off.
 function contestDayHours(anglers, dates){
-  const confirmed = (anglers || []).filter(isConfirmed);
+  const confirmed = (anglers || []);
   return (dates || []).map((dateKey, i)=>{
     const dayKey = 'day' + (i + 1);
     let start = null, stop = null;
@@ -7389,7 +7489,7 @@ function winningFish(catches, anglers){
   return (catches || []).filter(c=>{
     if(c.status !== 'approved' || !isScoringSpecies(c.species)) return false;
     const a = byId[c.anglerId];
-    return !(a && (a.disqualified || !isConfirmed(a)));
+    return !(a && a.disqualified);
   }).sort((a, b)=> b.length - a.length)[0] || null;
 }
 
@@ -7421,9 +7521,12 @@ function reportWarnings(anglers, catches, dates){
   const out = [];
   const counts = reportFieldCounts(anglers);
   const res = residencyCounts(anglers);
-  if(counts.unconfirmed > 0){
-    out.push(counts.unconfirmed + ' unconfirmed ' + (counts.unconfirmed === 1 ? 'entry is' : 'entries are') +
-      ' left out of every count below. Confirm or remove them before you file.');
+  if(counts.unpaid > 0){
+    // No longer "left out" of anything except the # Paid box, so the warning
+    // says which box rather than implying the whole form is wrong.
+    out.push(counts.unpaid + ' ' + (counts.unpaid === 1 ? 'entry has' : 'entries have') +
+      ' no fee matched to ' + (counts.unpaid === 1 ? 'it' : 'them') + ', so the "# Paid" box ' +
+      'reads lower than the angler count. Tick them off if the money did arrive.');
   }
   if(res.unknown > 0){
     out.push(res.unknown + ' angler' + (res.unknown === 1 ? '' : 's') + ' registered before the app asked about ' +
@@ -8089,7 +8192,7 @@ async function renderPayoutCalculator(){
   const anglers = await loadAnglers();
   const donations = await loadDonations();
   const counts = poolCounts(anglers);
-  const confirmed = anglers.filter(isConfirmed);
+  const confirmed = anglers.filter(feePaid);
   const solo = confirmed.filter(a=>a.division==='solo');
   // Team registrations now carry a real record for each partner (role: 'captain'/'partner'),
   // so the $50 team entry fee is charged once per team, not once per person.
@@ -8106,9 +8209,9 @@ async function renderPayoutCalculator(){
   const bigfishDonated = donatedTo('bigfish');
   const generalFund = donatedTo('general');
 
-  const soloPool = solo.length * 30 + soloDonated;
-  const teamPool = teamEntries.length * 50 + teamDonated;
-  const bigfishPool = bigfishAnglerCount * 10 + bigfishDonated;
+  const soloPool = solo.length * FEE_SOLO + soloDonated;
+  const teamPool = teamEntries.length * FEE_TEAM + teamDonated;
+  const bigfishPool = bigfishAnglerCount * FEE_BIGFISH + bigfishDonated;
 
   function splitFor(eligible, pool){
     if(eligible===0) return [];
@@ -8179,7 +8282,45 @@ async function renderPayoutCalculator(){
   document.getElementById('payout-body').innerHTML = payoutHtml;
   document.getElementById('public-payout-body').innerHTML = payoutHtml;
 
+  // Deliberately NOT part of payoutHtml: that string is also written to the
+  // public payout screen, and who has paid is between the angler and the
+  // director.
+  renderOutstandingFees(anglers, await loadCatches());
+
   renderDonationList(donations);
+}
+
+// Director-only. Two things: how much the roster implies is still to come, and
+// the one case that has to be settled before any money moves - somebody in the
+// money who has not paid in.
+function renderOutstandingFees(anglers, catches){
+  const el = document.getElementById('payout-outstanding');
+  if(!el) return;
+  const owed = outstandingFees(anglers);
+  if(owed.entries === 0){ el.innerHTML = ''; return; }
+
+  const bits = [];
+  if(owed.solo) bits.push(owed.solo + ' solo');
+  if(owed.teams) bits.push(owed.teams + ' team');
+  if(owed.bigfish) bits.push(owed.bigfish + ' Big Fish');
+
+  const placing = unpaidInTheMoney(anglers, catches);
+  const alert = placing.length
+    ? '<div class="fp-item"><span class="fp-dot level-flag"></span><span><strong>' +
+        placing.map(x=> escapeHtml(x.angler.name) + ' (' + escapeHtml(x.why) + ')').join(', ') +
+        '</strong> ' + (placing.length === 1 ? 'is' : 'are') + ' in the money with no fee matched. ' +
+        'Settle that before you pay anyone out.</span></div>'
+    : '';
+
+  el.innerHTML =
+    '<div class="fp ' + (placing.length ? 'level-flag' : 'level-review') + '" style="margin-top:12px;">' +
+      '<div class="fp-head"><span class="fp-title">Fees outstanding &middot; $' + owed.total.toFixed(2) + '</span></div>' +
+      alert +
+      '<div class="fp-item"><span class="fp-dot level-review"></span><span>' +
+        bits.join(', ') + ' &mdash; not counted in the pools above, so those figures are ' +
+        'what has actually arrived. Tick them off under Contestants as the money lands.' +
+      '</span></div>' +
+    '</div>';
 }
 
 const DONATION_TARGET_LABEL = { general:'General fund', solo:'Solo pool', team:'Team pool', bigfish:'Big Fish pot' };
@@ -9465,17 +9606,38 @@ async function renderContestants(){
   if(!el) return;
 
   const dqCount = anglers.filter(a=>a.disqualified).length;
-  const waiting = anglers.filter(a=>!isConfirmed(a)).length;
+  const waiting = anglers.filter(a=>!feePaid(a)).length;   // fees, not eligibility
   document.getElementById('contestants-tool-summary').textContent = anglers.length===0
     ? 'No anglers yet'
     : anglers.length+' angler'+(anglers.length===1?'':'s')+
-      (waiting?' \u00b7 '+waiting+' unconfirmed':'')+(dqCount?' \u00b7 '+dqCount+' DQ':'');
+      (waiting?' \u00b7 '+waiting+' fee outstanding':'')+(dqCount?' \u00b7 '+dqCount+' DQ':'');
 
   // Anyone who registered before board codes existed has none. Offered rather
   // than done silently: it is a write to every one of those records, and the
   // director should be the one who decides when that happens.
   const missing = anglers.filter(a=> !a.anglerCode);
-  const banner = missing.length
+  // Reconciling PayPal is desk work, done once when registration closes - not
+  // something to be doing in a queue at the ramp on tournament morning. So the
+  // whole outstanding list is one line and one button, and the per-angler tick
+  // below is for the stragglers.
+  const owed = outstandingFees(anglers);
+  const feeBanner = owed.entries === 0
+    ? ''
+    : '<div class="fp level-review" style="margin-bottom:12px;">'+
+        '<div class="fp-head"><span class="fp-title">Entry fees outstanding &middot; $'+
+          owed.total.toFixed(2)+'</span></div>'+
+        '<div class="fp-item"><span class="fp-dot level-review"></span><span>'+
+          owed.entries+' '+(owed.entries===1?'entry has':'entries have')+' no payment matched to '+
+          (owed.entries===1?'it':'them')+'. They still score and place &mdash; this only affects '+
+          'the payout total and the state contest report.<br>'+
+          escapeHtml(owed.anglers.filter(a=> a.role!=='partner').map(a=> a.name).join(', '))+
+        '</span></div>'+
+        '<div class="actions" style="margin-top:8px;">'+
+          '<button class="small" data-act="fees-all">Mark all '+owed.entries+' received</button>'+
+        '</div>'+
+      '</div>';
+
+  const banner = feeBanner + (missing.length
     ? '<div class="fp level-review" style="margin-bottom:12px;">'+
         '<div class="fp-head"><span class="fp-title">Board codes missing</span></div>'+
         '<div class="fp-item"><span class="fp-dot level-review"></span><span>'+
@@ -9486,13 +9648,13 @@ async function renderContestants(){
           '<button class="small" data-act="assign-codes">Issue codes to '+missing.length+' angler'+(missing.length===1?'':'s')+'</button>'+
         '</div>'+
       '</div>'
-    : '';
+    : '');
 
   let list = anglers.slice();
   if(contestantFilter==='solo') list = list.filter(a=>a.division==='solo');
   else if(contestantFilter==='team') list = list.filter(a=>a.division==='team');
   else if(contestantFilter==='dq') list = list.filter(a=>a.disqualified);
-  else if(contestantFilter==='unconfirmed') list = list.filter(a=>!isConfirmed(a));
+  else if(contestantFilter==='unpaid') list = list.filter(a=>!feePaid(a));
 
   if(list.length===0){
     el.innerHTML = banner + '<p class="empty">'+(anglers.length===0
@@ -9529,7 +9691,9 @@ async function renderContestants(){
 function contestantRowHtml(d, catches){
   const a = d.angler;
   const open = a.id === expandedContestantId;
-  const cls = 'crow' + (a.disqualified ? ' dq' : (!isConfirmed(a) ? ' unconfirmed' : (d.rank===1 ? ' leader' : '')));
+  // Rank still wins over an unmatched fee here: they are on the board, so the
+  // leader stripe belongs to whoever is leading.
+  const cls = 'crow' + (a.disqualified ? ' dq' : (d.rank===1 ? ' leader' : (!feePaid(a) ? ' unpaid' : '')));
 
   const teamLabel = a.division==='team'
     ? 'Team with '+escapeHtml(a.partner || '\u2014')+(a.role==='partner' ? ' (partner)' : '')
@@ -9547,7 +9711,7 @@ function contestantRowHtml(d, catches){
       '<div class="crow-id">'+
         '<div class="crow-name">'+escapeHtml(a.name)+
           (a.disqualified ? '<span class="dqtag">DQ</span>' : '')+
-          (isConfirmed(a) ? '' : '<span class="pendtag">Unconfirmed</span>')+'</div>'+
+          (feePaid(a) ? '' : '<span class="pendtag">Fee outstanding</span>')+'</div>'+
         '<div class="crow-sub">'+a.tournamentId+' \u00b7 '+teamLabel+
           (a.bigfish ? ' \u00b7 Big Fish' : '')+'</div>'+
         // The codes are how you match a number on a board in a photo back to a
@@ -9586,27 +9750,26 @@ function contestantRowHtml(d, catches){
         new Date(c.timestamp).toLocaleDateString([], {month:'short',day:'numeric'})+'</span></div>'
       ).join('');
 
-  // Confirmation sits above the DQ controls because it is the first decision:
-  // an unconfirmed entry has not paid, so it is not in the tournament yet and
-  // disqualifying it would be a category error.
+  // Money, and only money. It sits above the DQ controls because it is the
+  // question asked far more often, not because it decides anything about
+  // whether this angler competes - see feePaid().
   let confirmArea;
-  if(!isConfirmed(a)){
+  if(!feePaid(a)){
     confirmArea =
       '<div class="cdq">'+
-        '<div class="cdq-warn">'+escapeHtml(a.name)+' is not confirmed yet.<br>'+
-          'They do not score, do not enter the Big Fish pot and do not count toward a pool ' +
-          'until you confirm the entry fee arrived.' +
+        '<div class="cdq-warn">No entry fee matched to '+escapeHtml(a.name)+' yet.<br>'+
+          'They score and place normally. This only affects the payout total and the ' +
+          'state contest report.' +
           (a.phone ? '<br>Phone on file: '+escapeHtml(a.phone) : '') +
         '</div>'+
         '<div class="cdq-actions">'+
-          '<button class="small" data-act="c-confirm" data-id="'+a.id+'">Confirm entry</button>'+
-          '<button class="small danger" data-act="c-remove" data-id="'+a.id+'">Reject</button>'+
+          '<button class="small" data-act="c-confirm" data-id="'+a.id+'">Fee received</button>'+
         '</div>'+
       '</div>';
   } else {
     confirmArea =
       '<div class="actions" style="margin-top:8px;">'+
-        '<button class="small" data-act="c-unconfirm" data-id="'+a.id+'">Mark unconfirmed</button>'+
+        '<button class="small" data-act="c-unconfirm" data-id="'+a.id+'">Mark fee outstanding</button>'+
       '</div>';
   }
 
@@ -9710,6 +9873,31 @@ function wireContestantRows(){
   // Issues a code to everyone who lacks one. Teammates are given a SHARED team
   // code, matched on teamId, or two people on one entry would end up with two
   // different team numbers on their boards.
+  el.querySelectorAll('[data-act="fees-all"]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const owed = outstandingFees(await loadAnglers());
+      // Confirmed because it is a write to every outstanding record at once,
+      // and the number is the thing worth reading twice before saying yes.
+      if(!confirm('Mark all ' + owed.entries + ' outstanding ' +
+                  (owed.entries === 1 ? 'entry' : 'entries') + ' as paid?\n\n' +
+                  'That is $' + owed.total.toFixed(2) + ' added to the pools. ' +
+                  'Only do this once the money is actually in the account.')) return;
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      const anglers = await loadAnglers();
+      // Absence IS paid - see feePaid(). Deleting the flag rather than setting
+      // it false keeps every record in the one shape the reader expects.
+      anglers.forEach(a=>{ delete a.pending; });
+      if(!await saveAnglers(anglers)){
+        btn.disabled = false;
+        btn.textContent = 'Could not save — try again';
+        return;
+      }
+      renderAdmin();
+    });
+  });
+
   el.querySelectorAll('[data-act="assign-codes"]').forEach(btn=>{
     btn.addEventListener('click', async (e)=>{
       e.stopPropagation();
@@ -9771,7 +9959,7 @@ function wireContestantRows(){
       // only the captain would leave the partner unable to score.
       const group = a.teamId ? anglers.filter(x=> x.teamId === a.teamId) : [a];
       group.forEach(x=>{
-        if(confirming) delete x.pending;      // absence IS confirmed - see isConfirmed()
+        if(confirming) delete x.pending;      // absence IS confirmed - see feePaid()
         else x.pending = true;
       });
       await saveAnglers(anglers);

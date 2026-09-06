@@ -56,11 +56,22 @@ The places where a mistake is silent and expensive:
   rather than just the live one, and that team and personal codes share one
   pool. A duplicate looks like nothing at the time; it surfaces when two
   anglers claim the same fish and the photo cannot settle it.
-- **Confirmed entries.** That an entry does not score, join the Big Fish pot
-  or count toward a pool until the director confirms the fee — and, more
-  importantly, that an angler carrying no flag at all still counts. Reading a
-  missing flag as "unconfirmed" would empty the standings of a tournament
-  already under way, which is why that case is asserted directly.
+- **Fees, and what they no longer decide.** An entry with no payment matched to
+  it *scores, places, holds the winning fish and stays in the Big Fish pot* —
+  what it does not do is count toward a pool, because a pool is money that
+  arrived. That is a reversal: the flag used to gate the standings, which meant
+  a tick the director missed showed up as an angler asking why their fish was
+  not on the board, mid-event, at a ramp. Eligibility is `disqualified` and
+  always was. The tests assert the new rule in both directions, because putting
+  the old gate back is a two-character edit in five places.
+  Also that an angler carrying no flag at all reads as **paid** — reading a
+  missing flag the other way would empty the pools of a tournament already
+  under way.
+- **What the public roster may say.** It lists handles and nothing else. It used
+  to print "unconfirmed" beside a handle, which published one angler's payment
+  status to the whole field; there is now a test that the roster mentions no
+  fee state and no real name, because that is a leak that reads as a harmless
+  label right up until someone notices.
 - **Claiming an entry on another device** — that BOTH the board code and the
   registered phone must match, that neither can be skipped by leaving it blank,
   and that a server problem is never reported as a bad code. A code alone is
@@ -151,10 +162,22 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Read day 1's check-out on day 2 | 2 failures |
 | Sort the freshest position first instead of the oldest | 1 failure |
 | Treat "no position ever" as a fresh one | 1 failure |
-| Read a missing `pending` flag as unconfirmed | 13 failures |
-| Let an unconfirmed entry into the standings | 1 failure |
-| Let an unconfirmed entry into the Big Fish pot | 2 failures |
-| Count unconfirmed entries in a payout pool | 1 failure |
+| Read a missing `pending` flag as unpaid | 13 failures |
+| Put the fee gate back on the standings | crash |
+| Put it back on the Big Fish pot | crash |
+| Put it back on the winning fish | 2 failures |
+| Put it back on the state's angler count | 1 failure |
+| Put it back on the contest hours | 1 failure |
+| Put it back on the residency count | 2 failures |
+| Stop the fee flag gating the payout pools | 3 failures |
+| Bill a team twice for one entry | 2 failures |
+| Bill Big Fish per entry instead of per angler | 2 failures |
+| Drift `FEE_SOLO` from the pool maths | 1 failure |
+| Flag the whole field, not just the places that pay | 2 failures |
+| Never check the Big Fish leader | crash |
+| Flag a paid angler as owing | 5 failures |
+| Tell the angler their catches do not count | 2 failures |
+| Print fee status on the public roster | 1 failure |
 | Stop normalising phone numbers | 5 failures |
 | Compare phone numbers in full instead of last ten | 2 failures |
 | Never show the pending notice | 3 failures |
@@ -242,11 +265,16 @@ prompt clamp:
 
 Put it back afterwards.
 
-Two guards in the app are deliberately redundant, and a sabotage of either
-passes: the phone-length check in `claimEntry` (the equality check already
-refuses an empty number) and the event-day check in `overdueCheckouts` (a
-non-event day builds a `dayKey` that matches nothing). Both behaviours are
-enforced twice. A test that went red for them would be asserting the
+Three guards in the app are deliberately redundant, and a sabotage of any of
+them passes: the phone-length check in `claimEntry` (the equality check already
+refuses an empty number), the event-day check in `overdueCheckouts` (a
+non-event day builds a `dayKey` that matches nothing), and the `seen` check in
+`unpaidInTheMoney`'s division loop — `standingsFor` groups by angler, so one
+person cannot appear twice in one division's top three. It is only reachable if
+an angler's catches straddle two divisions, which needs a division edit after
+they had already logged fish. The `seen` check in the same function's Big Fish
+block *is* load-bearing (someone can place and lead the pot at once) and is
+tested. All three behaviours are enforced twice. A test that went red for them would be asserting the
 implementation rather than the rule, so there isn't one.
 
 **A test cannot see a time zone it is already in.** The machine this was
