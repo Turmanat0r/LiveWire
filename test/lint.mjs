@@ -323,8 +323,20 @@ if (!fs.existsSync(VJ)) {
         'would keep serving the old app until its cache happened to turn over');
     }
     // Every external origin the page names has to appear in the policy.
-    const policy = setHeaders.get('Content-Security-Policy')
-      || setHeaders.get('Content-Security-Policy-Report-Only') || '';
+    const enforced = setHeaders.get('Content-Security-Policy');
+    const reportOnly = setHeaders.get('Content-Security-Policy-Report-Only');
+    const policy = enforced || reportOnly || '';
+    // The rollout is finished: the walkthrough was done on a real browser,
+    // every screen, and the only thing the console had to say was that
+    // upgrade-insecure-requests does nothing in report-only mode - which was
+    // the point of flipping. Going back to report-only would leave a policy
+    // that reads like protection and blocks nothing, which is the state this
+    // was deliberately moved OUT of.
+    if (!enforced && reportOnly) {
+      note('hosting', 'the CSP is back to Content-Security-Policy-Report-Only, which ' +
+        'reports violations and blocks none of them - the walkthrough that justified ' +
+        'enforcing it has already been done');
+    }
     if (policy && !/frame-ancestors/.test(policy)) {
       note('hosting', 'the CSP sets no frame-ancestors, so the app can be framed ' +
         'and clickjacked');

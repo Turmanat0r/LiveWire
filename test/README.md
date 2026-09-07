@@ -396,24 +396,43 @@ Add the function you want to reach to the `globalThis.__t = { ... }` block near
 the top of `events.test.mjs`, then use it as `t.yourFunction()`. Assertions are
 `check(name, got, want)`.
 
-## The CSP is in Report-Only, on purpose
+## The CSP is enforced, and how it got there
 
-`vercel.json` carries the security headers. Everything in it is enforced except
-the Content-Security-Policy, which ships as `Content-Security-Policy-Report-Only`.
+`vercel.json` carries the security headers, and all of them are enforced,
+including the Content-Security-Policy. It did not start that way, and the route
+it took is the point.
 
-That is the normal way to introduce a policy to an app that already exists: it
-reports what it *would* have blocked to the browser console and blocks nothing,
-so a policy that turns out to be a line too tight cannot take the app down at a
-boat ramp. The origins in it were read out of `index.html` rather than guessed —
+A policy introduced to an app that already exists ships first as
+`Content-Security-Policy-Report-Only`: it reports what it *would* have blocked
+and blocks nothing, so a policy one line too tight cannot take the app down at
+a boat ramp. The origins were read out of `index.html` rather than guessed —
 jsDelivr, Google Fonts, `tile.openstreetmap.org`, Supabase — and a lint rule
 fails the build if the page ever loads from somewhere the policy does not name,
 so it cannot quietly fall behind the code.
 
-**To turn it on:** open the app on a phone and on a laptop, visit every screen
-that touches the network — the map and boundary editor, the camera, a catch
-submission, the payout screen, the FWP report — and watch the console. If
-nothing is reported, rename the key to `Content-Security-Policy` and redeploy.
-Do that between events, never during one.
+**Flipped 2026-09-07**, after a walkthrough on a real browser with the console
+open: every screen, the map, and a photo at full size. The only thing reported
+was that `upgrade-insecure-requests` does nothing in a report-only policy —
+which is a note about report-only mode, not a violation, and was itself an
+argument for flipping. It came from a browser extension's `content_script.js`
+rather than from the page.
+
+Ahead of the walkthrough the checkable parts were checked: every external
+address in `index.html`, `sw.js` and `manifest.json` (all five already allowed),
+no `eval` or `new Function` anywhere (so no `'unsafe-eval'` is needed), no
+iframes, no web workers, and no URL assembled at runtime that a scan of the
+source could miss. The walkthrough was confirmation, not discovery — which is
+the right order, because a browser can only tell you about the paths you
+happen to walk.
+
+Lint now **requires the enforcing header**: dropping back to report-only leaves
+a policy that reads like protection and blocks nothing, which is exactly the
+state this was moved out of.
+
+**If it ever has to come off in a hurry** — rename the key back to
+`Content-Security-Policy-Report-Only` and redeploy. That is a deliberate
+downgrade and lint will say so, which is the correct amount of friction: fine
+mid-event, not fine as a permanent state.
 
 `script-src` has to keep `'unsafe-inline'`: the whole app is one inline
 `<script>`, and the alternative is a hash that changes on every edit, which with
