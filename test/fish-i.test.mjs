@@ -25,7 +25,7 @@ const handler = require(API);
 const { allowedPhotoUrl, clean, normalize, buildPrompt, pickModel, rankModels,
         isRetryableModelStatus, googleRetrySeconds, isDailyQuota,
         bearerFrom, directorClaim, refusalText, AUTH_REFUSALS,
-        directorFromToken, authConfigured } = handler.__test;
+        directorFromToken, authConfigured, missingAuthVars } = handler.__test;
 
 let pass = 0, fail = 0;
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -371,6 +371,7 @@ section('10. with nothing to check against, it refuses everything');
 // An authorization control that quietly passes everything when it is
 // misconfigured is worse than none, because it reads as protection.
 check('configured, it knows it', authConfigured(), true);
+check('and has nothing to report missing', missingAuthVars(), []);
 {
   const savedUrl = process.env.SUPABASE_URL;
   const savedKey = process.env.SUPABASE_ANON_KEY;
@@ -379,6 +380,11 @@ check('configured, it knows it', authConfigured(), true);
   delete require.cache[require.resolve(API)];
   const bare = require(API);
   check('unconfigured, it knows that too', bare.__test.authConfigured(), false);
+  // "Not configured" is true and useless when there are two variables and a
+  // hosting panel that will happily save one of them to the wrong environment.
+  // Naming them turns a one-request answer into exactly that.
+  check('and names both of the ones it is missing',
+    bare.__test.missingAuthVars(), ['SUPABASE_URL', 'SUPABASE_ANON_KEY']);
   // And it must not be rescued by a token that looks plausible: with no anon
   // key there is nothing to ask, and the answer has to be no.
   const realFetch = globalThis.fetch;

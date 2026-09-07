@@ -220,6 +220,17 @@ function authConfigured() {
   return !!(AUTH_URL && AUTH_KEY);
 }
 
+// Which of the two is missing, by NAME only - never a value. "Not configured"
+// is true but useless when there are two variables and a hosting panel that
+// can save one of them to the wrong environment: it turns a one-request answer
+// into an afternoon of redeploying and guessing.
+function missingAuthVars() {
+  const out = [];
+  if (!AUTH_URL) out.push('SUPABASE_URL');
+  if (!AUTH_KEY) out.push('SUPABASE_ANON_KEY');
+  return out;
+}
+
 function bearerFrom(req) {
   const h = (req.headers && (req.headers.authorization || req.headers.Authorization)) || '';
   const m = /^Bearer[ \t]+(.+)$/i.exec(String(h).trim());
@@ -470,7 +481,14 @@ module.exports = async (req, res) => {
     // Refusing every request is the right answer to "I cannot tell who is
     // asking", but it must not be a SILENT one - so the health check names the
     // two variables rather than leaving the director to guess.
-    if (!authConfigured()) return send(res, 200, { ready: false, reason: 'no-auth-config' });
+    if (!authConfigured()) {
+      const missing = missingAuthVars();
+      return send(res, 200, {
+        ready: false, reason: 'no-auth-config', missing: missing,
+        detail: 'Not set on this deployment: ' + missing.join(' and ') +
+          '. Check they are saved to the PRODUCTION environment, then redeploy.'
+      });
+    }
     // The panel asks this to find out why Fish-I is unavailable, so the check
     // runs here too - otherwise a director whose session had expired would be
     // told the feature was ready and find out by pressing the button.
@@ -532,7 +550,8 @@ module.exports = async (req, res) => {
   if (!authConfigured()) {
     return send(res, 503, {
       error: 'Fish-I cannot check who is asking, so it is refusing every request. ' +
-        'Set SUPABASE_URL and SUPABASE_ANON_KEY in Vercel and redeploy. Neither is ' +
+        'Not set on this deployment: ' + missingAuthVars().join(' and ') + '. ' +
+        'Add it in Vercel to the Production environment and redeploy. Neither is ' +
         'a secret - the anon key already ships in the page.'
     });
   }
@@ -708,4 +727,4 @@ module.exports = async (req, res) => {
 module.exports.__test = { allowedPhotoUrl, clean, normalize, buildPrompt, pickModel,
                           rankModels, isRetryableModelStatus, googleRetrySeconds, isDailyQuota,
                           bearerFrom, directorClaim, refusalText, AUTH_REFUSALS,
-                          directorFromToken, authConfigured };
+                          directorFromToken, authConfigured, missingAuthVars };
