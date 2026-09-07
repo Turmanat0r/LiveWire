@@ -12,9 +12,20 @@ import { fileURLToPath } from 'url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
-const handler = require(path.join(HERE, '..', 'api', 'fish-i.js'));
+const API = path.join(HERE, '..', 'api', 'fish-i.js');
+// Read at module load, so it has to be here rather than inside the section
+// that uses it. Section 8 loads a SECOND copy with these cleared, to check the
+// endpoint refuses everything rather than falling open.
+// The same host section 2's allowlist fixtures use. Production always has
+// this set, so pinning it here exercises the real configuration rather than
+// the unset fallback.
+process.env.SUPABASE_URL = 'https://ecwcjtneypbbqciwgbjw.supabase.co';
+process.env.SUPABASE_ANON_KEY = 'anon-key-xyz';
+const handler = require(API);
 const { allowedPhotoUrl, clean, normalize, buildPrompt, pickModel, rankModels,
-        isRetryableModelStatus, googleRetrySeconds, isDailyQuota } = handler.__test;
+        isRetryableModelStatus, googleRetrySeconds, isDailyQuota,
+        bearerFrom, directorClaim, refusalText, AUTH_REFUSALS,
+        directorFromToken, authConfigured } = handler.__test;
 
 let pass = 0, fail = 0;
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -224,6 +235,167 @@ check('nor is junk', isDailyQuota('nonsense'), false);
 // which limit tripped, so both have to count.
 check('the wording in the message counts too', isDailyQuota(
   JSON.stringify({ error: { message: 'limit: 250 requests per day' } })), true);
+
+// ============================================================
+section('8. only the director may ask');
+// This endpoint took anybody's word for it, and its path ships inside
+// index.html to every phone in the field. The prompt is built here and never
+// accepted from the page, so it could not be turned into a general Gemini
+// proxy - but it could very cheaply be used to spend the day's free quota and
+// leave Fish-I dead mid-event with nothing in the logs to explain it.
+
+// --- reading the header
+const H = (v) => ({ headers: v === undefined ? {} : { authorization: v } });
+check('a bearer token is read', bearerFrom(H('Bearer abc.def.ghi')), 'abc.def.ghi');
+check('the scheme is case-insensitive', bearerFrom(H('bearer tok')), 'tok');
+check('a tab separator works too', bearerFrom(H('Bearer\ttok')), 'tok');
+check('surrounding space is trimmed', bearerFrom(H('  Bearer   tok  ')), 'tok');
+check('no header is no token', bearerFrom(H()), '');
+check('a bare token without the scheme is not accepted', bearerFrom(H('abc.def')), '');
+check('nor is another scheme', bearerFrom(H('Basic abc')), '');
+check('and a missing headers object does not throw', bearerFrom({}), '');
+check('capital-A Authorization is read too',
+  bearerFrom({ headers: { Authorization: 'Bearer tok' } }), 'tok');
+
+// --- the claim itself
+// app_metadata is the only place this may be read from. user_metadata is
+// writable by the client, so anyone could simply declare themselves director.
+check('a director is recognised', directorClaim({ app_metadata: { director: true } }), true);
+check('the string form counts as well',
+  directorClaim({ app_metadata: { director: 'true' } }), true);
+check('an ordinary account is not', directorClaim({ app_metadata: {} }), false);
+check('nor is one that says false',
+  directorClaim({ app_metadata: { director: false } }), false);
+check('user_metadata is NOT trusted',
+  directorClaim({ user_metadata: { director: true } }), false);
+check('a missing user is not a director', directorClaim(null), false);
+check('and neither is an empty one', directorClaim({}), false);
+// A truthy-but-wrong value must not slip through a loose comparison.
+check('a non-boolean truthy value is refused',
+  directorClaim({ app_metadata: { director: 1 } }), false);
+check('and so is a string that merely looks affirmative',
+  directorClaim({ app_metadata: { director: 'yes' } }), false);
+
+// --- what a refusal says
+// Each of these has a different fix, and collapsing them into "unauthorized"
+// is how a five-minute problem becomes an afternoon.
+const reasons = ['no-token', 'anon-key', 'bad-token', 'not-director',
+                 'auth-unreachable', 'auth-unreadable'];
+check('every refusal has its own words',
+  reasons.every(r => AUTH_REFUSALS[r] && AUTH_REFUSALS[r].length > 20), true);
+check('and no two say the same thing',
+  new Set(reasons.map(r => AUTH_REFUSALS[r])).size, reasons.length);
+check('the not-a-director case names the fix',
+  /app_metadata/.test(refusalText('not-director')), true);
+check('an expired session says to sign in again',
+  /sign in/i.test(refusalText('bad-token')), true);
+// The page falls back to the public key when there is no session. That is a
+// key, not a sign-in, and it must never read as one.
+check('the public key is called out as not a session',
+  /public key/i.test(refusalText('anon-key')), true);
+check('an unknown reason still says something useful',
+  /director/i.test(refusalText('something-new')), true);
+check('and carries the reason so it can be diagnosed',
+  /something-new/.test(refusalText('something-new')), true);
+
+// ============================================================
+section('9. verifying the session, not taking its word');
+// The claim is checked against Supabase. Everything here is about what happens
+// when that conversation does not go to plan, because those are the paths where
+// a wrong answer opens the endpoint rather than closing it.
+{
+  const realFetch = globalThis.fetch;
+  let calls = [];
+  let reply = null;
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, init });
+    if (reply instanceof Error) throw reply;
+    return reply;
+  };
+  const body = (obj, ok) => ({
+    ok: ok !== false, status: ok === false ? 401 : 200,
+    async json() { return obj; }
+  });
+  const run = async (token, r) => { calls = []; reply = r; return await directorFromToken(token); };
+
+  check('a director is let through',
+    (await run('tok', body({ app_metadata: { director: true } }))).ok, true);
+  check('an ordinary account is not',
+    (await run('tok', body({ app_metadata: {} }))).reason, 'not-director');
+  check('and is refused, not merely labelled',
+    (await run('tok', body({ app_metadata: {} }))).ok, false);
+
+  // A token Supabase will not vouch for must never be assumed good. This is the
+  // difference between a lock and a sign saying "locked".
+  check('a rejected token is refused', (await run('tok', body({}, false))).ok, false);
+  check('and named as expired rather than as the wrong account',
+    (await run('tok', body({}, false))).reason, 'bad-token');
+  check('a 500 from Supabase is refused too',
+    (await run('tok', { ok: false, status: 500, async json() { return {}; } })).ok, false);
+  check('carrying the status so it can be diagnosed',
+    (await run('tok', { ok: false, status: 500, async json() { return {}; } })).reason,
+    'auth-http:500');
+  check('Supabase being unreachable refuses rather than assumes',
+    (await run('tok', new Error('ECONNREFUSED'))).ok, false);
+  check('and says so', (await run('tok', new Error('x'))).reason, 'auth-unreachable');
+  check('an unreadable answer is refused',
+    (await run('tok', { ok: true, status: 200, async json() { throw new Error('nope'); } })).ok,
+    false);
+
+  // The page falls back to the public anon key when there is no session. It is
+  // a key, not a sign-in. Supabase would refuse it anyway; refusing it here
+  // means an accident can never become a bypass, and costs no round trip.
+  const anon = await run('anon-key-xyz', body({ app_metadata: { director: true } }));
+  check('the public key is refused', anon.ok, false);
+  check('by name', anon.reason, 'anon-key');
+  check('without even asking Supabase', calls.length, 0);
+
+  const none = await run('', body({ app_metadata: { director: true } }));
+  check('no token at all is refused', none.ok, false);
+  check('and does not ask either', calls.length, 0);
+
+  // The request itself has to carry both, or Supabase will not answer it.
+  await run('tok', body({ app_metadata: { director: true } }));
+  check('the check sends the anon key as the apikey', calls[0].init.headers.apikey, 'anon-key-xyz');
+  check('and the caller’s token as the bearer',
+    calls[0].init.headers.authorization, 'Bearer tok');
+  check('to the user endpoint', /\/auth\/v1\/user$/.test(calls[0].url), true);
+  check('on the configured project',
+    /^https:\/\/ecwcjtneypbbqciwgbjw\.supabase\.co\//.test(calls[0].url), true);
+
+  globalThis.fetch = realFetch;
+}
+
+// ============================================================
+section('10. with nothing to check against, it refuses everything');
+// An authorization control that quietly passes everything when it is
+// misconfigured is worse than none, because it reads as protection.
+check('configured, it knows it', authConfigured(), true);
+{
+  const savedUrl = process.env.SUPABASE_URL;
+  const savedKey = process.env.SUPABASE_ANON_KEY;
+  delete process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_ANON_KEY;
+  delete require.cache[require.resolve(API)];
+  const bare = require(API);
+  check('unconfigured, it knows that too', bare.__test.authConfigured(), false);
+  // And it must not be rescued by a token that looks plausible: with no anon
+  // key there is nothing to ask, and the answer has to be no.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 200,
+    async json() { return { app_metadata: { director: true } }; } });
+  const who = await bare.__test.directorFromToken('looks-real');
+  check('and refuses a token it cannot verify against a project', who.ok, false);
+  globalThis.fetch = realFetch;
+
+  delete require.cache[require.resolve(API)];
+  // Assigning undefined into process.env stores the STRING "undefined", which
+  // would look configured to anything reading it afterwards.
+  if (savedUrl === undefined) delete process.env.SUPABASE_URL;
+  else process.env.SUPABASE_URL = savedUrl;
+  if (savedKey === undefined) delete process.env.SUPABASE_ANON_KEY;
+  else process.env.SUPABASE_ANON_KEY = savedKey;
+}
 
 // ============================================================
 console.log('\n' + (fail === 0 ? 'ALL PASS' : fail + ' FAILED') + '  (' + pass + ' passed)');

@@ -1151,6 +1151,10 @@
   .hist-row.won{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold);}
   .hist-won{display:block;font-size:10.5px;color:var(--gold-deep);margin-top:3px;font-weight:600;}
   .freeze-state{font-size:11px;color:var(--steel);margin:6px 0 0;}
+  .tamper-note{
+    margin:6px 0 0;padding:7px 9px;border-radius:4px;font-size:11px;font-weight:600;
+    background:#F6E3E0;border-left:3px solid #A3372A;color:#7E2B20;line-height:1.5;
+  }
   .filing-note{
     margin:6px 0 0;padding:7px 9px;border-radius:4px;font-size:11px;font-weight:600;
     background:#F7F1E4;border-left:3px solid var(--gold);color:#7A5B14;line-height:1.5;
@@ -2400,6 +2404,7 @@
         server for this catch. It may still be queued on the angler&rsquo;s phone.</p>
     </div>
     <div class="lightbox-meta" id="lightbox-meta"></div>
+    <div id="lightbox-tamper" hidden></div>
     <div class="lightbox-actions" id="lightbox-actions"></div>
   </div>
 
@@ -4426,6 +4431,43 @@ function lengthHtml(length){
   return isFinite(n) ? escapeHtml(n.toFixed(2)) + '&quot;' : '&mdash;';
 }
 
+// ---- has the stored photo changed since it was submitted? ----
+// The app offers an angler exactly two edits on a pending catch: the length,
+// and withdrawing it altogether. It has never offered to replace the photo.
+//
+// So this is not checking for something the app can do. It is checking that the
+// hash recorded on the catch record still describes the pixels sitting in
+// storage, because those are two different places and nothing but this joins
+// them. A swapped photo leaves the length, the timestamp, the GPS fix, the
+// burned-in stamp and the first-pass measurements all describing a picture that
+// is no longer there - and every one of them would still read as fine.
+//
+// Byte-identical bytes hash identically: the stored file is the exact base64 of
+// the string that was hashed (see dataUrlToBlob), and fitPhoto is a no-op on a
+// photo that already came through encodeToBudget, which every catch photo does.
+// So the tolerance below is for a decoder that rounds a pixel differently, not
+// for a different picture. A real swap is nowhere near it.
+const PHOTO_TAMPER_TOLERANCE = 2;
+
+function photoIntegrity(c, freshHash){
+  const recorded = c && c.precheck && c.precheck.hash;
+  // Nothing recorded means nothing to compare - a catch filed before the
+  // first-pass checks existed. Absence is not evidence either way, so it must
+  // not read as a failure.
+  if(!recorded || !freshHash) return { checked:false, match:true, distance:0 };
+  const distance = hammingHex(recorded, freshHash);
+  return { checked:true, match: distance <= PHOTO_TAMPER_TOLERANCE, distance:distance };
+}
+
+// What the director is told. Only ever on a mismatch: a line on every card
+// saying "this photo is fine" is a line that stops being read.
+function photoTamperHtml(v){
+  if(!v || !v.checked || v.match) return '';
+  return '<div class="tamper-note">Photo does not match what was submitted &mdash; ' +
+    v.distance + '/64 bits differ from the hash recorded when this catch was filed. ' +
+    'The app cannot replace a catch photo, so this was not done through it.</div>';
+}
+
 function photoSlotHtml(c){
   return '<div class="photoslot" data-photo-for="'+escapeHtml(c.id)+'"><div class="noimg">&hellip;</div></div>';
 }
@@ -4433,8 +4475,13 @@ function photoSlotHtml(c){
 // bare 64px box, the gallery on a whole tile that also carries a caption and a
 // marker. Where a slot names a .photo-target, the photo is painted into that
 // and everything else the tile is carrying survives.
-function hydratePhotos(root){
+// `opts.verify` re-hashes each photo as it decodes and says so when it no
+// longer matches the record. Director lists only - the gallery and an angler's
+// own list would be reporting a problem to the one person who cannot act on it.
+// It costs nothing extra: the decode has already happened to draw the picture.
+function hydratePhotos(root, opts){
   const scope = root || document;
+  const verify = !!(opts && opts.verify);
   scope.querySelectorAll('[data-photo-for]').forEach(host=>{
     if(host.dataset.photoDone) return;
     host.dataset.photoDone = '1';
@@ -4447,6 +4494,7 @@ function hydratePhotos(root){
         img.alt = 'Catch photo on the bump board';
         // An object-storage URL can 404 while an upload is still queued.
         img.onerror = ()=>{ slot.innerHTML = '<span class="noimg">no photo</span>'; };
+        if(verify) img.onload = ()=> flagPhotoMismatch(host, id, img);
         img.src = url;
         slot.textContent = '';
         slot.appendChild(img);
@@ -4458,6 +4506,21 @@ function hydratePhotos(root){
       slot.innerHTML = '<span class="noimg">no photo</span>';
     });
   });
+}
+
+// Split out so the hashing sits behind one try/catch: a cross-origin photo
+// taints the canvas and getImageData throws, and a check that cannot run must
+// never be reported as a check that failed.
+function flagPhotoMismatch(host, catchId, img){
+  try{
+    const v = photoIntegrity(catchById(catchId), dHashOf(img));
+    const html = photoTamperHtml(v);
+    if(!html || !host.isConnected) return;
+    const card = host.parentNode || host;
+    const note = document.createElement('div');
+    note.innerHTML = html;
+    card.appendChild(note.firstChild);
+  }catch(e){ console.error(e); }
 }
 
 // ---- sync indicator ----
@@ -5120,6 +5183,15 @@ let fishISampler = null;      // resolved Claude sampler, or null in this view
 let fishIImagesOk = false;    // whether this view reports photo support
 let fishIEndpointOk = false;  // whether the server endpoint answered "ready"
 let fishIStatus = 'starting'; // why it is or isn't ready - shown to the director
+let fishIAuthDetail = '';     // the server's own words when it refuses the caller
+
+// Fish-I is the director's tool and the endpoint now insists on it, so every
+// call carries the session. bearerToken() falls back to the public anon key
+// when there is no session; the server refuses that explicitly rather than
+// treating a key as a sign-in.
+function fishIAuthHeaders(){
+  return { 'Authorization': 'Bearer ' + bearerToken() };
+}
 
 // Blank unless self-hosting elsewhere, in which case the endpoint is a sibling
 // of the page. Read through window so a test harness without a location - and
@@ -5144,7 +5216,7 @@ async function probeFishIEndpoint(){
   const url = aiReviewEndpoint();
   if(!url){ fishIStatus = 'no-runtime'; return; }
   try{
-    const res = await fetch(url, { method:'GET' });
+    const res = await fetch(url, { method:'GET', headers: fishIAuthHeaders() });
     if(!res.ok){ fishIStatus = 'endpoint-http:' + res.status; return; }
     const info = await res.json();
     if(info && info.ready){
@@ -5155,8 +5227,13 @@ async function probeFishIEndpoint(){
       // a retired model - and each one sends the director somewhere different.
       // Collapsing them into "unavailable" is what makes a five-minute fix
       // take an afternoon.
-      const known = { 'no-api-key':'endpoint-no-key', 'bad-key':'endpoint-bad-key', 'bad-model':'endpoint-bad-model' };
+      const known = { 'no-api-key':'endpoint-no-key', 'bad-key':'endpoint-bad-key',
+                      'bad-model':'endpoint-bad-model', 'no-auth-config':'endpoint-no-auth-config',
+                      'not-director':'endpoint-not-director' };
       fishIStatus = (info && known[info.reason]) || 'endpoint-not-ready';
+      // The server explains a refusal better than a status name can - it knows
+      // whether the session is missing, expired, or simply not a director's.
+      fishIAuthDetail = (info && info.detail) || '';
     }
   }catch(e){
     fishIStatus = 'endpoint-unreachable';
@@ -5235,6 +5312,18 @@ function fishIStatusText(){
     case 'endpoint-not-ready':  return 'the server reports Fish-I as unavailable.';
     case 'endpoint-unreachable':return 'the server did not answer. It may still be deploying \u2014 wait a moment, then retry.';
     default:
+      if(fishIStatus === 'endpoint-no-auth-config'){
+        return 'the server cannot check who is asking, so it is refusing every ' +
+          'request. Set SUPABASE_URL and SUPABASE_ANON_KEY in Vercel and redeploy. ' +
+          'Neither is a secret - the anon key already ships in this page.';
+      }
+      if(fishIStatus === 'endpoint-not-director'){
+        // The passcode opens this panel without creating a session, which is
+        // exactly the case that lands here. Say so, or it reads as a bug.
+        return fishIAuthDetail || 'Fish-I is for the director. Sign in as the director ' +
+          '- the passcode opens this panel but does not create a session, and there ' +
+          'is nothing for the server to check.';
+      }
       if(fishIStatus.indexOf('endpoint-http:') === 0){
         // 404 is the one worth naming: it means the deploy went out without
         // api/fish-i.js, not that anything is misconfigured.
@@ -5331,7 +5420,7 @@ async function requestAiVisionReview(c, photoDataUrl){
   if(endpoint){
     const res = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: Object.assign({ 'Content-Type': 'application/json' }, fishIAuthHeaders()),
       body: JSON.stringify({
         catchId: c.id, photo: photoDataUrl,
         claimedSpecies: c.species, claimedLength: c.length,
@@ -11383,6 +11472,8 @@ async function openLightbox(catchId, opts){
   lightboxSequence = Array.isArray(o.sequence) ? o.sequence.slice() : [];
   box.classList.remove('zoomed');
   box.hidden = false;
+  const tamperEl = document.getElementById('lightbox-tamper');
+  if(tamperEl){ tamperEl.innerHTML = ''; tamperEl.hidden = true; }
 
   const director = lightboxMode === LIGHTBOX_DIRECTOR;
   // The line where the two modes differ most: a real name, or a handle.
@@ -11413,7 +11504,22 @@ async function openLightbox(catchId, opts){
       if(lightboxCatchId !== catchId) return;
       if(!url){ setLightboxMissing(true); return; }
       img.onerror = ()=>{ if(lightboxCatchId === catchId) setLightboxMissing(true); };
-      img.onload = ()=>{ if(lightboxCatchId === catchId) img.style.display = 'block'; };
+      img.onload = ()=>{
+        if(lightboxCatchId !== catchId) return;
+        img.style.display = 'block';
+        // The judging moment. The list says to open the photo full size and
+        // decide here, so this is where it has to be said.
+        const el = document.getElementById('lightbox-tamper');
+        if(el){
+          let html = '';
+          if(director){
+            try{ html = photoTamperHtml(photoIntegrity(c, dHashOf(img))); }
+            catch(e){ console.error(e); }
+          }
+          el.innerHTML = html;
+          el.hidden = !html;
+        }
+      };
       img.src = url;
     }).catch(e=>{
       console.error(e);
@@ -11578,8 +11684,9 @@ async function renderAdmin(){
         '<div class="actions"><button class="small" data-act="delete" data-id="'+c.id+'">Delete</button></div></div></div>';
     }).join('');
 
-  hydratePhotos(pendEl);
-  hydratePhotos(allEl);
+  // The review lists, and only these, re-check the stored photo as it loads.
+  hydratePhotos(pendEl, { verify: true });
+  hydratePhotos(allEl, { verify: true });
 
   // Scoped to the two catch lists - a bare [data-act] selector would also grab
   // the donation buttons in the payout tool.

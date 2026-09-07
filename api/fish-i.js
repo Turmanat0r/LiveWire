@@ -35,7 +35,25 @@
 // The local first-pass checks - resolution, blur, duplicate photos, boundary,
 // plausible length - never went through here and keep working either way.
 //
-//   GET  -> { ready, reason }   health check the page runs on startup
+// WHO MAY ASK
+// The director, and nobody else. This endpoint used to take anybody's word for
+// it - there was no check at all, and the path ships inside index.html to every
+// phone in the field. The prompt is built here and never accepted from the
+// page, so it could not be turned into a general-purpose Gemini proxy, but it
+// could very cheaply be used to spend the day's free quota and leave Fish-I
+// dead in the middle of an event with nothing in the logs to explain it.
+//
+// So every request now carries the caller's Supabase session and the claim is
+// verified against Supabase itself. `app_metadata.director` is the only place
+// it is read from: user_metadata would be worthless, because a client can write
+// its own and anyone could simply declare themselves the director.
+//
+// NOTE: this means the DIRECTOR PASSCODE is not enough. The passcode opens the
+// panel; it does not create a session, and there is nothing for this to check.
+// Sign in as the director to use the vision pass - the same thing already true
+// of every write, since the ownership policies went in.
+//
+//   GET  -> { ready, reason }   health check the director's panel runs
 //   POST -> the review object   { species, speciesConfidence, concerns, ... }
 
 const API_ROOT = 'https://generativelanguage.googleapis.com/v1beta';
@@ -189,6 +207,80 @@ function rateLimited(ip) {
   hits.set(ip, seen);
   if (hits.size > 500) hits.clear();   // this is one tournament, not a service
   return seen.length > RATE_MAX;
+}
+
+// ---- who is asking ----
+// Both of these are needed to ask Supabase about a token. Neither is a secret:
+// the anon key already ships in index.html to every phone. They are separate
+// from GEMINI_API_KEY, which IS one.
+const AUTH_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
+const AUTH_KEY = process.env.SUPABASE_ANON_KEY || '';
+
+function authConfigured() {
+  return !!(AUTH_URL && AUTH_KEY);
+}
+
+function bearerFrom(req) {
+  const h = (req.headers && (req.headers.authorization || req.headers.Authorization)) || '';
+  const m = /^Bearer[ \t]+(.+)$/i.exec(String(h).trim());
+  return m ? m[1].trim() : '';
+}
+
+// Whether this token belongs to the director. Returns a reason rather than a
+// bare false, because "you are not signed in", "your session expired" and "you
+// are signed in but not as the director" send somebody three different places.
+async function directorFromToken(token) {
+  // Refuse by construction, not by accident. With no project configured the
+  // fetch below would be handed a relative URL and throw, which happens to end
+  // in a refusal - but "it fails closed because the URL was malformed" is not
+  // a guarantee, it is a coincidence that a future tidy-up would remove.
+  if (!authConfigured()) return { ok: false, reason: 'no-auth-config' };
+  if (!token) return { ok: false, reason: 'no-token' };
+  // index.html falls back to the anon key when there is no session. That is a
+  // key, not a session; Supabase answers 401 for it either way, but refusing it
+  // here means an accident can never become a bypass.
+  if (token === AUTH_KEY) return { ok: false, reason: 'anon-key' };
+
+  let res;
+  try {
+    res = await fetch(AUTH_URL + '/auth/v1/user', {
+      headers: { apikey: AUTH_KEY, authorization: 'Bearer ' + token }
+    });
+  } catch (e) {
+    return { ok: false, reason: 'auth-unreachable' };
+  }
+  if (!res.ok) {
+    return { ok: false, reason: res.status === 401 ? 'bad-token' : 'auth-http:' + res.status };
+  }
+  let user;
+  try { user = await res.json(); } catch (e) { return { ok: false, reason: 'auth-unreadable' }; }
+  return directorClaim(user)
+    ? { ok: true, reason: 'director' }
+    : { ok: false, reason: 'not-director' };
+}
+
+// Kept separate so the claim reading stays testable without a network.
+function directorClaim(user) {
+  const meta = (user && user.app_metadata) || {};
+  return meta.director === true || meta.director === 'true';
+}
+
+// What to say when the check refuses. Each of these has a different fix, and
+// collapsing them into "unauthorized" is how a five-minute problem becomes an
+// afternoon.
+const AUTH_REFUSALS = {
+  'no-token': 'Fish-I is for the director. This request carried no session - sign in as the director and try again.',
+  'anon-key': 'Fish-I is for the director. This request carried the public key rather than a signed-in session.',
+  'bad-token': 'That session is not valid any more. Sign in as the director again.',
+  'not-director': 'That account is signed in but is not a director. Set {"director": true} on its app_metadata in Supabase, then sign in again.',
+  'auth-unreachable': 'Could not reach Supabase to check who is asking. Try again in a moment.',
+  'auth-unreadable': 'Supabase gave an unreadable answer when asked who is asking.',
+  'no-auth-config': 'Fish-I cannot check who is asking: SUPABASE_URL and SUPABASE_ANON_KEY are not set on the server.'
+};
+
+function refusalText(reason) {
+  return AUTH_REFUSALS[reason] ||
+    'Could not confirm this request came from the director (' + reason + ').';
 }
 
 // Anything the client sends ends up inside a prompt, so it is clamped to
@@ -375,6 +467,15 @@ module.exports = async (req, res) => {
   // "Fish-I is broken" rather than "that model no longer exists".
   if (req.method === 'GET') {
     if (!key) return send(res, 200, { ready: false, reason: 'no-api-key' });
+    // Refusing every request is the right answer to "I cannot tell who is
+    // asking", but it must not be a SILENT one - so the health check names the
+    // two variables rather than leaving the director to guess.
+    if (!authConfigured()) return send(res, 200, { ready: false, reason: 'no-auth-config' });
+    // The panel asks this to find out why Fish-I is unavailable, so the check
+    // runs here too - otherwise a director whose session had expired would be
+    // told the feature was ready and find out by pressing the button.
+    const who = await directorFromToken(bearerFrom(req));
+    if (!who.ok) return send(res, 200, { ready: false, reason: 'not-director', detail: refusalText(who.reason) });
     try {
       // ?models=1 lists what this key was actually offered. No secret is in
       // it, and when a model is refused despite being listed it is the only
@@ -418,9 +519,30 @@ module.exports = async (req, res) => {
     });
   }
 
+  // Rate limit BEFORE the auth check. The limit is in-memory and free; the
+  // auth check is a round trip to Supabase, and an endpoint that makes one of
+  // those for every unauthenticated request is its own kind of open door.
   const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || 'unknown';
   if (rateLimited(ip)) {
     return send(res, 429, { error: 'Too many checks at once. Wait a moment, then try again.' });
+  }
+
+  // Fail CLOSED. An authorization control that quietly passes everything when
+  // it is misconfigured is worse than none, because it reads as protection.
+  if (!authConfigured()) {
+    return send(res, 503, {
+      error: 'Fish-I cannot check who is asking, so it is refusing every request. ' +
+        'Set SUPABASE_URL and SUPABASE_ANON_KEY in Vercel and redeploy. Neither is ' +
+        'a secret - the anon key already ships in the page.'
+    });
+  }
+  const who = await directorFromToken(bearerFrom(req));
+  if (!who.ok) {
+    // 403 for "you are not the director", 401 for "you are nobody yet", so the
+    // page can tell a missing session from a wrong one.
+    const status = (who.reason === 'no-token' || who.reason === 'anon-key' ||
+                    who.reason === 'bad-token') ? 401 : 403;
+    return send(res, status, { error: refusalText(who.reason) });
   }
 
   let body = req.body;
@@ -584,4 +706,6 @@ module.exports = async (req, res) => {
 // Reachable from test/fish-i.test.mjs. Vercel only cares that module.exports
 // is the handler, and it still is - these hang off it.
 module.exports.__test = { allowedPhotoUrl, clean, normalize, buildPrompt, pickModel,
-                          rankModels, isRetryableModelStatus, googleRetrySeconds, isDailyQuota };
+                          rankModels, isRetryableModelStatus, googleRetrySeconds, isDailyQuota,
+                          bearerFrom, directorClaim, refusalText, AUTH_REFUSALS,
+                          directorFromToken, authConfigured };

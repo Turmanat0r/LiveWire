@@ -112,6 +112,8 @@ globalThis.__t = {
   standingsFor, byLengthThenEarliest, bySmallestThenEarliest, catchTime,
   canActFor, actionGuard, filedByFor, reviewCatch, showAdminTool,
   ensureFishI, initFishI, photoHashes, filingNotice, renderFilingNotice,
+  photoIntegrity, photoTamperHtml, PHOTO_TAMPER_TOLERANCE, fishIAuthHeaders,
+  hydratePhotos,
   get fishIStarted(){ return fishIStarted; }, set fishIStarted(v){ fishIStarted = v; },
   galleryOrder, galleryTileHtml, galleryTime, openLightbox, closeLightbox, hideLightbox,
   buildResults, bigFishWinner, frozenResults, saveFrozenResults, setupTodos,
@@ -2495,6 +2497,78 @@ section('29o. Fish-I does not spend the day’s quota on page loads');
     t.fishIStatus = wasStatus;
     t.fishISampler = wasSampler;
   }
+}
+
+// ============================================================
+section('29p. the stored photo is still the one that was submitted');
+// The app offers an angler a length edit and a withdraw on a pending catch. It
+// has never offered to replace the photo. So this does not check for something
+// the app can do - it checks that the hash on the catch record still describes
+// the pixels in storage, because those are two different places and nothing but
+// this joins them.
+{
+  const REAL = 'ffffffffffffffff';
+  const c = { id:'p1', precheck: { hash: REAL } };
+
+  check('the same photo passes', t.photoIntegrity(c, REAL).match, true);
+  check('and says the check actually ran', t.photoIntegrity(c, REAL).checked, true);
+  // Byte-identical bytes hash identically - the stored file is the exact base64
+  // of the string that was hashed. The tolerance is for a decoder rounding a
+  // pixel, not for a different picture.
+  check('a one-bit decode difference is not an accusation',
+    t.photoIntegrity(c, 'fffffffffffffffe').match, true);
+  check('a different photo is caught',
+    t.photoIntegrity(c, '0000000000000000').match, false);
+  check('and the distance is reported',
+    t.photoIntegrity(c, '0000000000000000').distance, 64);
+  check('the tolerance is small enough to mean something',
+    t.PHOTO_TAMPER_TOLERANCE <= 4, true);
+
+  // Absence is not evidence. A catch filed before the first-pass checks existed
+  // has no recorded hash, and that must not read as a failure.
+  check('nothing recorded is not a failure',
+    t.photoIntegrity({ id:'old' }, REAL), { checked:false, match:true, distance:0 });
+  check('nor is a photo that could not be hashed',
+    t.photoIntegrity(c, '').checked, false);
+  check('and neither throws on a null catch',
+    t.photoIntegrity(null, REAL).match, true);
+
+  // Only ever shown on a mismatch. A line on every card saying "this photo is
+  // fine" is a line that stops being read, and then so is the one that matters.
+  check('a matching photo says nothing', t.photoTamperHtml(t.photoIntegrity(c, REAL)), '');
+  check('an unchecked one says nothing either',
+    t.photoTamperHtml({ checked:false, match:true, distance:0 }), '');
+  const warn = t.photoTamperHtml(t.photoIntegrity(c, '0000000000000000'));
+  check('a mismatch is spelled out', warn.length > 0, true);
+  check('with how far apart they are', /64\/64 bits differ/.test(warn), true);
+  check('and says the app cannot have done it',
+    /cannot replace a catch photo/.test(warn), true);
+}
+
+// ============================================================
+section('29q. Fish-I carries the director’s session');
+// The endpoint refuses anyone else now, so the page has to send it. bearerToken
+// falls back to the public anon key when there is no session; the server
+// refuses that explicitly, but the page must not pretend it is a sign-in.
+{
+  // With no session, bearerToken() IS the anon key - so asserting the header
+  // matches bearerToken() would pass just as well if the code sent the key
+  // directly. A session has to be installed for the two to differ.
+  const savedMode = t.authMode;
+  t.noteAuthSession({ access_token: 'real-session-token',
+    user: { id: 'u1', email: 'd@example.com', app_metadata: { director: true } } });
+  check('the session is what gets sent, not the public key',
+    t.fishIAuthHeaders().Authorization, 'Bearer real-session-token');
+  check('which is not the anon key',
+    t.fishIAuthHeaders().Authorization === 'Bearer ' + t.SUPABASE_ANON_KEY, false);
+  check('and the session was recognised as a director', t.authMode, 'director');
+
+  t.noteAuthSession(null);
+  check('signed out, it falls back to the public key',
+    t.fishIAuthHeaders().Authorization, 'Bearer ' + t.SUPABASE_ANON_KEY);
+  check('a bearer header is sent either way',
+    /^Bearer .+/.test(t.fishIAuthHeaders().Authorization), true);
+  check('and the mode went back with it', t.authMode === savedMode, true);
 }
 
 // ============================================================

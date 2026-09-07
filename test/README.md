@@ -114,6 +114,40 @@ The places where a mistake is silent and expensive:
   is busy" into "Fish-I is down until tomorrow" with four untouched models
   sitting there. Per-day and per-minute limits arrive as the same status code
   and do not have the same answer, so they are told apart and said differently.
+- **Fish-I is the director's, and the endpoint says so itself.** The button has
+  always been behind the director panel, but `/api/fish-i` took anybody's word
+  for it — there was no check at all, and the path ships inside `index.html` to
+  every phone in the field. The prompt is built server-side and never accepted
+  from the page, so it could not be turned into a general-purpose Gemini proxy;
+  it could very cheaply be used to spend the day's free quota and leave Fish-I
+  dead mid-event with nothing in the logs to explain it.
+  Every call now carries the caller's Supabase session and the claim is verified
+  against Supabase. `app_metadata` is the only place it is read from — a client
+  can write its own `user_metadata`, so reading that would let anyone declare
+  themselves the director, and there is a test that says so.
+  The tests are mostly about what happens when that conversation does **not** go
+  to plan, because those are the paths where a wrong answer opens the endpoint
+  rather than closing it: a 401, a 500, an unreadable body, Supabase unreachable,
+  and no configuration at all. Every one of them has to refuse.
+  `directorFromToken` refuses **by construction** when nothing is configured.
+  It already refused by accident — the fetch would be handed a relative URL and
+  throw — but "it fails closed because the URL was malformed" is a coincidence,
+  not a guarantee, and the test that proved it went red first.
+- **The stored photo is still the one that was submitted.** The hash lives on
+  the catch record and the pixels live in object storage, and nothing but this
+  check joins them. The app has never offered to replace a catch photo — an
+  angler gets a length edit and a withdraw — so a mismatch was not done through
+  the app. A swap otherwise leaves the length, the timestamp, the GPS fix, the
+  burned-in stamp and the first-pass measurements all describing a picture that
+  is no longer there, every one of them still reading as fine.
+  It costs nothing: the decode has already happened to draw the photo. The
+  tolerance is two bits, and that is for a decoder rounding a pixel, not for a
+  different picture — the stored file is the exact base64 of the string that was
+  hashed. Both directions are pinned, because one threshold has to be tight
+  enough to catch a swap and loose enough not to accuse an honest angler.
+  A catch with no recorded hash reads as **unchecked**, never as failed: absence
+  is not evidence, and `sql/supabase-step4-photo-integrity.sql` is the other
+  half — it stops the swap rather than reporting it.
 - **Who you are, across events.** The trophy case shows your history over every
   tournament, and an entry id only means something inside one event — a fresh
   registration each year, a re-rolled handle, and a name typed by hand and
@@ -554,6 +588,23 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Verify a model by generating with it | lint |
 | Reach `generateContent` from the GET path | lint |
 | Treat a spent model quota as the whole key's | lint + 1 failure |
+| Stop sending the session on either Fish-I call | lint |
+| Send the public anon key as though it were a session | 2 failures |
+| Stop checking who is asking, or ignore the answer | lint |
+| Hard-code the config check true | lint + 2 failures |
+| Read the director claim from `user_metadata` | lint + 4 failures |
+| Accept any truthy value as a director | 2 failures |
+| Accept the anon key as a session | 3 failures |
+| Trust a token Supabase would not vouch for | 4 failures |
+| Stop re-checking the stored photo in the review lists | lint |
+| Accept `verify` and ignore it | lint |
+| Never compare against the recorded hash | lint |
+| Drop the try/catch around a tainted canvas | lint |
+| Stop reporting a swap in the lightbox | lint |
+| Leave the previous fish's warning on screen | lint |
+| Set the tamper tolerance to 0, or to 40 | 1 failure |
+| Read a missing recorded hash as a mismatch | 3 failures |
+| Show the warning on every card | 2 failures |
 | Derive a frozen event's placing again | 1 failure |
 | Count a frozen event against the live species | 1 failure |
 | Derive the Big Fish credit when frozen | 1 failure |

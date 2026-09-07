@@ -709,6 +709,69 @@ if (/^initFishI\(\);/m.test(code)) {
   }
 }
 
+// ------------------------------------------------- only the director asks Fish-I
+// The endpoint refuses anybody else now, so both calls out of the page have to
+// carry the session. Dropping the header does not break anything visibly at
+// build time - it just makes Fish-I stop working, and read as a server fault.
+for (const [needle, why] of [
+  ['async function probeFishIEndpoint', 'the health check'],
+  ['const endpoint = aiReviewEndpoint();', 'the review request']
+]) {
+  const at = script.indexOf(needle);
+  if (at === -1) note('quota', `cannot find ${needle} - its auth header cannot be verified`);
+  else if (!script.slice(at, at + 2500).includes('fishIAuthHeaders(')) {
+    note('quota', `${why} no longer sends fishIAuthHeaders(), so the endpoint will ` +
+      'refuse it as not coming from the director');
+  }
+}
+
+// ------------------------------------------------------- photo integrity
+// The hash lives on the catch record and the pixels live in object storage.
+// Nothing but this check joins them, and all of it runs against a decoded
+// <img>, which the unit tests do not have.
+{
+  const at = script.indexOf('hydratePhotos(pendEl');
+  if (at === -1) note('integrity', 'cannot find the review lists to verify');
+  else if (!/verify:\s*true/.test(script.slice(at, at + 400))) {
+    note('integrity', 'the director review lists no longer re-check the stored photo, ' +
+      'so a photo swapped after filing would pass without comment');
+  }
+  const hy = (script.match(/function hydratePhotos\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  if (!hy) note('integrity', 'hydratePhotos is gone');
+  else if (!hy.includes('flagPhotoMismatch(')) {
+    note('integrity', 'hydratePhotos never calls flagPhotoMismatch(), so opts.verify ' +
+      'is accepted and ignored');
+  }
+  const fl = (script.match(/function flagPhotoMismatch\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  if (!fl) note('integrity', 'flagPhotoMismatch is gone');
+  else {
+    if (!fl.includes('photoIntegrity(')) {
+      note('integrity', 'flagPhotoMismatch no longer compares against the recorded hash');
+    }
+    // A cross-origin photo taints the canvas and getImageData throws. A check
+    // that cannot RUN must never be reported as a check that FAILED.
+    if (!/try\{/.test(fl) || !/catch\(/.test(fl)) {
+      note('integrity', 'flagPhotoMismatch has lost its try/catch - a tainted canvas ' +
+        'would throw inside an onload handler rather than simply not checking');
+    }
+  }
+  // The lightbox is where the director is told to judge, so it is where this
+  // has to be said - and the panel is reused between fish, so a warning left
+  // behind would sit under a photo it has nothing to do with.
+  const lb = (script.match(/async function openLightbox\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  if (!lb) note('integrity', 'openLightbox is gone');
+  else {
+    if (!lb.includes('photoTamperHtml(')) {
+      note('integrity', 'the lightbox no longer reports a swapped photo, which is the ' +
+        'screen the director is told to judge on');
+    }
+    if (!/tamperEl\.hidden = true;/.test(lb)) {
+      note('integrity', 'the lightbox no longer clears the previous fish’s warning, so ' +
+        'it would be shown against a photo it has nothing to do with');
+    }
+  }
+}
+
 // ------------------------------------------------------- serverless functions
 // A relative endpoint the page calls has to exist as a file in api/, or the
 // deploy goes out and the feature 404s with nothing in the console to explain
@@ -748,6 +811,53 @@ for (const m of script.matchAll(/'(\/api\/[a-z0-9-]+)'/g)) {
       if (/generateContent/.test(getPath)) {
         note('quota', 'the GET health-check path in api/fish-i.js reaches generateContent, ' +
           'which is the only thing that costs quota');
+      }
+    }
+
+    // The authorization control itself. An endpoint that quietly passes
+    // everything when it is misconfigured is worse than none, because it reads
+    // as protection - so this checks it fails CLOSED.
+    const post = postAt === -1 ? '' : api.slice(postAt);
+    if (!post) {
+      note('quota', 'cannot find the POST path in api/fish-i.js to verify its auth check');
+    } else {
+      if (!post.includes('directorFromToken(')) {
+        note('quota', 'the POST path in api/fish-i.js no longer checks who is asking - ' +
+          'the endpoint is open again, and its path ships in index.html');
+      }
+      if (!/if \(!authConfigured\(\)\) \{[\s\S]{0,400}?send\(res, 503/.test(post)) {
+        note('quota', 'api/fish-i.js no longer fails closed when it cannot check who is ' +
+          'asking, so a missing env var silently reopens the endpoint');
+      }
+      if (!/who\.ok/.test(post)) {
+        note('quota', 'api/fish-i.js calls directorFromToken but does not act on the answer');
+      }
+    }
+    // authConfigured is what every refusal above hangs off. Hard-coding it true
+    // is the only shape in this file that could plausibly reopen the endpoint,
+    // so it is checked structurally: nothing else can see inside it.
+    const cfg = (api.match(/function authConfigured\(\)\s*\{([\s\S]*?)\n\}/) || ['', ''])[1];
+    if (!cfg) {
+      note('quota', 'authConfigured is gone from api/fish-i.js');
+    } else if (!cfg.includes('AUTH_URL') || !cfg.includes('AUTH_KEY')) {
+      note('quota', 'authConfigured no longer checks for both SUPABASE_URL and ' +
+        'SUPABASE_ANON_KEY, so an unconfigured server would report itself able to ' +
+        'check callers it has no way to check');
+    }
+
+    // app_metadata is the only place the claim may be read from: a client can
+    // write its own user_metadata, so reading that would let anyone declare
+    // themselves the director.
+    const claim = (api.match(/function directorClaim\([^)]*\)\s*\{([\s\S]*?)\n\}/) || ['', ''])[1];
+    if (!claim) {
+      note('quota', 'directorClaim is gone from api/fish-i.js');
+    } else {
+      if (!claim.includes('app_metadata')) {
+        note('quota', 'directorClaim no longer reads app_metadata');
+      }
+      if (claim.includes('user_metadata')) {
+        note('quota', 'directorClaim reads user_metadata, which a client can write - ' +
+          'anyone could declare themselves the director');
       }
     }
 

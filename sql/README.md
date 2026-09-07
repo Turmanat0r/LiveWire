@@ -24,6 +24,7 @@ second organizer running their own tournament would need.
 | 3 | `supabase-step2b-enforce-policies.sql` | Turns ownership on. **Read the gate at the top first** |
 | 4 | `supabase-one-entry-per-person.sql` | Unique name, phone and board code |
 | 5 | `supabase-step3-shared-devices.sql` | Lets one angler use one entry from several devices |
+| 6 | `supabase-step4-photo-integrity.sql` | Stops a catch photo being swapped after it is filed |
 
 Between 2 and 3 there is a manual step, described in 3: enable anonymous
 sign-ins, open the app once so a device actually exists, and create the
