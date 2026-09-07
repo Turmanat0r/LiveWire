@@ -110,6 +110,8 @@ globalThis.__t = {
   standingsFor, byLengthThenEarliest, bySmallestThenEarliest, catchTime,
   canActFor, reviewCatch, showAdminTool,
   galleryOrder, galleryTileHtml, galleryTime, openLightbox, closeLightbox, hideLightbox,
+  buildResults, bigFishWinner, frozenResults, saveFrozenResults, setupTodos,
+  loadBetsAllEvents, renderResultsAdmin, renderSetupTodos,
   reelRows, reelPlan, reelSceneAt, reelMimeType, reelFileExt, reelFileName,
   catchPhotoFileName, reelSupported, REEL_MAX_SHOTS,
   personKey, myEntryIds, dayKeyIn, trophyEventRow, trophyStats, trophyBadges,
@@ -1796,7 +1798,7 @@ section('29i. the trophy case');
   check('nobody signed in matches nothing', Array.from(t.myEntryIds(tAnglers, [])), []);
 
   // ---- the numbers ----
-  const st = t.trophyStats(tAnglers, tCatches, ['e1-me'], info);
+  const st = t.trophyStats(tAnglers, tCatches, [], ['e1-me'], info);
   check('both tournaments are in the history', st.events, 2);
   check('newest first', st.history.map(r => r.eventId), ['ev-2029','ev-2027']);
   check('approved fish are counted, across both', st.fish, 5);
@@ -1830,7 +1832,7 @@ section('29i. the trophy case');
   // a pike year, its walleye stop scoring - and the count has to follow.
   const pikeInfo = (id) => Object.assign({}, info(id),
     { targetSpecies: id === 'ev-2027' ? 'Northern Pike' : 'Walleye' });
-  const st2 = t.trophyStats(tAnglers, tCatches, ['e1-me'], pikeInfo);
+  const st2 = t.trophyStats(tAnglers, tCatches, [], ['e1-me'], pikeInfo);
   check('a past event is scored against the species IT was fished for',
     st2.history.find(r => r.eventId === 'ev-2027').scoring, 0);
   check('while the other year is untouched',
@@ -1846,22 +1848,22 @@ section('29i. the trophy case');
     st2.history.find(r => r.eventId === 'ev-2027').entrants, 0);
 
   // ---- edges ----
-  const empty = t.trophyStats([], [], [], info);
+  const empty = t.trophyStats([], [], [], [], info);
   check('a blank slate is not an error', empty.events, 0);
   check('with no personal best', empty.best, 0);
   check('and no best finish', empty.bestPlacing, 0);
-  check('missing arguments do not throw', t.trophyStats(null, null, null, null).events, 0);
+  check('missing arguments do not throw', t.trophyStats(null, null, null, null, null).events, 0);
   // Registered but never landed anything: the event still belongs in the
   // history, or an angler's first tournament vanishes from their own record.
   const dnf = t.trophyStats([A({ id:'d1', eventId:'ev-2029', phone:'4065559999' })],
-    [], ['d1'], info);
+    [], [], ['d1'], info);
   check('a tournament fished with no fish still shows up', dnf.events, 1);
   check('unranked rather than placed', dnf.history[0].placing, 0);
 
   // A disqualified entry keeps its fish count and loses its placing.
   const dqA = [A({ id:'x1', eventId:'ev-2029', phone:'4065558888', disqualified:true })];
   const dqRow = t.trophyStats(dqA,
-    [C({ id:'x', eventId:'ev-2029', anglerId:'x1', length:33 })], ['x1'], info);
+    [C({ id:'x', eventId:'ev-2029', anglerId:'x1', length:33 })], [], ['x1'], info);
   check('a disqualified entry still shows the fish it caught', dqRow.history[0].fish, 1);
   check('but takes no placing', dqRow.history[0].placing, 0);
   check('and the row says so', dqRow.history[0].disqualified, true);
@@ -1878,9 +1880,9 @@ section('29i. the trophy case');
     C({ id:'l-c', eventId:'ev-2027', anglerId:'l1', timestamp:Date.UTC(2027,8,19,5) })
   ];
   check('three fish either side of UTC midnight are one Denver day',
-    t.trophyStats(lateAnglers, lateCatches, ['l1'], info).bestDay, 3);
+    t.trophyStats(lateAnglers, lateCatches, [], ['l1'], info).bestDay, 3);
   check('and the same three read as two days in UTC',
-    t.trophyStats(lateAnglers, lateCatches, ['l1'],
+    t.trophyStats(lateAnglers, lateCatches, [], ['l1'],
       (id)=> Object.assign({}, info(id), { timeZone:'UTC' })).bestDay, 2);
 
   // ---- day keys ----
@@ -1912,7 +1914,7 @@ section('29i. the trophy case');
   const otherOnly = t.trophyStats(
     [A({ id:'o1', eventId:'ev-2029', phone:'4065557777' })],
     [C({ id:'o-big', eventId:'ev-2029', anglerId:'o1', length:40, species:'Other' }),
-     C({ id:'o-small', eventId:'ev-2029', anglerId:'o1', length:12 })], ['o1'], info);
+     C({ id:'o-small', eventId:'ev-2029', anglerId:'o1', length:12 })], [], ['o1'], info);
   check('a huge non-scoring fish is still a fish caught', otherOnly.fish, 2);
   check('but the personal best is the scoring one', otherOnly.best, 12);
   check('and it earns no size badge',
@@ -1927,7 +1929,7 @@ section('29i. the trophy case');
      A({ id:'w2', eventId:'ev-2029', phone:'4065554446' })],
     [C({ id:'pp', eventId:'ev-2029', anglerId:'p1', length:15 }),
      C({ id:'ww1', eventId:'ev-2029', anglerId:'w1', length:25 }),
-     C({ id:'ww2', eventId:'ev-2029', anglerId:'w2', length:20 })], ['p1'], info);
+     C({ id:'ww2', eventId:'ev-2029', anglerId:'w2', length:20 })], [], ['p1'], info);
   check('third place is third', podiumOnly.bestPlacing, 3);
   check('it counts as a podium', podiumOnly.podiums, 1);
   check('but it is not a win', podiumOnly.wins, 0);
@@ -2064,6 +2066,191 @@ section('29j. the highlight reel');
     if(savedRec === undefined) delete globalThis.MediaRecorder;
     else globalThis.MediaRecorder = savedRec;
   }
+}
+
+// ============================================================
+section('29k. freezing a result, and what the trophy case remembers');
+// The trophy case looks backwards. Working a finished event out again from the
+// catches every time means a cleanup next year quietly rewrites what somebody's
+// trophy case says about this year.
+{
+  const FA = (over) => Object.assign({ division:'solo', checkins:{} }, over);
+  const FC = (over) => Object.assign({ status:'approved', species:'Walleye',
+    division:'solo', length:20, timestamp:1000 }, over);
+  const fInfo = (id) => ({ name:'Open', year:'2027', targetSpecies:'Walleye',
+    timeZone:'America/Denver', results: null });
+
+  const fAnglers = [
+    FA({ id:'f-me', eventId:'ev-f', phone:'4065551111', handle:'Old Handle', bigfish:true }),
+    FA({ id:'f-rival', eventId:'ev-f', phone:'4065552222', handle:'Rival', bigfish:true })
+  ];
+  const fCatches = [
+    FC({ id:'fc1', eventId:'ev-f', anglerId:'f-me', length:28 }),
+    FC({ id:'fc2', eventId:'ev-f', anglerId:'f-rival', length:24 })
+  ];
+  const fBets = [
+    { kind:'bet', id:'b-won', eventId:'ev-f', title:'First fish', creatorId:'f-rival',
+      winnerId:'f-me', settledAt: 5 },
+    { kind:'bet', id:'b-open', eventId:'ev-f', title:'Longest of the day',
+      creatorId:'f-me', winnerId:null },
+    { kind:'bet', id:'b-theirs', eventId:'ev-f', title:'Smallest', creatorId:'f-me',
+      winnerId:'f-rival', settledAt: 6 },
+    { kind:'join', id:'j1', eventId:'ev-f', betId:'b-won', anglerId:'f-me' }
+  ];
+
+  // ---- the record ----
+  const rec = t.buildResults(fAnglers, fCatches, fBets, 'Walleye');
+  check('the solo board is frozen in order',
+    rec.divisions.solo.map(r => r.anglerIds[0]), ['f-me','f-rival']);
+  check('an empty division is still recorded', rec.divisions.team, []);
+  check('the Big Fish pot has a winner', rec.bigFish.anglerId, 'f-me');
+  check('with the fish that took it', rec.bigFish.catchId, 'fc1');
+  check('settled side bets are kept', rec.bets.map(b => b.id).sort(), ['b-theirs','b-won']);
+  // An open bet has no winner, and freezing it as though it had would put a
+  // prize in somebody's trophy case that nobody awarded.
+  check('an unsettled bet is not', rec.bets.some(b => b.id === 'b-open'), false);
+  check('the species it was scored against is recorded', rec.targetSpecies, 'Walleye');
+  check('and when it was called', typeof rec.frozenAt, 'number');
+
+  // ---- the Big Fish rule ----
+  check('only a buy-in can take the pot',
+    t.bigFishWinner([FA({ id:'n', bigfish:false })],
+      [FC({ id:'nc', anglerId:'n', length:40 })], 'Walleye'), null);
+  check('and only the scoring species',
+    t.bigFishWinner(fAnglers, [FC({ id:'x', anglerId:'f-me', length:40, species:'Other' })],
+      'Walleye'), null);
+  check('a pending fish cannot take it',
+    t.bigFishWinner(fAnglers, [FC({ id:'y', anglerId:'f-me', length:40, status:'pending' })],
+      'Walleye'), null);
+  check('an empty pot has no winner', t.bigFishWinner([], [], 'Walleye'), null);
+
+  // Somebody winning the pot is not the same as YOU winning it. With a fixture
+  // where you happen to win, "was there a winner" and "was it me" pass alike.
+  const theirPot = t.buildResults(fAnglers,
+    [FC({ id:'tp', eventId:'ev-f', anglerId:'f-rival', length:33 })], fBets, 'Walleye');
+  check('the pot went to the rival', theirPot.bigFish.anglerId, 'f-rival');
+  const notMine = t.trophyStats(fAnglers,
+    [FC({ id:'tp', eventId:'ev-f', anglerId:'f-rival', length:33 })], fBets, ['f-me'],
+    (id)=> Object.assign({}, fInfo(id), { results: theirPot }));
+  check('and your trophy case does not claim it',
+    notMine.history[0].bigFishWon, false);
+  check('nor does the badge', t.trophyBadges(notMine).find(b => b.id === 'big-fish').earned, false);
+
+  // ---- what the trophy row shows ----
+  const live = t.trophyStats(fAnglers, fCatches, fBets, ['f-me'], fInfo);
+  const row = live.history[0];
+  check('the row names the handle carried THAT year', row.handle, 'Old Handle');
+  check('the Big Fish pot is credited', row.bigFishWon, true);
+  check('and only the side bet actually won', row.betsWon, ['First fish']);
+  check('not the one somebody else won', row.betsWon.indexOf('Smallest'), -1);
+  check('nor the one still open', row.betsWon.indexOf('Longest of the day'), -1);
+  check('an unfrozen row says so', row.frozen, false);
+  check('the totals roll up', [live.bigFishWins, live.betsWon], [1, 1]);
+  check('and there are badges for them',
+    t.trophyBadges(live).filter(b => (b.id === 'big-fish' || b.id === 'side-bet') && b.earned).length, 2);
+
+  // ---- frozen wins over derived ----
+  // The rival's fish is amended to 99" AFTER the freeze. The live board would
+  // move; the frozen one must not, because the placing an angler was told on
+  // the day has to stay the placing they were told.
+  const amended = fCatches.map(c=>
+    c.id === 'fc2' ? Object.assign({}, c, { length:99 }) : c);
+  const stillLive = t.trophyStats(fAnglers, amended, fBets, ['f-me'], fInfo);
+  check('without a freeze, a later amendment moves the placing',
+    stillLive.history[0].placing, 2);
+
+  const frozenInfo = (id) => Object.assign({}, fInfo(id), { results: rec });
+  const held = t.trophyStats(fAnglers, amended, fBets, ['f-me'], frozenInfo);
+  check('with one, it does not', held.history[0].placing, 1);
+  check('the row says it is frozen', held.history[0].frozen, true);
+  check('and the Big Fish credit is frozen with it', held.history[0].bigFishWon, true);
+  // A bet settled after the freeze is not in the frozen record, so it must not
+  // appear either - the frozen copy is the whole answer, not a starting point.
+  const laterBets = fBets.concat([{ kind:'bet', id:'b-late', eventId:'ev-f',
+    title:'Added later', creatorId:'f-rival', winnerId:'f-me', settledAt: 9 }]);
+  check('a bet settled after the freeze is not backdated into it',
+    t.trophyStats(fAnglers, fCatches, laterBets, ['f-me'], frozenInfo)
+      .history[0].betsWon, ['First fish']);
+  check('while an unfrozen event does pick it up',
+    t.trophyStats(fAnglers, fCatches, laterBets, ['f-me'], fInfo)
+      .history[0].betsWon, ['Added later','First fish']);
+
+  // A freeze taken against a different species governs the row's fish count
+  // too, or the count and the board would disagree.
+  const pikeFrozen = (id) => Object.assign({}, fInfo(id),
+    { results: t.buildResults(fAnglers, fCatches, fBets, 'Northern Pike') });
+  check('a frozen event is counted against the species it was frozen on',
+    t.trophyStats(fAnglers, fCatches, fBets, ['f-me'], pikeFrozen).history[0].scoring, 0);
+
+  // ---- the round trip through config ----
+  await setEvent(E1);
+  check('nothing is frozen to begin with', t.frozenResults(E1), null);
+  await t.saveFrozenResults(E1, rec);
+  check('a frozen record survives being saved', t.frozenResults(E1).bigFish.anglerId, 'f-me');
+  check('and reaches the event info the trophy case reads',
+    !!t.trophyEventInfo(E1).results, true);
+  check('another event is untouched', t.frozenResults(E2), null);
+  // Two frozen at once: saving the second must not wipe the first, which a
+  // fresh object rather than a copy would do silently.
+  await t.saveFrozenResults(E2, t.buildResults(fAnglers, fCatches, fBets, 'Northern Pike'));
+  check('a second freeze does not wipe the first',
+    t.frozenResults(E1).targetSpecies, 'Walleye');
+  check('and the second is its own', t.frozenResults(E2).targetSpecies, 'Northern Pike');
+  await t.saveFrozenResults(E2, null);
+  check('thawing one leaves the other frozen', !!t.frozenResults(E1), true);
+  await t.saveFrozenResults(E1, null);
+  check('and it can be thawed again', t.frozenResults(E1), null);
+}
+
+// ============================================================
+section('29l. the reminder that outlives this conversation');
+// A commit message is not a reminder, and neither is a comment nobody opens
+// between tournaments. This lives on the screen the next event gets set up on,
+// and only while there is still time to act.
+{
+  const openEvt = { registrationClose:'2027-06-02T00:00:00-06:00' };
+  const beforeClose = Date.UTC(2027, 0, 1);
+  const afterClose = Date.UTC(2027, 8, 1);
+  const roster = [{ id:'a', phone:'4065551234' }, { id:'b', phone:'4065559999' }];
+
+  const todos = t.setupTodos(openEvt, roster, beforeClose);
+  check('while registration is open, there is something to do', todos.length > 0, true);
+  check('accounts are on the list', todos.some(x => x.id === 'accounts'), true);
+  check('and configuring reset email with them', todos.some(x => x.id === 'smtp'), true);
+  check('each one says what it costs to leave',
+    todos.every(x => x.title && x.detail && x.deadline), true);
+  check('and carries the date it stops being cheap',
+    todos.every(x => x.deadline === new Date(openEvt.registrationClose).getTime()), true);
+
+  // Once registration has closed the moment has passed: doing it now would give
+  // half the field an account and half none, which is worse than either.
+  check('after registration closes it stops nagging',
+    t.setupTodos(openEvt, roster, afterClose), []);
+  check('an event with no close date does not nag either',
+    t.setupTodos({}, roster, beforeClose), []);
+  check('nor does a junk one', t.setupTodos({ registrationClose:'soon' }, roster, beforeClose), []);
+
+  // A shared phone number is the actual bug, so finding one on the roster
+  // raises the item rather than leaving it as a someday.
+  const shared = [{ id:'a', phone:'(406) 555-1234' }, { id:'b', phone:'406-555-1234' }];
+  const sharedTodos = t.setupTodos(openEvt, shared, beforeClose);
+  const acct = sharedTodos.find(x => x.id === 'accounts');
+  check('a shared number is spotted', /already 1 phone number/.test(acct.detail), true);
+  check('and raises the item', acct.severity, 'now');
+  check('while a clean roster leaves it as a soon',
+    t.setupTodos(openEvt, roster, beforeClose).find(x => x.id === 'accounts').severity, 'soon');
+  // Matched on the collision phrasing, not the word "already" - that also
+  // appears in the standing copy about signInWithPassword.
+  check('an entry with no phone is not a collision',
+    /shared by more than one entry/.test(
+      t.setupTodos(openEvt, [{ id:'a' }, { id:'b' }], beforeClose)
+        .find(x => x.id === 'accounts').detail), false);
+  check('but two sharing one is',
+    /shared by more than one entry/.test(
+      t.setupTodos(openEvt, shared, beforeClose)
+        .find(x => x.id === 'accounts').detail), true);
+  check('and an empty roster does not throw',
+    t.setupTodos(openEvt, null, beforeClose).length > 0, true);
 }
 
 // ============================================================

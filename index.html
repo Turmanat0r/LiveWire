@@ -1149,6 +1149,16 @@
   .hist-place .pl{display:block;font-size:16px;font-weight:700;}
   .hist-place .pl-sub{display:block;font-size:9.5px;color:var(--steel);}
   .hist-row.won{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold);}
+  .hist-won{display:block;font-size:10.5px;color:var(--gold-deep);margin-top:3px;font-weight:600;}
+  .freeze-state{font-size:11px;color:var(--steel);margin:6px 0 0;}
+  .todo{
+    border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:4px;
+    padding:9px 10px;margin-bottom:8px;background:var(--paper-2);
+  }
+  .todo.now{border-left-color:#A3372A;}
+  .todo-title{display:block;font-weight:600;font-size:12px;}
+  .todo-detail{display:block;font-size:10.5px;color:var(--steel);margin-top:3px;line-height:1.5;}
+  .todo-when{display:block;font-size:10px;color:var(--steel);margin-top:4px;font-weight:600;}
   .badge-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:7px;}
   .badge-tile{
     border:1px solid var(--line);border-radius:5px;padding:9px 6px;text-align:center;
@@ -1965,6 +1975,10 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6Z"/><circle cx="12" cy="12" r="2.6"/></svg>
             <span class="director-tool-copy"><strong>Fish to Review</strong><span id="review-tool-summary">Nothing waiting</span></span>
           </button>
+          <button class="director-tool wide" type="button" data-admin-tool="results">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v6a5 5 0 0 1-10 0V4Z"/><path d="M7 6H4.5A1.5 1.5 0 0 0 3 7.5 3.5 3.5 0 0 0 6.5 11H7"/><path d="M17 6h2.5A1.5 1.5 0 0 1 21 7.5 3.5 3.5 0 0 1 17.5 11H17"/></svg>
+            <span class="director-tool-copy"><strong>Results</strong><span id="results-tool-summary">Not frozen</span></span>
+          </button>
           <button class="director-tool wide" type="button" data-admin-tool="report">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h8l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-16a1 1 0 0 1 1-1Z"/><path d="M14 3.5v4h4"/><path d="M8.5 12.5h7M8.5 16h4"/></svg>
             <span class="director-tool-copy"><strong>FWP Report</strong><span id="report-tool-summary">&mdash;</span></span>
@@ -1981,6 +1995,7 @@
         </div>
 
         <div class="card" id="admin-tool-event" style="display:none;">
+          <div id="setup-todos"></div>
           <h2>Event</h2>
           <p class="hint" style="margin-top:0;">Which tournament this app is running. Every device follows this setting, so change it once and the whole field moves together. Records stay attached to the event they were logged under &mdash; switching never mixes two fields, and switching back brings the first one up exactly as it was.</p>
           <div class="field">
@@ -2109,6 +2124,23 @@
           <div class="err" id="ev-err" style="display:none;"></div>
           <button class="secondary" id="ev-save">Add event</button>
           <button class="secondary" id="ev-cancel" style="display:none;">Cancel edit</button>
+        </div>
+
+        <div class="card" id="admin-tool-results" style="display:none;">
+          <h2>Results</h2>
+          <p class="hint" style="margin-top:0;">The trophy case works everything out
+            again from the catches every time it opens. That is right while the event
+            is running and wrong once it is over &mdash; a later cleanup would quietly
+            rewrite what an angler&rsquo;s trophy case says about this year. Freezing
+            writes the placings, the Big Fish pot and the settled side bets down once,
+            and the trophy case reads those from then on.</p>
+          <div id="results-preview"></div>
+          <p class="freeze-state" id="results-state"></p>
+          <div class="actions">
+            <button class="secondary" type="button" id="results-freeze">Freeze this year&rsquo;s results</button>
+            <button class="small danger" type="button" id="results-thaw" style="display:none;">Unfreeze</button>
+          </div>
+          <p class="hint" id="results-err" style="display:none;color:#A3372A;"></p>
         </div>
 
         <div class="card" id="admin-tool-contestants" style="display:none;">
@@ -4118,6 +4150,7 @@ async function loadCatchesAllEvents(){ return deepClone(allRows('catches')); }
 // something inside one event. Nothing that scores, ranks or pays reads either
 // of these - they use loadAnglers()/loadCatches(), which stay on the live event.
 async function loadAnglersAllEvents(){ return deepClone(allRows('anglers')); }
+async function loadBetsAllEvents(){ return deepClone(allRows('bets')); }
 async function saveCatches(list){ return await saveCollection('catches', list); }
 async function loadDonations(){ return cachedRows('donations'); }
 async function loadMessages(){ return cachedRows('messages'); }
@@ -6566,6 +6599,220 @@ async function renderLivewellList(){
   hydratePhotos(el);
 }
 
+// ---- what is still outstanding before registration opens ----
+// A note in a commit message is not a reminder. Neither is a comment in the
+// source, or a line in a README nobody opens between tournaments. The only
+// place a decision taken in September reliably reaches the person who has to
+// act on it the following June is the screen they go to when they set the next
+// event up - so this lives there, and it only appears while there is still
+// time to act on it.
+//
+// Each item says what is missing, what it costs to leave it, and the date it
+// stops being possible to fix cheaply.
+function setupTodos(evt, anglers, now){
+  const at = now === undefined ? Date.now() : now;
+  const out = [];
+  const closeMs = new Date((evt && evt.registrationClose) || 0).getTime();
+  const open = isFinite(closeMs) && at < closeMs;
+  if(!open) return out;
+
+  // ANGLER ACCOUNTS. The trophy case joins one person's entries across years by
+  // PHONE NUMBER, because there is nothing better on the records. Two people
+  // sharing a number - a parent and a kid, most obviously - get one merged
+  // trophy case showing fish neither of them caught alone. Fixing that means
+  // real accounts, and the only moment it can be done without splitting a
+  // history in half is BEFORE a registration window opens.
+  const shared = {};
+  (anglers || []).forEach(a=>{
+    const k = personKey(a);
+    if(k) shared[k] = (shared[k] || 0) + 1;
+  });
+  const collisions = Object.keys(shared).filter(k=> shared[k] > 1).length;
+  out.push({
+    id: 'accounts',
+    title: 'Angler accounts are not set up',
+    detail: 'The trophy case links an angler\'s years together by phone number. ' +
+      'Two people sharing one number share a trophy case, and a changed number ' +
+      'splits one in half. Real sign-in (email and password) fixes both, and ' +
+      'signInWithPassword is already in the app for the director.' +
+      (collisions > 0
+        ? ' There ' + (collisions === 1 ? 'is already 1 phone number' : 'are already ' +
+          collisions + ' phone numbers') + ' shared by more than one entry on this roster.'
+        : ''),
+    // Doing it after registration opens means half the field has an account
+    // and half does not, which is worse than either.
+    deadline: closeMs,
+    severity: collisions > 0 ? 'now' : 'soon'
+  });
+  out.push({
+    id: 'smtp',
+    title: 'Password-reset email is not configured',
+    detail: 'Only matters once accounts exist, and it has to be done first. ' +
+      'Supabase\'s built-in mail is rate limited to a handful an hour and is ' +
+      'often filed as spam, so a registration rush would lock people out and ' +
+      'leave you answering the phone. A real SMTP provider is free at this size.',
+    deadline: closeMs,
+    severity: 'soon'
+  });
+  return out;
+}
+
+// ---- freezing a tournament's result ----
+// The trophy case looks BACKWARDS, and everything it says about a finished
+// event is otherwise worked out again from the catch records every time the
+// screen opens. That is right while an event is live and wrong the moment it
+// is over: a data cleanup, a re-run of the boundary check, or an edit to an old
+// event's target species would silently rewrite what somebody's 2027 trophy
+// case says about 2027. A placing an angler was told on the day has to stay the
+// placing they were told.
+//
+// So the director freezes the result once the reviewing is done, and from then
+// on the trophy case reads the frozen copy. Deriving stays the fallback for any
+// event nobody has frozen - including every event from before this existed.
+function frozenResults(eventId){
+  const all = (liveCache.config && liveCache.config.results) || {};
+  return all[eventId || activeEventId()] || null;
+}
+async function saveFrozenResults(eventId, record){
+  const all = Object.assign({}, (liveCache.config && liveCache.config.results) || {});
+  if(record) all[eventId] = record; else delete all[eventId];
+  return await saveConfig({ results: all });
+}
+
+// Who took the Big Fish pot. Derived here and stored at freeze time, because
+// nothing records it as it happens - it is a running answer to "who is winning"
+// right up until the moment it becomes a result.
+function bigFishWinner(anglers, catches, target){
+  const inPot = {};
+  bigFishEntrants(anglers || []).forEach(a=>{ inPot[a.id] = true; });
+  const best = (catches || [])
+    .filter(c=> c && c.status === 'approved' && c.species === target && inPot[c.anglerId])
+    .sort(byLengthThenEarliest)[0];
+  return best ? { anglerId: best.anglerId, catchId: best.id, length: best.length } : null;
+}
+
+// Enough to answer "where did I come and what did I win" without ever going
+// back to the catches. Deliberately small: the fish themselves are still on
+// record, this is only the verdict on them.
+function buildResults(anglers, catches, bets, target){
+  const divisions = {};
+  ['solo', 'team'].forEach(div=>{
+    divisions[div] = standingsFor(div, catches || [], anglers || [], target)
+      .map(row=> ({ key: row.key, anglerIds: row.anglerIds.slice(),
+                    best: row.best, top3: row.top3sum }));
+  });
+  return {
+    frozenAt: Date.now(),
+    targetSpecies: target,
+    divisions,
+    bigFish: bigFishWinner(anglers, catches, target),
+    // Only settled ones. An open bet has no winner and freezing it as though it
+    // had would put a prize in somebody's trophy case that nobody awarded.
+    bets: betRecords(bets || [])
+      .filter(b=> b && b.winnerId)
+      .map(b=> ({ id: b.id, title: b.title, winnerId: b.winnerId }))
+  };
+}
+
+// Painted at the top of Director -> Event, which is the screen the next
+// tournament gets set up on. Nothing to do means nothing on screen.
+async function renderSetupTodos(){
+  const el = document.getElementById('setup-todos');
+  if(!el) return;
+  const todos = setupTodos(activeEvent(), await loadAnglers());
+  if(todos.length === 0){ el.innerHTML = ''; return; }
+  el.innerHTML = todos.map(td=>{
+    const days = Math.ceil((td.deadline - Date.now()) / 86400000);
+    const when = days > 0
+      ? days + (days === 1 ? ' day until registration closes' : ' days until registration closes')
+      : 'registration has closed';
+    return '<div class="todo ' + escapeHtml(td.severity) + '">' +
+      '<span class="todo-title">' + escapeHtml(td.title) + '</span>' +
+      '<span class="todo-detail">' + escapeHtml(td.detail) + '</span>' +
+      '<span class="todo-when">' + escapeHtml(when) + '</span></div>';
+  }).join('');
+}
+
+// ---- the director's Results tool ----
+async function renderResultsAdmin(){
+  const wrap = document.getElementById('results-preview');
+  if(!wrap) return;
+  const evt = activeEvent();
+  const frozen = frozenResults(evt.id);
+  const anglers = await loadAnglers();
+  const catches = await loadCatches();
+  const bets = await loadBets();
+  const target = frozen ? frozen.targetSpecies : targetSpecies();
+  const view = frozen || buildResults(anglers, catches, bets, target);
+  const byId = {};
+  anglers.forEach(a=>{ byId[a.id] = a; });
+
+  const pending = catches.filter(c=> c.status === 'pending').length;
+  setText('results-tool-summary', frozen ? 'Frozen' : 'Not frozen');
+  setText('results-state', frozen
+    ? 'Frozen ' + new Date(frozen.frozenAt).toLocaleString() + '. The trophy case ' +
+      'reads this, so nothing logged from here on changes it.'
+    : (pending > 0
+        ? pending + ' still waiting on review. Freezing now would leave them out.'
+        : 'Not frozen. The trophy case is still working this out from the catches ' +
+          'every time it opens.'));
+
+  const freezeBtn = document.getElementById('results-freeze');
+  const thawBtn = document.getElementById('results-thaw');
+  if(freezeBtn) freezeBtn.textContent = frozen ? 'Re-freeze from the catches as they stand' : 'Freeze this year\u2019s results';
+  if(thawBtn) thawBtn.style.display = frozen ? '' : 'none';
+
+  const podium = (div)=>{
+    const rows = (view.divisions && view.divisions[div]) || [];
+    if(rows.length === 0) return '<p class="hint" style="margin:4px 0 0;">Nobody ranked.</p>';
+    return rows.slice(0, 3).map((r, i)=>
+      '<div class="lbrow"><div class="rank">' + (i + 1) + '</div><div class="who"><div class="name">' +
+      escapeHtml(r.anglerIds.map(id=> displayHandle(byId[id])).join(' & ')) +
+      '</div></div><div class="len">' + Number(r.best).toFixed(2) + '&quot;</div></div>').join('');
+  };
+  const bf = view.bigFish;
+  wrap.innerHTML =
+    '<h2 style="margin-bottom:6px;">Solo</h2>' + podium('solo') +
+    '<h2 style="margin:12px 0 6px;">Team</h2>' + podium('team') +
+    '<h2 style="margin:12px 0 6px;">Big Fish pot</h2>' +
+    (bf ? '<div class="lbrow"><div class="who"><div class="name">' +
+      escapeHtml(displayHandle(byId[bf.anglerId])) + '</div></div><div class="len">' +
+      Number(bf.length).toFixed(2) + '&quot;</div></div>'
+     : '<p class="hint" style="margin:4px 0 0;">No qualifying catch in the pot.</p>') +
+    '<h2 style="margin:12px 0 6px;">Side bets</h2>' +
+    ((view.bets || []).length === 0
+      ? '<p class="hint" style="margin:4px 0 0;">None settled.</p>'
+      : view.bets.map(b=> '<div class="lbrow"><div class="who"><div class="name">' +
+          escapeHtml(b.title) + '</div><div class="sub">' +
+          escapeHtml(displayHandle(byId[b.winnerId])) + '</div></div></div>').join(''));
+}
+
+bindEl('results-freeze','click', async ()=>{
+  const err = document.getElementById('results-err');
+  if(err) err.style.display = 'none';
+  const catches = await loadCatches();
+  const pending = catches.filter(c=> c.status === 'pending').length;
+  const msg = 'Freeze this year\u2019s results?\n\n' +
+    'Every angler\u2019s trophy case will show these placings from now on, ' +
+    'whatever happens to the records afterwards.' +
+    (pending > 0 ? '\n\n' + pending + ' catches are still pending review and will NOT count.' : '');
+  if(!window.confirm(msg)) return;
+  const anglers = await loadAnglers();
+  const record = buildResults(anglers, catches, await loadBets(), targetSpecies());
+  if(!await saveFrozenResults(activeEventId(), record)){
+    if(err){ err.textContent = 'That did not save. Check the sync line and try again.'; err.style.display = 'block'; }
+    return;
+  }
+  renderResultsAdmin();
+});
+
+bindEl('results-thaw','click', async ()=>{
+  if(!window.confirm('Unfreeze? The trophy case goes back to working the placings ' +
+    'out from the catches, so they can move again.')) return;
+  await saveFrozenResults(activeEventId(), null);
+  renderResultsAdmin();
+});
+
 // ---- the trophy case ----
 // Personal bests, a row for every event fished, and badges earned.
 //
@@ -6625,10 +6872,13 @@ function dayKeyIn(ts, tz){
 
 // One event's line in the history. `settingsFor` and `eventInfo` are passed in
 // rather than read from globals so this can be tested without an app around it.
-function trophyEventRow(eventId, evAnglers, evCatches, mineIds, info){
+function trophyEventRow(eventId, evAnglers, evCatches, evBets, mineIds, info){
   const meHere = evAnglers.filter(a=> mineIds.has(a.id));
   if(meHere.length === 0) return null;
-  const target = (info && info.targetSpecies) || '';
+  const frozen = (info && info.results) || null;
+  // A frozen event is scored by the species it was frozen against, so the fish
+  // count on the row and the board it was placed on can never disagree.
+  const target = frozen ? frozen.targetSpecies : ((info && info.targetSpecies) || '');
   const tz = (info && info.timeZone) || 'UTC';
   const approved = evCatches.filter(c=>
     c && c.status === 'approved' && mineIds.has(c.anglerId));
@@ -6641,13 +6891,21 @@ function trophyEventRow(eventId, evAnglers, evCatches, mineIds, info){
 
   const entry = meHere[0];
   const division = entry.division || 'solo';
-  // Scored against THIS event's species, not the live one's - see
-  // isScoringSpecies(). Getting that wrong would empty a past event's board.
-  const table = standingsFor(division, evCatches, evAnglers, target);
+  // The frozen board if there is one; otherwise worked out now, against THIS
+  // event's species rather than the live one's - see isScoringSpecies().
+  const table = (frozen && frozen.divisions && frozen.divisions[division])
+    ? frozen.divisions[division]
+    : standingsFor(division, evCatches, evAnglers, target);
   let placing = 0;
   for(let i = 0; i < table.length; i++){
-    if(table[i].anglerIds.some(id=> mineIds.has(id))){ placing = i + 1; break; }
+    if((table[i].anglerIds || []).some(id=> mineIds.has(id))){ placing = i + 1; break; }
   }
+  const bigFish = frozen ? frozen.bigFish : bigFishWinner(evAnglers, evCatches, target);
+  const wonBets = (frozen ? (frozen.bets || [])
+                          : betRecords(evBets || []).filter(b=> b && b.winnerId))
+    .filter(b=> mineIds.has(b.winnerId))
+    .map(b=> b.title)
+    .sort();
   const days = {};
   meHere.forEach(a=>{
     Object.keys(a.checkins || {}).forEach(k=>{
@@ -6660,6 +6918,13 @@ function trophyEventRow(eventId, evAnglers, evCatches, mineIds, info){
     eventId,
     name: (info && info.name) || eventId,
     year: (info && info.year) || '',
+    // The handle carried THAT year. It is re-rolled per entry, so this is what
+    // the board actually called you at the time - which is the point of showing
+    // it rather than today's.
+    handle: displayHandle(entry),
+    frozen: !!frozen,
+    bigFishWon: !!(bigFish && mineIds.has(bigFish.anglerId)),
+    betsWon: wonBets,
     division,
     fish: approved.length,
     scoring: scoring.length,
@@ -6680,20 +6945,23 @@ function trophyEventRow(eventId, evAnglers, evCatches, mineIds, info){
 
 // Everything the trophy case shows, in one pass, so the numbers on the screen
 // and the badges beneath them can never disagree about what you have done.
-function trophyStats(allAnglers, allCatches, myIds, infoFor){
+function trophyStats(allAnglers, allCatches, allBets, myIds, infoFor){
   const ids = myEntryIds(allAnglers, myIds);
-  const anglersBy = {}, catchesBy = {};
+  const anglersBy = {}, catchesBy = {}, betsBy = {};
   (allAnglers || []).forEach(a=>{
     const k = rowEventId(a); (anglersBy[k] = anglersBy[k] || []).push(a);
   });
   (allCatches || []).forEach(c=>{
     const k = rowEventId(c); (catchesBy[k] = catchesBy[k] || []).push(c);
   });
+  (allBets || []).forEach(b=>{
+    const k = rowEventId(b); (betsBy[k] = betsBy[k] || []).push(b);
+  });
 
   const history = [];
   Object.keys(anglersBy).forEach(eventId=>{
     const row = trophyEventRow(eventId, anglersBy[eventId], catchesBy[eventId] || [],
-      ids, infoFor ? infoFor(eventId) : null);
+      betsBy[eventId] || [], ids, infoFor ? infoFor(eventId) : null);
     if(row) history.push(row);
   });
   // Most recent event first, and a stable order when two share a year.
@@ -6729,7 +6997,9 @@ function trophyStats(allAnglers, allCatches, myIds, infoFor){
     // 0 means never ranked, so "best" here is the LOWEST number above zero.
     bestPlacing: placed.length ? Math.min.apply(null, placed) : 0,
     wins: history.filter(r=> r.placing === 1).length,
-    podiums: history.filter(r=> r.placing >= 1 && r.placing <= 3).length
+    podiums: history.filter(r=> r.placing >= 1 && r.placing <= 3).length,
+    bigFishWins: history.filter(r=> r.bigFishWon).length,
+    betsWon: history.reduce((n, r)=> n + r.betsWon.length, 0)
   };
 }
 
@@ -6765,7 +7035,11 @@ const TROPHY_BADGES = [
   { id:'champion', name:'Champion', icon:'\u{1F3C6}',
     need:'Win your division', earned: s=> s.wins >= 1 },
   { id:'veteran', name:'Veteran', icon:'\u{1F9ED}',
-    need:'Fish two or more tournaments', earned: s=> s.events >= 2 }
+    need:'Fish two or more tournaments', earned: s=> s.events >= 2 },
+  { id:'big-fish', name:'Big Fish', icon:'\u{1F3C5}',
+    need:'Take the Big Fish pot', earned: s=> s.bigFishWins >= 1 },
+  { id:'side-bet', name:'Side Bet', icon:'\u{1F91D}',
+    need:'Win a side bet', earned: s=> s.betsWon >= 1 }
 ];
 
 function trophyBadges(stats){
@@ -6786,7 +7060,10 @@ function trophyEventInfo(eventId){
     name: (evt && evt.name) || eventId,
     year: dates.length ? String(dates[dates.length - 1]).slice(0, 4) : '',
     targetSpecies: eventSettings(eventId).targetSpecies,
-    timeZone: (evt && evt.timeZone) || 'UTC'
+    timeZone: (evt && evt.timeZone) || 'UTC',
+    // Present once the director has called the result. From then on the row is
+    // read from here rather than worked out again.
+    results: frozenResults(eventId)
   };
 }
 
@@ -6802,17 +7079,26 @@ function placingText(n){
   return n + 'th';
 }
 function trophyHistoryHtml(row){
-  const bits = [row.division === 'team' ? 'Team' : 'Solo'];
+  // The handle carried that year comes first: it is what the board called you
+  // at the time, and an angler looking back remembers the name, not the id.
+  const bits = [];
+  if(row.handle) bits.push('as ' + row.handle);
+  bits.push(row.division === 'team' ? 'Team' : 'Solo');
   bits.push(row.fish + ' fish');
   if(row.best > 0) bits.push('best ' + Number(row.best).toFixed(2) + '"');
   if(row.disqualified) bits.push('disqualified');
+  const won = [];
+  if(row.bigFishWon) won.push('\u{1F3C5} Big Fish pot');
+  (row.betsWon || []).forEach(title=> won.push('\u{1F91D} ' + title));
+  const wonHtml = won.length === 0 ? ''
+    : '<span class="hist-won">' + won.map(escapeHtml).join(' &middot; ') + '</span>';
   const place = row.disqualified ? '&mdash;'
     : (row.placing > 0 ? placingText(row.placing) : '&mdash;');
   const placeSub = row.disqualified ? 'no placing'
     : (row.placing > 0 ? 'of ' + row.entrants : 'unranked');
   return '<div class="hist-row' + (row.placing === 1 && !row.disqualified ? ' won' : '') + '">' +
     '<span class="hist-main"><span class="hist-name">' + escapeHtml(row.name) + '</span>' +
-    '<span class="hist-sub">' + escapeHtml(bits.join(' \u00b7 ')) + '</span></span>' +
+    '<span class="hist-sub">' + escapeHtml(bits.join(' \u00b7 ')) + '</span>' + wonHtml + '</span>' +
     '<span class="hist-place"><span class="pl">' + place + '</span>' +
     '<span class="pl-sub">' + escapeHtml(placeSub) + '</span></span></div>';
 }
@@ -6821,7 +7107,7 @@ async function renderTrophyCase(){
   const anglers = await loadAnglers();
   const mine = myAnglerIds(anglers);
   const stats = trophyStats(await loadAnglersAllEvents(), await loadCatchesAllEvents(),
-    mine, trophyEventInfo);
+    await loadBetsAllEvents(), mine, trophyEventInfo);
 
   const bests = document.getElementById('trophy-bests');
   const hist = document.getElementById('trophy-history');
@@ -6855,6 +7141,8 @@ async function renderTrophyCase(){
       ? stats.wins + (stats.wins === 1 ? ' win' : ' wins') : '') +
     statHtml(stats.bestPlacing > 0 ? placingText(stats.bestPlacing) : '\u2014',
       'Best finish', stats.podiums > 0 ? stats.podiums + ' on the podium' : '') +
+    statHtml(stats.bigFishWins + stats.betsWon, 'Pots and bets won',
+      stats.bigFishWins > 0 ? stats.bigFishWins + ' Big Fish' : '') +
     '</div>';
 
   hist.innerHTML = stats.history.length === 0
@@ -8156,13 +8444,14 @@ function showAdminTool(name){
   document.querySelectorAll('[data-admin-tool]').forEach(btn=>{
     btn.classList.toggle('active', btn.dataset.adminTool===name);
   });
-  ['gps','payout','contestants','event','positions','report','review'].forEach(tool=>{
+  ['gps','payout','contestants','event','positions','report','review','results'].forEach(tool=>{
     document.getElementById('admin-tool-'+tool).style.display = tool===name ? 'block' : 'none';
   });
   // Maps built inside a hidden card have no size until now.
-  if(name === 'event') renderBoundaryEditor();
+  if(name === 'event'){ renderBoundaryEditor(); renderSetupTodos(); }
   if(name === 'positions') renderPositionsAdmin();
   if(name === 'report') renderFwpReport();
+  if(name === 'results') renderResultsAdmin();
 }
 
 document.querySelectorAll('[data-admin-tool]').forEach(btn=>{

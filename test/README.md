@@ -40,6 +40,33 @@ of sync with it. Change `index.html` and the tests see the change immediately.
 
 The places where a mistake is silent and expensive:
 
+- **A finished tournament's result is frozen, not re-derived.** Everything the
+  trophy case says about a past event was otherwise worked out again from the
+  catches every time the screen opened — so a cleanup next year, or an edit to
+  an old event's target species, would quietly rewrite what somebody's 2027
+  trophy case said about 2027. The placing an angler was told on the day has to
+  stay the placing they were told. The director freezes the result once
+  reviewing is done; deriving stays the fallback for any event nobody has
+  frozen, including every event from before this existed.
+  The tests amend a rival's fish *after* the freeze and check the placing does
+  not move, and settle a side bet after the freeze and check it is not backdated
+  into it — the frozen copy is the whole answer, not a starting point.
+- **Big Fish has no winner until someone records one.** It is a running answer
+  to "who is leading the pot" right up until the moment it becomes a result, so
+  it is derived at freeze time and stored. The tests keep a fixture where the
+  *rival* takes the pot, because with one where you win it, "was there a winner"
+  and "was it me" pass identically.
+- **The handle you carried that year.** Handles are re-rolled per entry, so the
+  history row shows what the board actually called you at the time rather than
+  what it calls you now.
+- **A reminder that outlives the conversation that produced it.** A commit
+  message is not a reminder and neither is a comment nobody opens between
+  tournaments. `setupTodos` puts what is still outstanding on the screen the
+  next event gets set up on — Director → Event — and only while there is still
+  time to act: after registration closes it stops, because doing it then would
+  give half the field an account and half none, which is worse than either. It
+  reads the live roster, so a phone number already shared by two entries raises
+  the item rather than leaving it as a someday.
 - **Who you are, across events.** The trophy case shows your history over every
   tournament, and an entry id only means something inside one event — a fresh
   registration each year, a re-rolled handle, and a name typed by hand and
@@ -452,6 +479,22 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Report a missing MediaRecorder as supported | lint |
 | Draw a cross-origin photo straight onto the canvas | lint |
 | Leave a filename unsanitised | 2 failures |
+| Derive a frozen event's placing again | 1 failure |
+| Count a frozen event against the live species | 1 failure |
+| Derive the Big Fish credit when frozen | 1 failure |
+| Backdate a later bet into a frozen result | 1 failure |
+| Freeze an unsettled bet as though it were won | 2 failures |
+| Put somebody else's bet win in your trophy case | 5 failures |
+| Credit the Big Fish pot to the wrong angler | 2 failures |
+| Let a non-buy-in, a pending fish, or the wrong species take the pot | 1 failure |
+| Drop the team division from a frozen record | 1 failure |
+| Forget which species a freeze scored | 1 failure |
+| Wipe other events when saving one freeze | 2 failures |
+| Write an empty record instead of thawing | 1 failure |
+| Show today's handle instead of that year's | 1 failure |
+| Nag after registration has closed, or never | 3 failures |
+| Miss a shared phone number, or invent one | 3 failures |
+| Drop the deadline, or the SMTP item | 2 failures |
 | Stop normalising phone numbers | 5 failures |
 | Compare phone numbers in full instead of last ten | 2 failures |
 | Never show the pending notice | 3 failures |
@@ -539,8 +582,10 @@ prompt clamp:
 
 Put it back afterwards.
 
-Six guards in the app are deliberately redundant, and a sabotage of any of
-them passes: the phone-length check in `claimEntry` (the equality check already
+Seven guards in the app are deliberately redundant, and a sabotage of any of
+them passes: the `isFinite(closeMs)` check in `setupTodos` (a junk date parses
+to `NaN`, and `at < NaN` is already false, so the window reads as shut either
+way), the phone-length check in `claimEntry` (the equality check already
 refuses an empty number), the event-day check in `overdueCheckouts` (a
 non-event day builds a `dayKey` that matches nothing), the `!anglerId` guard in
 `canActFor` (an empty id is not in `myAnglerIds` either, so the lookup below
@@ -552,7 +597,7 @@ person cannot appear twice in one division's top three. It is only reachable if
 an angler's catches straddle two divisions, which needs a division edit after
 they had already logged fish. The `seen` check in the same function's Big Fish
 block *is* load-bearing (someone can place and lead the pot at once) and is
-tested. All six behaviours are enforced twice. A test that went red for them would be asserting the
+tested. All seven behaviours are enforced twice. A test that went red for them would be asserting the
 implementation rather than the rule, so there isn't one.
 
 **A test cannot see a time zone it is already in.** The machine this was
