@@ -629,9 +629,10 @@
     min-height:78px;padding:9px 10px;border:1px solid var(--line);background:#181C1F;
     color:var(--white);cursor:pointer;text-align:left;
   }
-  .home-tile::after{content:'';position:absolute;right:0;bottom:0;width:22px;height:3px;background:#26363D;}
-  .home-tile.accent-red::after{background:var(--gold);}
-  .home-tile.accent-gold::after{background:#D5A33A;}
+  /* The fallback is the old near-invisible slate: if the script has not run
+     yet the bar is still there, just quiet, rather than missing and then
+     appearing. */
+  .home-tile::after{content:'';position:absolute;right:0;bottom:0;width:22px;height:3px;background:var(--tile-accent,#26363D);}
   .home-tile:active{transform:translateY(1px);border-color:var(--gold);}
   .home-tile-icon{width:18px;height:18px;color:var(--white);}
   .home-tile-icon svg{width:100%;height:100%;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
@@ -640,9 +641,11 @@
   .home-tile-sub{color:var(--steel);font-family:'Space Mono',monospace;font-size:8.5px;}
   .home-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:7px;}
   .home-info-tile{
+    position:relative;
     display:flex;align-items:center;gap:8px;min-height:78px;padding:9px 10px;
     border:1px solid var(--line);background:#111416;color:var(--white);cursor:pointer;text-align:left;
   }
+  .home-info-tile::after{content:'';position:absolute;right:0;bottom:0;width:22px;height:3px;background:var(--tile-accent,#26363D);}
   .home-info-tile:active{transform:translateY(1px);border-color:var(--gold);}
   .home-info-tile svg{width:17px;height:17px;flex-shrink:0;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
   .home-info-copy{display:flex;flex-direction:column;min-width:0;}
@@ -1151,6 +1154,17 @@
   .hist-row.won{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold);}
   .hist-won{display:block;font-size:10.5px;color:var(--gold-deep);margin-top:3px;font-weight:600;}
   .freeze-state{font-size:11px;color:var(--steel);margin:6px 0 0;}
+  .sp-row{
+    display:flex;align-items:center;gap:8px;padding:7px 9px;margin-bottom:6px;
+    border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:4px;
+    background:var(--paper-2);
+  }
+  .sp-row .sp-name{flex:1;min-width:0;font-weight:600;font-size:12px;}
+  .sp-row .sp-ceiling{font-size:10.5px;color:var(--steel);font-family:'Space Mono',monospace;}
+  .sp-row.primary .sp-name::after{
+    content:'primary';margin-left:7px;font-weight:400;font-size:9px;color:var(--steel);
+    letter-spacing:.06em;text-transform:uppercase;
+  }
   .tamper-note{
     margin:6px 0 0;padding:7px 9px;border-radius:4px;font-size:11px;font-weight:600;
     background:#F6E3E0;border-left:3px solid #A3372A;color:#7E2B20;line-height:1.5;
@@ -1403,7 +1417,7 @@
       </div>
 
       <div class="home-grid">
-        <button class="home-tile accent-red" type="button" data-goto="checkin">
+        <button class="home-tile" type="button" data-goto="checkin">
           <span class="home-tile-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></svg></span>
           <span class="home-tile-copy"><span class="home-tile-label">Check In / Out</span><span class="home-tile-sub">Both event days</span></span>
         </button>
@@ -1423,7 +1437,7 @@
           <span class="home-tile-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="m6 16 3.5-4 2.5 3 2.5-3L18 16"/><circle cx="9" cy="9.5" r="1.2"/></svg></span>
           <span class="home-tile-copy"><span class="home-tile-label">Fish Gallery</span><span class="home-tile-sub">Every fish on the board</span></span>
         </button>
-        <button class="home-tile accent-gold" type="button" data-goto="bigfish">
+        <button class="home-tile" type="button" data-goto="bigfish">
           <span class="home-tile-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15 8.5c-.8-.7-1.8-1-3-1-1.7 0-3 .9-3 2.2 0 3.4 6 1.3 6 4.5 0 1.3-1.3 2.3-3.1 2.3-1.3 0-2.5-.4-3.4-1.2M12 5.5v13"/></svg></span>
           <span class="home-tile-copy"><span class="home-tile-label">Side Bets</span><span class="home-tile-sub">Big Fish &amp; angler bets</span></span>
         </button>
@@ -2018,10 +2032,11 @@
           <button class="secondary" id="event-apply">Make this the live event</button>
 
           <hr class="divider">
-          <h2 style="margin-bottom:8px;">Target species</h2>
-          <p class="hint" style="margin-top:0;">The one species this event scores. Anglers pick it or &ldquo;Other (not scored)&rdquo; when they submit, and only this species is ranked, placed and paid. The ceiling is a sanity check &mdash; a catch longer than it gets flagged for you, never rejected.</p>
+          <h2 style="margin-bottom:8px;">Scoring species</h2>
+          <p class="hint" style="margin-top:0;">Every species this event scores. Anglers pick from this list or &ldquo;Other (not scored)&rdquo; when they submit, and only these are ranked, placed and paid. They share one leaderboard, ranked by length &mdash; so add a second species only when the two are worth comparing, or you are testing. Each ceiling is a sanity check for that species: a catch longer than it gets flagged for you, never rejected.</p>
+          <div id="species-list"></div>
           <div class="field">
-            <label for="species-select">Species</label>
+            <label for="species-select">Add a species</label>
             <select id="species-select"></select>
           </div>
           <div class="field" id="species-custom-field" style="display:none;">
@@ -2033,7 +2048,7 @@
             <input type="number" id="species-record" step="0.5" min="0" placeholder="36">
           </div>
           <div class="err" id="species-err" style="display:none;"></div>
-          <button class="secondary" id="species-save">Save species</button>
+          <button class="secondary" id="species-save">Add to this event</button>
 
           <hr class="divider">
           <h2 style="margin-bottom:8px;">Course boundary</h2>
@@ -4283,8 +4298,73 @@ async function saveEventSettings(patch){
 }
 // The one species that scores in this event. Everything else an angler logs is
 // filed as OTHER_SPECIES and never ranked or paid.
-function targetSpecies(){ return eventSettings().targetSpecies; }
-function recordInches(){ return eventSettings().recordInches; }
+// ---- which species this event scores ----
+// An event used to score exactly one. It can now score any number, because a
+// water that holds walleye also holds pike and a director may reasonably want
+// both on the board.
+//
+// STORED as `speciesList`: [{ name, recordInches }]. Two reasons it is a list
+// of objects rather than a list of names:
+//
+//   - the plausibility ceiling is per species, and has to be. One ceiling
+//     across walleye and pike is either so low it flags every big pike or so
+//     high it never flags an impossible walleye. Both are worse than nothing,
+//     because a check that cries wolf stops being read.
+//   - a species can be renamed without losing its ceiling.
+//
+// Every event that existed before this has `targetSpecies` and `recordInches`
+// as plain values, and nothing migrates them - speciesList() builds the list
+// from them on the way past. There is nothing to run and no event to edit.
+function speciesList(settings){
+  const s = settings || eventSettings();
+  const list = Array.isArray(s.speciesList) ? s.speciesList : [];
+  const clean = list
+    .map(x=> ({
+      name: String((x && x.name) || '').trim(),
+      recordInches: Number((x && x.recordInches) || 0) || 0
+    }))
+    .filter(x=> x.name && x.name.toLowerCase() !== OTHER_SPECIES.toLowerCase());
+  if(clean.length) return clean;
+  // The pre-list shape. An event with neither reads as scoring nothing, which
+  // is correct rather than defaulting to a species nobody chose.
+  const one = String(s.targetSpecies || '').trim();
+  return one ? [{ name: one, recordInches: Number(s.recordInches || 0) || 0 }] : [];
+}
+
+// Just the names, which is what scoring asks for.
+function scoringSpecies(settings){
+  return speciesList(settings).map(x=> x.name);
+}
+
+// The PRIMARY species - the first on the list. Used only where one name is
+// genuinely wanted: the default selection on the submit screen, and the
+// walleye-shaped outline on the camera guide. Never for deciding what scores.
+function targetSpecies(){
+  const list = scoringSpecies();
+  return list.length ? list[0] : '';
+}
+
+// The plausibility ceiling for one species, or the primary's when asked without
+// one. 0 means no ceiling was set, and every caller already treats that as
+// "do not check".
+function recordInches(species){
+  const list = speciesList();
+  if(species === undefined) return list.length ? list[0].recordInches : 0;
+  for(let i = 0; i < list.length; i++){
+    if(list[i].name === species) return list[i].recordInches;
+  }
+  return 0;
+}
+
+// "walleye", "walleye or pike", "walleye, pike or lake trout". Every screen
+// that used to name the one species in a sentence now reads naturally with
+// several, rather than saying "scoring species" at anglers.
+function speciesPhrase(settings){
+  const names = scoringSpecies(settings).map(n=> n.toLowerCase());
+  if(names.length === 0) return 'scoring fish';
+  if(names.length === 1) return names[0];
+  return names.slice(0, -1).join(', ') + ' or ' + names[names.length - 1];
+}
 function courseBoundary(){ return eventSettings().course; }
 const OTHER_SPECIES = 'Other';
 // Catches carry the species NAME as typed at submit time, so a catch logged
@@ -4294,8 +4374,28 @@ const OTHER_SPECIES = 'Other';
 // the current tournament wants. The trophy case passes one explicitly, because
 // a past event may have been fished for a different species and scoring it
 // against this year's would silently empty its standings.
+// `target` may be omitted (use the live event's list), a single name, or a
+// list of names. All three shapes are load-bearing:
+//
+//   omitted  every live screen - standings, Big Fish, livewell, the report
+//   a string a frozen result from before an event could score more than one,
+//            and a trophy row for such an event. Those records must keep
+//            scoring exactly as they did.
+//   a list   a frozen result taken since.
+//
+// Making this one function polymorphic is what let multiple species reach
+// thirteen call sites without touching any of them.
 function isScoringSpecies(name, target){
-  return name === (target === undefined ? targetSpecies() : target);
+  // OTHER_SPECIES is the sentinel an angler picks to say "this is not one of
+  // the scoring species". A function called isScoringSpecies answering true for
+  // it would be wrong on its face, so it is refused here and not only filtered
+  // out of the stored list. speciesList() already keeps it off that list, which
+  // makes this unreachable today - and unreachable is not the same as safe when
+  // the target can also arrive from a frozen record written by an older build.
+  if(name === OTHER_SPECIES) return false;
+  const list = target === undefined ? scoringSpecies()
+             : (Array.isArray(target) ? target : [target]);
+  return list.indexOf(name) !== -1;
 }
 
 async function loadAwardsBudget(){
@@ -5145,10 +5245,14 @@ function evaluateFirstPass(c, allCatches, dupCorpus){
   }
 
   // Length plausibility.
-  if(isScoringSpecies(c.species) && recordInches() > 0 && c.length > recordInches()){
+  // The ceiling for the species THIS fish was filed as, not the event's first
+  // one - with walleye and pike on the same board, a shared ceiling would flag
+  // every decent pike and never flag an impossible walleye.
+  const ceiling = recordInches(c.species);
+  if(isScoringSpecies(c.species) && ceiling > 0 && c.length > ceiling){
     checks.push({ level:'flag', label:'Length exceeds the world record',
-      detail: c.length+'" is longer than the '+recordInches()+'" ceiling set for '+
-        targetSpecies().toLowerCase()+' in this event. Re-read the board before approving.' });
+      detail: c.length+'" is longer than the '+ceiling+'" ceiling set for '+
+        String(c.species).toLowerCase()+' in this event. Re-read the board before approving.' });
   } else {
     const field = allCatches
       .filter(o=> o.id!==c.id && o.species===c.species && o.status==='approved')
@@ -5379,7 +5483,7 @@ function fishIVisionAvailable(){
 // Built per call: the target species and the water are both event settings now,
 // so the prompt has to name whatever this tournament is actually scoring.
 function fishiPrompt(){
-  const target = targetSpecies();
+  const target = speciesPhrase();
   const where = activeEvent().courseLabelLong || 'the tournament water';
   return (
   'You are reviewing a catch photo for a catch-photo-release kayak ' + target.toLowerCase() +
@@ -5402,7 +5506,7 @@ function fishiPrompt(){
   'Be conservative. Raise a concern only if a reasonable director would want a second ' +
   'look; an ordinary well-shot photo returns an empty concerns array.\n\n' +
   'Reply with only a JSON object of this shape:\n' +
-  '{"species":"' + target.toLowerCase() + '","speciesConfidence":0.9,"matchesClaim":true,"boardVisible":true,' +
+  '{"species":"' + (targetSpecies() || 'walleye').toLowerCase() + '","speciesConfidence":0.9,"matchesClaim":true,"boardVisible":true,' +
   '"fishFlat":true,"noseAtStop":true,"tailInFrame":true,"handBlocking":false,' +
   '"concerns":["short specific concern"],"notes":"one short sentence"}'
   );
@@ -5415,15 +5519,19 @@ async function requestAiVisionReview(c, photoDataUrl){
     if(!blob) throw new Error('No photo is stored with this catch.');
     // "Other" is a not-scored bucket, not a species, so asking whether the
     // fish "matches Other" is meaningless unless we say what it means.
-    const target = targetSpecies();
-    const up = target.toUpperCase(), low = target.toLowerCase();
+    // Ask about the species the ANGLER filed it as, not the event's first one.
+    // With walleye and pike both scoring, "does this look like a walleye" is
+    // the wrong question about a fish entered as a pike.
+    const claimed = String(c.species || '');
+    const phrase = speciesPhrase();
     const claimLine = isScoringSpecies(c.species)
-      ? 'The angler entered this as a ' + up + ' (the scoring species), ' + c.length + ' inches. ' +
-        'Set matchesClaim true only if this really looks like a ' + low + '.'
-      : 'The angler entered this as OTHER, meaning they are declaring it is NOT a ' + low + ' ' +
+      ? 'The angler entered this as a ' + claimed.toUpperCase() + ' (a scoring species in ' +
+        'this event), ' + c.length + ' inches. Set matchesClaim true only if this really ' +
+        'looks like a ' + claimed.toLowerCase() + '.'
+      : 'The angler entered this as OTHER, meaning they are declaring it is NOT ' + phrase + ' ' +
         'and it will not be scored. Name the species you actually see. Set matchesClaim ' +
-        'true if the fish is indeed something other than a ' + low + ', and false if it does ' +
-        'look like a ' + low + ' that was filed as Other.';
+        'true if the fish is indeed none of those, and false if it does look like ' +
+        phrase + ' that was filed as Other.';
     const prompt = fishiPrompt() + '\n\n' + claimLine;
     return await fishISampler.json(prompt, { images: blob, modelTier: 'complex' });
   }
@@ -5442,7 +5550,9 @@ async function requestAiVisionReview(c, photoDataUrl){
       body: JSON.stringify({
         catchId: c.id, photo: photoDataUrl,
         claimedSpecies: c.species, claimedLength: c.length,
-        targetSpecies: targetSpecies(),
+        // The whole list, so the server's copy of the prompt names the same
+        // species this page would have.
+        targetSpecies: scoringSpecies().join(', '),
         water: activeEvent().courseLabelLong || 'the tournament water',
         scoring: isScoringSpecies(c.species)
       })
@@ -5648,7 +5758,7 @@ function renderEventCopy(){
   setText('reg-close-note', 'Registration closes ' + closeText +
     '. This confirms your spot on the roster — entry fees and side pot buy-ins are collected separately by PayPal, per the info in your confirmation email.');
 
-  const sp = targetSpecies().toLowerCase();
+  const sp = speciesPhrase();
   setText('livewell-note', 'Every approved catch is released on the water, so your livewell is a running ' +
     'tally rather than fish in a tank. Your longest approved ' + sp + ' is what currently counts toward standings.');
   setText('bigfish-note', 'Optional $10/angler side pot. Longest approved ' + sp +
@@ -5684,7 +5794,43 @@ function renderDqNotice(me){
     '</div>';
 }
 
+// ---- the colour bar on each home tile ----
+// Two tiles had a coloured bar and the rest had a near-black one nobody could
+// see. Rather than hand-pick eight, each tile derives its own from its name.
+//
+// Every colour here is already somewhere else in this stylesheet - the gold,
+// the red, the olive, the "Live" badge green, the steel - so the home screen
+// cannot drift away from the rest of the site.
+//
+// DETERMINISTIC, not random-per-load. It looks scattered, which is the point,
+// but a tile keeps its colour: people navigate by colour long before they read
+// the label, and a Side Bets tile that is olive on Saturday and red on Sunday
+// is a bug as far as the eye is concerned. The upside of deriving it from the
+// name is that a tile added later gets one for free and nobody has to choose.
+const TILE_ACCENTS = ['#C98A2C', '#A3372A', '#5C6B4F', '#3D6A50', '#3D5A66', '#D5A33A'];
+
+// 31 rather than any other multiplier for one reason: with the eight tile names
+// this app actually has, it is the one that puts no two identical colours side
+// by side in a two-column grid. Change the tiles and it is worth re-checking.
+function tileAccent(name){
+  const key = String(name == null ? '' : name);
+  if(!key) return TILE_ACCENTS[0];
+  let h = 0;
+  for(let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) % 100000;
+  return TILE_ACCENTS[h % TILE_ACCENTS.length];
+}
+
+// Painted onto the element as a custom property so the bar itself stays in CSS,
+// where its size and position belong.
+function paintTileAccents(root){
+  const scope = root || document;
+  scope.querySelectorAll('.home-tile[data-goto], .home-info-tile[data-goto]').forEach(el=>{
+    el.style.setProperty('--tile-accent', tileAccent(el.dataset.goto));
+  });
+}
+
 async function renderHome(){
+  paintTileAccents();
   const anglers = await loadAnglers();
   const myId = getMyAnglerId();
   const me = anglers.find(a=>a.id===myId);
@@ -6408,14 +6554,15 @@ function renderSpeciesOptions(){
   // Leaving it focused-and-empty would strand the angler with no species to
   // pick, so the focus guard only protects a list that already exists.
   if(sel.options.length && document.activeElement === sel) return;
-  const target = targetSpecies();
+  const names = scoringSpecies();
   const keep = sel.value;
   sel.innerHTML =
-    '<option value="'+escapeHtml(target)+'">'+escapeHtml(target)+'</option>'+
+    names.map(n=> '<option value="'+escapeHtml(n)+'">'+escapeHtml(n)+'</option>').join('')+
     '<option value="'+OTHER_SPECIES+'">Other (not scored)</option>';
   // Hold the angler's choice across a repaint, but never leave them pointed at
   // a species this event no longer scores.
-  sel.value = (keep === OTHER_SPECIES) ? OTHER_SPECIES : target;
+  if(keep === OTHER_SPECIES || names.indexOf(keep) !== -1) sel.value = keep;
+  else sel.value = names.length ? names[0] : OTHER_SPECIES;
 }
 
 // Which species the angler is filing this catch as. Falls back to the scoring
@@ -6924,7 +7071,7 @@ async function renderLivewellList(){
     return;
   }
   const catches = (await loadCatches()).filter(c=>c.anglerId===anglerId && isScoringSpecies(c.species)).sort(byLengthThenEarliest);
-  if(catches.length===0){ el.innerHTML = '<p class="empty">No '+escapeHtml(targetSpecies().toLowerCase())+' submitted yet.</p>'; return; }
+  if(catches.length===0){ el.innerHTML = '<p class="empty">No '+escapeHtml(speciesPhrase())+' submitted yet.</p>'; return; }
 
   const bestApprovedId = (catches.find(c=>c.status==='approved') || {}).id;
   el.innerHTML = catches.map(c=>{
@@ -7023,7 +7170,7 @@ function bigFishWinner(anglers, catches, target){
   const inPot = {};
   bigFishEntrants(anglers || []).forEach(a=>{ inPot[a.id] = true; });
   const best = (catches || [])
-    .filter(c=> c && c.status === 'approved' && c.species === target && inPot[c.anglerId])
+    .filter(c=> c && c.status === 'approved' && isScoringSpecies(c.species, target) && inPot[c.anglerId])
     .sort(byLengthThenEarliest)[0];
   return best ? { anglerId: best.anglerId, catchId: best.id, length: best.length } : null;
 }
@@ -7079,7 +7226,9 @@ async function renderResultsAdmin(){
   const anglers = await loadAnglers();
   const catches = await loadCatches();
   const bets = await loadBets();
-  const target = frozen ? frozen.targetSpecies : targetSpecies();
+  // A frozen record's targetSpecies may be a single name (frozen before an
+  // event could score several) or a list. isScoringSpecies takes either.
+  const target = frozen ? frozen.targetSpecies : scoringSpecies();
   const view = frozen || buildResults(anglers, catches, bets, target);
   const byId = {};
   anglers.forEach(a=>{ byId[a.id] = a; });
@@ -7135,7 +7284,7 @@ bindEl('results-freeze','click', async ()=>{
     (pending > 0 ? '\n\n' + pending + ' catches are still pending review and will NOT count.' : '');
   if(!window.confirm(msg)) return;
   const anglers = await loadAnglers();
-  const record = buildResults(anglers, catches, await loadBets(), targetSpecies());
+  const record = buildResults(anglers, catches, await loadBets(), scoringSpecies());
   if(!await saveFrozenResults(activeEventId(), record)){
     if(err){ err.textContent = 'That did not save. Check the sync line and try again.'; err.style.display = 'block'; }
     return;
@@ -7219,7 +7368,7 @@ function trophyEventRow(eventId, evAnglers, evCatches, evBets, mineIds, info){
   const tz = (info && info.timeZone) || 'UTC';
   const approved = evCatches.filter(c=>
     c && c.status === 'approved' && mineIds.has(c.anglerId));
-  const scoring = approved.filter(c=> c.species === target).slice().sort(byLengthThenEarliest);
+  const scoring = approved.filter(c=> isScoringSpecies(c.species, target)).slice().sort(byLengthThenEarliest);
   const lengths = scoring.map(c=> Number(c.length) || 0);
 
   const perDay = {};
@@ -8062,7 +8211,7 @@ async function renderLeaderboard(){
       '<div class="lbrow"><div class="rank">'+(i+1)+'</div><div class="who"><div class="name">'+escapeHtml(a.name)+'</div><div class="sub">Best 3 combined: '+a.top3sum.toFixed(2)+'"</div></div><div class="len">'+a.best.toFixed(2)+'"</div></div>'
     ).join('');
   }
-  const sp = targetSpecies().toLowerCase();
+  const sp = speciesPhrase();
   document.getElementById('lb-tiebreak-note').textContent = currentDiv==='team'
     ? 'Ranked by the single longest '+sp+' caught by either teammate. Ties broken by the combined length of the team\'s best 3 fish, then by whichever fish was logged first.'
     : 'Ranked by single longest '+sp+'. Ties broken by combined length of best 3 fish, then by whichever fish was logged first.';
@@ -10560,11 +10709,36 @@ function chosenSpeciesName(){
   return sel.value;
 }
 
+// The list this event scores, each with its ceiling and a way to take it off.
+// The FIRST one is marked primary: it is the default selection on the submit
+// screen and the one the camera guide is drawn for, and saying so beats leaving
+// the director to wonder why order matters.
+function speciesRowsHtml(list){
+  if(list.length === 0){
+    return '<p class="empty">No scoring species set. Nothing an angler submits ' +
+      'can be ranked, placed or paid until there is at least one.</p>';
+  }
+  return list.map((x, i)=>
+    '<div class="sp-row' + (i === 0 ? ' primary' : '') + '">' +
+      '<span class="sp-name">' + escapeHtml(x.name) + '</span>' +
+      '<span class="sp-ceiling">' + (x.recordInches > 0
+          ? escapeHtml(String(x.recordInches)) + '&quot; ceiling' : 'no ceiling') + '</span>' +
+      '<button class="small danger" data-sp-remove="' + escapeHtml(x.name) + '">Remove</button>' +
+    '</div>').join('');
+}
+
 function renderSpeciesAdmin(){
   const s = eventSettings();
   const sel = document.getElementById('species-select');
   const nameEl = document.getElementById('species-name');
   const recEl = document.getElementById('species-record');
+  const listEl = document.getElementById('species-list');
+  if(listEl){
+    listEl.innerHTML = speciesRowsHtml(speciesList(s));
+    listEl.querySelectorAll('[data-sp-remove]').forEach(btn=>{
+      btn.addEventListener('click', ()=> removeScoringSpecies(btn.dataset.spRemove));
+    });
+  }
   if(!sel) return;
 
   // The list never changes, so build it once. Rebuilding on every store tick
@@ -10578,15 +10752,51 @@ function renderSpeciesAdmin(){
       '<option value="'+SPECIES_CUSTOM+'">Other — type it in</option>';
   }
 
-  // A species that is not in the list (typed in previously, or renamed) has to
-  // come back as Other with its name filled in, not silently become something
-  // else in the list.
-  const known = !!speciesPreset(s.targetSpecies);
-  if(document.activeElement !== sel) sel.value = known ? s.targetSpecies : SPECIES_CUSTOM;
+  // This picker is now an ADD control rather than a mirror of what is saved, so
+  // it is left exactly where the director put it. Repainting it from the event
+  // would wipe a half-finished entry every time the store ticked.
   const custom = sel.value === SPECIES_CUSTOM;
   document.getElementById('species-custom-field').style.display = custom ? 'block' : 'none';
-  if(nameEl && document.activeElement !== nameEl) nameEl.value = known ? '' : s.targetSpecies;
-  if(recEl && document.activeElement !== recEl) recEl.value = s.recordInches ? String(s.recordInches) : '';
+}
+
+// Taking a species off the list does not delete anything: the catches keep the
+// name they were filed under, and simply stop counting. That is worth saying out
+// loud with a number attached, because it silently changes the standings.
+async function removeScoringSpecies(name){
+  const errEl = document.getElementById('species-err');
+  errEl.style.display = 'none';
+  const list = speciesList();
+  const next = list.filter(x=> x.name !== name);
+  if(next.length === list.length) return;
+  if(next.length === 0){
+    errEl.textContent = 'An event has to score something. Add another species first, ' +
+      'then remove this one.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const affected = (await loadCatches()).filter(c=> c.species === name).length;
+  if(affected && !window.confirm(
+      affected + ' catch' + (affected === 1 ? ' is' : 'es are') + ' logged as "' + name + '".\n\n' +
+      'Removing it means ' + (affected === 1 ? 'it stops' : 'they stop') + ' counting toward ' +
+      'standings, placements and the Big Fish pot. ' +
+      (affected === 1 ? 'It stays' : 'They stay') + ' on record either way.\n\nContinue?')) return;
+  if(!await saveSpeciesList(next)){
+    errEl.textContent = 'Could not save that on this device. Check your storage and try again.';
+    errEl.style.display = 'block';
+    return;
+  }
+  refreshActiveScreen();
+}
+
+// targetSpecies and recordInches are written alongside the list, so an older
+// copy of the app - a phone that has not reloaded since - still reads the
+// primary species rather than finding nothing at all.
+async function saveSpeciesList(list){
+  return await saveEventSettings({
+    speciesList: list,
+    targetSpecies: list.length ? list[0].name : '',
+    recordInches: list.length ? list[0].recordInches : 0
+  });
 }
 
 bindEl('species-select','change', ()=>{
@@ -10614,27 +10824,39 @@ bindEl('species-save','click', async ()=>{
     return;
   }
   if(name.toLowerCase() === OTHER_SPECIES.toLowerCase()){
-    errEl.textContent = '"Other" is the not-scored bucket, so it cannot also be the scoring species.';
+    errEl.textContent = '"Other" is the not-scored bucket, so it cannot also be a scoring species.';
     errEl.style.display = 'block';
     return;
   }
-  const current = targetSpecies();
-  if(name !== current){
-    // Catches carry the species name they were logged under, so a rename
-    // quietly drops the existing ones out of the standings. Say so plainly.
-    const affected = (await loadCatches()).filter(c=> c.species === current).length;
-    if(affected && !window.confirm(
-        affected + ' catch' + (affected===1?' is':'es are') + ' already logged as "' + current + '".\n\n' +
-        'Changing the target species to "' + name + '" means ' + (affected===1?'it stops':'they stop') +
-        ' counting toward standings, placements and the Big Fish pot. ' +
-        (affected===1?'It stays':'They stay') + ' on record either way.\n\nContinue?')) return;
+  const list = speciesList();
+  const ceiling = (isFinite(rec) && rec > 0) ? rec : 0;
+  // Case-insensitive, because "Northern pike" and "Northern Pike" would become
+  // two species sharing one leaderboard and nobody would spot why the count was
+  // wrong. An exact re-add is treated as editing the ceiling.
+  const at = list.findIndex(x=> x.name.toLowerCase() === name.toLowerCase());
+  if(at !== -1){
+    if(list[at].recordInches === ceiling){
+      errEl.textContent = '“' + list[at].name + '” is already on this event, with the ' +
+        'same ceiling. Change the ceiling to update it.';
+      errEl.style.display = 'block';
+      return;
+    }
+    // Keep the stored spelling rather than the one just typed: catches already
+    // logged carry the old one, and changing it here would drop them.
+    list[at] = { name: list[at].name, recordInches: ceiling };
+  } else {
+    list.push({ name: name, recordInches: ceiling });
   }
-  const ok = await saveEventSettings({ targetSpecies: name, recordInches: (isFinite(rec) && rec > 0) ? rec : 0 });
-  if(!ok){
+  if(!await saveSpeciesList(list)){
     errEl.textContent = 'Could not save that on this device. Check your storage and try again.';
     errEl.style.display = 'block';
     return;
   }
+  // Clear the ADD form, or the next species is entered on top of the last one.
+  const nameEl = document.getElementById('species-name');
+  if(nameEl) nameEl.value = '';
+  const recBox = document.getElementById('species-record');
+  if(recBox) recBox.value = '';
   refreshActiveScreen();
 });
 

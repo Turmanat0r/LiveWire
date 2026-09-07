@@ -317,24 +317,62 @@ function clean(v, max) {
 // Mirrors fishiPrompt() in index.html. The two are deliberately the same words
 // so a catch reviewed through the Claude viewer and one reviewed through here
 // get judged by the same standard.
+// "a walleye", or "a walleye or a northern pike" when the event scores several
+// and `target` arrives comma-joined. Written out rather than left as a bare
+// list because the sentences below read as English to the model, and "it is NOT
+// walleye, northern pike" is not a sentence.
+function speciesNames(target) {
+  return String(target || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+}
+
+function joinOr(parts, fallback) {
+  if (!parts.length) return fallback;
+  if (parts.length === 1) return parts[0];
+  return parts.slice(0, -1).join(', ') + ' or ' + parts[parts.length - 1];
+}
+
+// TWO forms, because the prompt needs both and mixing them writes nonsense:
+//
+//   speciesPhrase  "a walleye" / "a walleye or a northern pike"
+//                  for "it is NOT ___" and "looks like ___"
+//   speciesBare    "walleye"   / "walleye or northern pike"
+//                  for "a kayak ___ tournament" and "only ___ score"
+//
+// The first version of this multi-species change used the articled form
+// everywhere and produced "a catch-photo-release kayak a walleye tournament".
+function speciesPhrase(target) {
+  return joinOr(speciesNames(target).map(n => 'a ' + n), 'a scoring fish');
+}
+
+function speciesBare(target) {
+  return joinOr(speciesNames(target), 'scoring fish');
+}
+
 function buildPrompt(target, water, claimedSpecies, claimedLength, scoring) {
-  const low = target.toLowerCase();
+  const low = speciesPhrase(target);
+  const bare = speciesBare(target);
+  // An event can score several species, in which case `target` arrives as
+  // "Walleye, Northern Pike". The claim line has to ask about the ONE the
+  // angler actually filed - "does this look like a walleye" is the wrong
+  // question about a fish entered as a pike.
+  const claimed = (claimedSpecies || target);
   const claimLine = scoring
-    ? 'The angler entered this as a ' + target.toUpperCase() + ' (the scoring species), ' +
-      claimedLength + ' inches. Set matchesClaim true only if this really looks like a ' + low + '.'
-    : 'The angler entered this as OTHER, meaning they are declaring it is NOT a ' + low + ' ' +
+    ? 'The angler entered this as a ' + claimed.toUpperCase() + ' (a scoring species in this ' +
+      'event), ' + claimedLength + ' inches. Set matchesClaim true only if this really looks ' +
+      'like a ' + claimed.toLowerCase() + '.'
+    : 'The angler entered this as OTHER, meaning they are declaring it is NOT ' + low + ' ' +
       'and it will not be scored. Name the species you actually see. Set matchesClaim true if ' +
-      'the fish is indeed something other than a ' + low + ', and false if it does look like a ' +
+      'the fish is indeed none of those, and false if it does look like ' +
       low + ' that was filed as Other.';
 
   return (
-    'You are reviewing a catch photo for a catch-photo-release kayak ' + low +
+    'You are reviewing a catch photo for a catch-photo-release kayak ' + bare +
     ' tournament on ' + water + '. You are a FIRST PASS for a human tournament ' +
     'director. You never decide whether a catch counts; you surface what the director ' +
     'should look at.\n\n' +
     'Judge only these:\n' +
     '1. Species. Say which species you see, and say plainly when the photo does not let ' +
-    'you tell it apart from species it closely resembles. Only ' + low +
+    'you tell it apart from species it closely resembles. Only ' + bare +
     ' score in this event.\n' +
     '2. Whether the photo works as evidence: is a bump board with a readable scale in ' +
     'frame, is the fish flat along it rather than curled or lifted, is the nose against ' +
@@ -604,7 +642,9 @@ module.exports = async (req, res) => {
     return send(res, 400, { error: 'That photo is not in a format Fish-I can read.' });
   }
 
-  const target = clean(body.targetSpecies, 40) || 'Walleye';
+  // Wider than the other fields because it may now carry a list:
+  // "Walleye, Northern Pike, Lake Trout". Commas already survive clean().
+  const target = clean(body.targetSpecies, 120) || 'Walleye';
   const water = clean(body.water, 80) || 'the tournament water';
   const claimedSpecies = clean(body.claimedSpecies, 40) || target;
   const claimedLength = clean(body.claimedLength, 12) || 'an unstated';
@@ -743,4 +783,5 @@ module.exports = async (req, res) => {
 module.exports.__test = { allowedPhotoUrl, clean, normalize, buildPrompt, pickModel,
                           rankModels, isRetryableModelStatus, googleRetrySeconds, isDailyQuota,
                           bearerFrom, directorClaim, refusalText, AUTH_REFUSALS,
+                          speciesPhrase, speciesBare,
                           directorFromToken, authConfigured, missingAuthVars };

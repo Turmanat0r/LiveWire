@@ -737,6 +737,126 @@ for (const [needle, why] of [
   }
 }
 
+// ------------------------------------------------------- scoring species
+// An event can score several species now, and isScoringSpecies is the choke
+// point all thirteen call sites ask through. Everything below is a way that
+// choke point could quietly narrow back to one.
+{
+  const fn = (script.match(/function isScoringSpecies\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  if (!fn) {
+    note('species', 'isScoringSpecies is gone - nothing decides what scores');
+  } else {
+    // `target` arrives as three shapes and all three are load-bearing: omitted
+    // (the live event), a single NAME (a result frozen before an event could
+    // score several), and a LIST (one frozen since).
+    if (!fn.includes('Array.isArray(target)')) {
+      note('species', 'isScoringSpecies no longer accepts a LIST of species, so an event ' +
+        'scoring both walleye and pike would score only one of them');
+    }
+    if (!fn.includes('scoringSpecies()')) {
+      note('species', 'isScoringSpecies no longer falls back to the live event’s list');
+    }
+    if (!fn.includes('OTHER_SPECIES')) {
+      note('species', 'isScoringSpecies no longer refuses OTHER_SPECIES, which is the ' +
+        'sentinel meaning “not one of the scoring species”');
+    }
+  }
+
+  // The stored list is where Other is kept out and blanks are dropped. Without
+  // that filter a stray entry makes every unscored fish count.
+  const list = (script.match(/function speciesList\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  if (!list) note('species', 'speciesList is gone');
+  else {
+    if (!list.includes('OTHER_SPECIES')) {
+      note('species', 'speciesList no longer filters OTHER_SPECIES out of the scoring list');
+    }
+    // Every event that existed before this stored targetSpecies + recordInches
+    // as plain values and nothing migrates them.
+    if (!list.includes('s.targetSpecies')) {
+      note('species', 'speciesList no longer reads the old single-species shape, so every ' +
+        'event created before the list existed would score nothing');
+    }
+  }
+
+  // The ceiling has to be per species. One ceiling across walleye and pike is
+  // either so low it flags every big pike or so high it never flags an
+  // impossible walleye - a check that cries wolf stops being read.
+  const verdict = (script.match(/function evaluateFirstPass\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  if (verdict && !/recordInches\(c\.species\)/.test(verdict)) {
+    note('species', 'the length-plausibility check no longer uses the ceiling for the ' +
+      'species the fish was filed as, so a mixed-species event flags the wrong fish');
+  }
+
+  // The submit picker is the only way an angler reaches the second species.
+  const opts = (script.match(/function renderSpeciesOptions\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  if (opts && !opts.includes('scoringSpecies()')) {
+    note('species', 'the submit screen no longer lists every scoring species, so anglers ' +
+      'cannot file the ones the director added');
+  }
+
+  // Writing the list without the legacy fields would leave a phone that has not
+  // reloaded reading no species at all.
+  const save = (script.match(/async function saveSpeciesList\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  if (!save) note('species', 'saveSpeciesList is gone');
+  else if (!save.includes('targetSpecies:') || !save.includes('recordInches:')) {
+    note('species', 'saveSpeciesList no longer writes targetSpecies/recordInches alongside ' +
+      'the list, so an older copy of the app reads the event as scoring nothing');
+  }
+
+  // Freezing has to record the whole list. Storing only the primary would make
+  // a mixed-species event's frozen board disagree with the one anglers saw.
+  //
+  // Scoped to the FREEZE HANDLER, not renderResultsAdmin. Two earlier versions
+  // of this rule passed a sabotage: the renderer's preview builds from a local
+  // `target` that is already the frozen record's own list, and its body holds
+  // another scoringSpecies() a few lines above the call, so checking the body
+  // for that name was satisfied no matter what the call did.
+  const freezeAt = script.indexOf("bindEl('results-freeze'");
+  if (freezeAt === -1) {
+    note('species', 'cannot find the freeze handler to check what it records');
+  } else if (!/buildResults\([\s\S]{0,140}?scoringSpecies\(\)/
+               .test(script.slice(freezeAt, freezeAt + 2000))) {
+    note('species', 'the freeze records the primary species only, so a mixed-species ' +
+      'event would be frozen with half its board missing');
+  }
+}
+
+// ------------------------------------------------------- home tile colours
+// Deterministic on purpose: people navigate by colour before they read the
+// label, so a tile must not change colour between visits.
+{
+  const fn = (script.match(/function tileAccent\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  if (!fn) note('tiles', 'tileAccent is gone - the home tiles lose their colour bars');
+  else if (/Math\.random/.test(fn)) {
+    note('tiles', 'tileAccent picks at random, so a tile changes colour between visits - ' +
+      'people navigate by colour long before they read the label');
+  }
+  // "In the palette of the whole site" is checkable only from here: the unit
+  // tests are handed the script alone, so all they can do is compare the list
+  // against itself. Every accent has to appear somewhere else in the file.
+  const accents = (script.match(/const TILE_ACCENTS = \[([^\]]*)\]/) || ['', ''])[1];
+  for (const m of accents.matchAll(/'(#[0-9A-Fa-f]{3,8})'/g)) {
+    const colour = m[1];
+    const uses = (src.match(new RegExp(colour.replace('#', '#'), 'gi')) || []).length;
+    if (uses < 2) {
+      note('tiles', `the tile accent ${colour} appears nowhere else in the file - the ` +
+        `home tiles are supposed to be coloured from the palette the rest of the site uses`);
+    }
+  }
+
+  const paint = (script.match(/function paintTileAccents\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  if (!paint) note('tiles', 'paintTileAccents is gone');
+  else if (!paint.includes('home-info-tile')) {
+    note('tiles', 'paintTileAccents no longer covers the info tiles, which is half of ' +
+      'what “all of them need a colour line” meant');
+  }
+  const home = (script.match(/async function renderHome\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  if (home && !home.includes('paintTileAccents(')) {
+    note('tiles', 'renderHome no longer paints the tile accents, so every bar falls back ' +
+      'to the near-invisible slate');
+  }
+}
+
 // ------------------------------------------------------- photo integrity
 // The hash lives on the catch record and the pixels live in object storage.
 // Nothing but this check joins them, and all of it runs against a decoded

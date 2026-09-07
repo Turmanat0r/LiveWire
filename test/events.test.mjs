@@ -111,6 +111,8 @@ globalThis.__t = {
   loadAwardsBudget, saveAwardsBudget, awardsBudgetMap,
   standingsFor, byLengthThenEarliest, bySmallestThenEarliest, catchTime,
   canActFor, actionGuard, filedByFor, reviewCatch, showAdminTool,
+  tileAccent, TILE_ACCENTS, paintTileAccents,
+  speciesList, scoringSpecies, speciesPhrase, speciesRowsHtml, saveSpeciesList,
   ensureFishI, initFishI, photoHashes, filingNotice, renderFilingNotice,
   photoIntegrity, photoTamperHtml, PHOTO_TAMPER_TOLERANCE, fishIAuthHeaders,
   hydratePhotos,
@@ -2569,6 +2571,175 @@ section('29q. Fish-I carries the director’s session');
   check('a bearer header is sent either way',
     /^Bearer .+/.test(t.fishIAuthHeaders().Authorization), true);
   check('and the mode went back with it', t.authMode === savedMode, true);
+}
+
+// ============================================================
+section('29r. the little colour bar on each home tile');
+// Two tiles had a coloured bar and six had a near-black one nobody could see.
+{
+  const NAMES = ['checkin','manage','livewell','trophy','gallery','bigfish','gps','payouts'];
+  const got = NAMES.map(n => t.tileAccent(n));
+  check('every tile gets a colour', got.every(c => !!c), true);
+  check('and only ones from the site palette',
+    got.every(c => t.TILE_ACCENTS.indexOf(c) !== -1), true);
+
+  // DETERMINISTIC. It looks scattered, which is the point, but people navigate
+  // by colour long before they read the label - a Side Bets tile that is olive
+  // on Saturday and red on Sunday is a bug as far as the eye is concerned.
+  check('a tile keeps its colour across calls',
+    NAMES.map(n => t.tileAccent(n)), got);
+  check('and two different tiles are not forced to differ',
+    t.tileAccent('checkin') === t.tileAccent('checkin'), true);
+
+  // Scattered enough to read as varied rather than as a gradient.
+  check('at least four of the palette are in play', new Set(got).size >= 4, true);
+
+  // The grid is two columns, so positions 0/1, 2/3, 4/5 sit side by side. Two
+  // identical bars touching reads as a mistake rather than a scheme - this is
+  // the property the hash multiplier was actually chosen for.
+  const sideBySide = [[0,1],[2,3],[4,5],[6,7]]
+    .filter(([a,b]) => got[a] === got[b]);
+  check('no two tiles in the same row share a colour', sideBySide, []);
+
+  check('an unnamed tile still gets something', !!t.tileAccent(''), true);
+  check('and a null one does not throw', !!t.tileAccent(null), true);
+}
+
+// ============================================================
+section('29s. an event can score more than one species');
+// A water that holds walleye holds pike, and a director may reasonably want
+// both on the board. isScoringSpecies is the choke point every screen asks
+// through, so widening THAT is what carried thirteen call sites.
+{
+  const S = (over) => Object.assign({ targetSpecies:'Walleye', recordInches:36 }, over);
+
+  // ---- reading the list ----
+  check('a plain single-species event still reads as a list',
+    t.scoringSpecies(S({})), ['Walleye']);
+  check('with its ceiling carried across',
+    t.speciesList(S({}))[0].recordInches, 36);
+  check('a real list is used when present',
+    t.scoringSpecies(S({ speciesList:[{name:'Walleye',recordInches:36},
+                                      {name:'Northern Pike',recordInches:50}] })),
+    ['Walleye','Northern Pike']);
+  check('an event with neither scores nothing rather than guessing',
+    t.scoringSpecies(S({ targetSpecies:'' })), []);
+  check('an empty list falls back to the single field',
+    t.scoringSpecies(S({ speciesList:[] })), ['Walleye']);
+  // "Other" is the not-scored bucket. On the scoring list it would make every
+  // unscored fish count, which is the exact opposite of what it means.
+  check('Other cannot sneak onto the list',
+    t.scoringSpecies(S({ speciesList:[{name:'Walleye'},{name:'Other'}] })), ['Walleye']);
+  check('nor can a blank name',
+    t.scoringSpecies(S({ speciesList:[{name:'Walleye'},{name:'   '}] })), ['Walleye']);
+  check('names are trimmed',
+    t.scoringSpecies(S({ speciesList:[{name:'  Northern Pike  '}] })), ['Northern Pike']);
+
+  // ---- the three shapes isScoringSpecies has to accept ----
+  // A frozen result taken before an event could score several holds a single
+  // NAME. Those records have to keep scoring exactly as they did.
+  check('a frozen single name still matches', t.isScoringSpecies('Walleye', 'Walleye'), true);
+  check('and still excludes everything else', t.isScoringSpecies('Northern Pike', 'Walleye'), false);
+  // A frozen result taken since holds a list.
+  check('a frozen list matches any of its members',
+    t.isScoringSpecies('Northern Pike', ['Walleye','Northern Pike']), true);
+  check('and nothing outside it',
+    t.isScoringSpecies('Lake Trout', ['Walleye','Northern Pike']), false);
+  check('an empty frozen list scores nothing',
+    t.isScoringSpecies('Walleye', []), false);
+
+  // ---- the phrase the copy is built from ----
+  check('one species reads as itself', t.speciesPhrase(S({})), 'walleye');
+  check('two read as a choice',
+    t.speciesPhrase(S({ speciesList:[{name:'Walleye'},{name:'Northern Pike'}] })),
+    'walleye or northern pike');
+  check('three read as a list',
+    t.speciesPhrase(S({ speciesList:[{name:'Walleye'},{name:'Pike'},{name:'Lake Trout'}] })),
+    'walleye, pike or lake trout');
+  check('and none does not leave a sentence dangling',
+    t.speciesPhrase(S({ targetSpecies:'' })), 'scoring fish');
+
+  // ---- the director's list ----
+  const rows = t.speciesRowsHtml([{name:'Walleye',recordInches:36},
+                                  {name:'Northern Pike',recordInches:0}]);
+  check('each species is listed', /Walleye/.test(rows) && /Northern Pike/.test(rows), true);
+  check('the first is marked primary', /class="sp-row primary"/.test(rows), true);
+  check('and only the first', (rows.match(/sp-row primary/g) || []).length, 1);
+  check('a ceiling is shown when set', /36&quot; ceiling/.test(rows), true);
+  check('and its absence is said rather than left blank', /no ceiling/.test(rows), true);
+  check('each one can be taken off', (rows.match(/data-sp-remove/g) || []).length, 2);
+  // Scoped to the span that PRINTS the name. Checking the whole row matched the
+  // escaped copy inside data-sp-remove and passed with the visible one raw.
+  const evil = t.speciesRowsHtml([{name:'<b>x</b>',recordInches:0}]);
+  const printed = /<span class="sp-name">([\s\S]*?)<\/span>/.exec(evil);
+  check('the name as PRINTED is escaped', printed && /&lt;b&gt;/.test(printed[1]), true);
+  check('and no raw tag survives in it', printed && /<b>/.test(printed[1]), false);
+  // An event scoring nothing can rank nothing. Saying so beats an empty box.
+  check('an empty list explains itself', /No scoring species set/.test(t.speciesRowsHtml([])), true);
+}
+
+// ============================================================
+section('29t. two species on one board, end to end');
+// The pooled board was the choice: any listed species counts and they rank
+// together by length. This is the whole point of the change, so it is checked
+// through the real standings rather than through the helpers.
+{
+  const A = (over) => Object.assign({ eventId:E1, division:'solo', checkins:{} }, over);
+  const C = (over) => Object.assign({ eventId:E1, status:'approved', division:'solo',
+    timestamp:1000 }, over);
+  const anglers = [A({ id:'s1', handle:'Walleye Wally', bigfish:true }),
+                   A({ id:'s2', handle:'Pike Pete', bigfish:true })];
+  const catches = [
+    C({ id:'w1', anglerId:'s1', species:'Walleye', length:26 }),
+    C({ id:'p1', anglerId:'s2', species:'Northern Pike', length:34 }),
+    C({ id:'o1', anglerId:'s1', species:'Other', length:99 })
+  ];
+
+  const walleyeOnly = t.standingsFor('solo', catches, anglers, 'Walleye');
+  check('scoring walleye alone puts only the walleye on the board',
+    walleyeOnly.map(r => r.anglerIds[0]), ['s1']);
+
+  const both = t.standingsFor('solo', catches, anglers, ['Walleye','Northern Pike']);
+  check('scoring both puts both on it', both.length, 2);
+  check('ranked together by length, longest first',
+    both.map(r => r.anglerIds[0]), ['s2','s1']);
+  check('and the 99" Other is still not scored',
+    both.every(r => r.best < 99), true);
+
+  // The Big Fish pot follows the same list, or the board and the pot would
+  // disagree about what the event is.
+  check('the pot is won by the longest of any scoring species',
+    t.bigFishWinner(anglers, catches, ['Walleye','Northern Pike']).catchId, 'p1');
+  check('and by the walleye when only walleye score',
+    t.bigFishWinner(anglers, catches, 'Walleye').catchId, 'w1');
+  check('an Other fish can never take it',
+    t.bigFishWinner(anglers, catches, ['Other']), null);
+
+  // A freeze records the LIST, and isScoringSpecies takes either shape, so a
+  // record written today and one written last year both keep working.
+  const rec = t.buildResults(anglers, catches, [], ['Walleye','Northern Pike']);
+  check('the freeze stores what it scored', rec.targetSpecies, ['Walleye','Northern Pike']);
+  check('and the frozen board has both', rec.divisions.solo.length, 2);
+  const old = t.buildResults(anglers, catches, [], 'Walleye');
+  check('a single-species freeze still stores a plain name', old.targetSpecies, 'Walleye');
+  check('and still holds one angler', old.divisions.solo.length, 1);
+
+  // The trophy case counts a past event against the species THAT event scored,
+  // and that is now a list as often as a name. Without a two-species fixture
+  // here, narrowing the row back to a single comparison passes unnoticed.
+  const bothInfo = (id) => ({ name:'Open', year:'2027', timeZone:'America/Denver',
+    targetSpecies:'Walleye', results: rec });
+  const mixed = t.trophyStats(anglers, catches, [], ['s1'], bothInfo).history[0];
+  check('a mixed-species event counts every scoring fish', mixed.scoring, 1);
+  check('and the Other one is still not counted', mixed.scoring < 2, true);
+  const peteRow = t.trophyStats(anglers, catches, [], ['s2'], bothInfo).history[0];
+  check('the pike counts for the angler who caught it', peteRow.scoring, 1);
+  check('and it is their best fish', peteRow.best, 34);
+  // Scored against walleye alone, the pike angler has nothing.
+  const walleyeInfo = (id) => ({ name:'Open', year:'2027', timeZone:'America/Denver',
+    targetSpecies:'Walleye', results: t.buildResults(anglers, catches, [], 'Walleye') });
+  check('scored against walleye alone, the pike does not count',
+    t.trophyStats(anglers, catches, [], ['s2'], walleyeInfo).history[0].scoring, 0);
 }
 
 // ============================================================

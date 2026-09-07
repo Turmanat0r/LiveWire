@@ -160,6 +160,35 @@ The places where a mistake is silent and expensive:
   A rendering bug is invisible to every test here - there is no browser - so
   both placements are pinned by lint instead, along with the once-only guard
   that stops the notice stacking up on each repaint.
+- **An event can score more than one species, and old events must not notice.**
+  A water that holds walleye holds pike. `isScoringSpecies` is the choke point
+  all thirteen call sites ask through, so widening *that* is what carried
+  standings, the Big Fish pot, the livewell, the FWP report and the trophy case
+  without touching any of them. It accepts three shapes and all three are
+  load-bearing: omitted (the live event's list), a single **name** (a result
+  frozen before an event could score several — those must keep scoring exactly
+  as they did), and a **list** (one frozen since).
+  Nothing migrates. Events stored `targetSpecies` and `recordInches` as plain
+  values, and `speciesList()` builds the list from them on the way past, so
+  there is no SQL to run and no event to re-save. Writing the list also writes
+  those two fields back, so a phone that has not reloaded still reads the
+  primary species rather than finding nothing.
+  The ceiling is **per species**, and has to be: one ceiling across walleye and
+  pike is either so low it flags every big pike or so high it never flags an
+  impossible walleye, and a check that cries wolf stops being read.
+  `OTHER_SPECIES` is refused by `isScoringSpecies` itself, not only filtered out
+  of the stored list — a function with that name answering true for the
+  not-scored sentinel is wrong on its face, and unreachable is not the same as
+  safe when the target can arrive from a record an older build wrote.
+- **The home tiles are coloured deterministically, not randomly.** Each derives
+  its bar from its own name, so it looks scattered but never moves: people
+  navigate by colour long before they read the label, and a Side Bets tile that
+  is olive on Saturday and red on Sunday is a bug as far as the eye is
+  concerned. The multiplier is not arbitrary — it is the one that puts no two
+  identical colours side by side in a two-column grid, which is the property the
+  tests actually assert. That every colour comes from the site's own palette is
+  checkable only by lint, because the unit tests are handed the script without
+  the stylesheet and can only compare the list against itself.
 - **Who you are, across events.** The trophy case shows your history over every
   tournament, and an entry id only means something inside one event — a fresh
   registration each year, a re-rolled handle, and a name typed by hand and
@@ -640,6 +669,22 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Drop the once-only guard so it stacks per repaint | lint |
 | Let the lightbox warning be squeezed to nothing | lint |
 | Read a bad session as a bad server key, or the reverse | 3 failures |
+| Narrow a species LIST back to a single name | lint |
+| Ignore the live event's species list | lint |
+| Let `Other` count as a scoring species | 1 failure |
+| Let `Other`, or a blank, onto the stored list | 1 failure |
+| Stop reading the pre-list single-species shape | lint |
+| Use one ceiling for every species | lint |
+| Offer anglers only the primary species | lint |
+| Stop writing the legacy fields beside the list | lint |
+| Freeze against the primary species only | lint |
+| Count only one species in a trophy row | 3 failures |
+| Drop the escaping on a species name | 2 failures |
+| Mark every species row as primary | 1 failure |
+| Pick tile colours at random each load | lint + 3 failures |
+| Leave the info tiles uncoloured | lint |
+| Never paint the accents | lint |
+| Use a colour from outside the palette | lint |
 | Stop naming which auth variable is missing | 2 failures |
 | Derive a frozen event's placing again | 1 failure |
 | Count a frozen event against the live species | 1 failure |
