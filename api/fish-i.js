@@ -11,9 +11,17 @@
 //
 // WHICH MODEL
 // Google's Gemini, because its free tier covers a tournament comfortably and
-// there is no bill to set up. The limits are per-minute and per-day on a
-// handful of requests each; a director reviewing catches as they come in will
-// not go near them.
+// there is no bill to set up.
+//
+// WHAT COSTS QUOTA
+// Only generateContent. ListModels does not, which is what makes the health
+// check below free to answer. That distinction used to be missed here: the
+// health check verified each candidate model by GENERATING with it, up to five
+// calls, and it ran on every cold serverless instance. The page asked for it on
+// load - every angler's page, not just the director's - so a field refreshing
+// at the ramp could spend the day's whole free allowance before a single catch
+// was reviewed. Nothing on the GET path generates any more, and the page does
+// not ask until a director opens the panel.
 //
 // SETUP - once, and it is the only step
 //   1. aistudio.google.com/apikey -> Create API key. No card, no billing.
@@ -93,28 +101,6 @@ function pickModel(models) {
 // answered a call.
 let cachedModel = null;
 
-// Being listed is not the same as being callable - that is the whole bug this
-// went through. So a candidate is tried before it is trusted, with a request
-// small enough to be free in every way that matters.
-//
-// Only a 404 disqualifies. A 400 or a 429 means the model is there and
-// something else is wrong, and walking past it would land us on a worse one.
-async function modelAnswers(key, id) {
-  try {
-    const res = await fetch(API_ROOT + '/models/' + encodeURIComponent(id) + ':generateContent', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: 'ok' }] }],
-        generationConfig: { maxOutputTokens: 16 }
-      })
-    });
-    return res.status !== 404;
-  } catch (e) {
-    return false;
-  }
-}
-
 async function listModels(key) {
   const res = await fetch(API_ROOT + '/models?pageSize=200', {
     headers: { 'x-goog-api-key': key }
@@ -135,11 +121,19 @@ let cachedRanked = null;
 // everybody wants the newest one. None of these are a reason to give up while
 // four other models sit unused.
 //
-// 400, 401, 403 and 429 are NOT retryable: a bad request, a bad key, or a
-// quota is the same on every model, and walking the list would turn one clear
-// error into five slow ones.
+// 429 is on this list too, and that is a correction to what this file used to
+// say. Gemini's free-tier quotas are PER MODEL, not per key: running
+// gemini-2.5-flash out of its daily requests says nothing whatever about
+// gemini-2.5-flash-lite, which has its own allowance, and a larger one.
+// Treating one model's spent quota as the whole key's is what turns "the model
+// I like is busy" into "Fish-I is down for the rest of the day" with four
+// untouched models sitting right there.
+//
+// 400, 401 and 403 are still NOT retryable: a bad request or a bad key is the
+// same on every model, and walking the list would turn one clear error into
+// five slow ones.
 function isRetryableModelStatus(status) {
-  return status === 404 || status === 500 || status === 503;
+  return status === 404 || status === 429 || status === 500 || status === 503;
 }
 
 async function resolveRanked(key, force) {
@@ -155,24 +149,24 @@ async function resolveRanked(key, force) {
   return ranked;
 }
 
-// Returns the model id to call, or throws with something the director can act
-// on. `force` skips the cache, for the retry after a 404.
+// Which model the health check reports, without calling it.
+//
+// It used to prove the choice by generating with each candidate until one
+// answered, because being listed is not the same as being callable - a name can
+// exist, answer a metadata lookup, and still 404 on generateContent. That was
+// true, and the fix was in the wrong place: proving it cost up to five real
+// requests out of a daily allowance of a few hundred, every time a cold
+// instance answered "are you ready".
+//
+// The POST path already walks the ranking when a model refuses, so a top choice
+// that 404s costs one wasted round trip and the review still happens. That is
+// where the uncertainty belongs - on the one request that had to be made
+// anyway, not on a status line.
 async function resolveModel(key, force) {
   if (MODEL_OVERRIDE) return MODEL_OVERRIDE;
   if (cachedModel && !force) return cachedModel;
-
   const ranked = await resolveRanked(key, force);
-  // Only the first few are worth trying. Past that the ranking has run out of
-  // anything preferable and the director is waiting on a page load.
-  for (const id of ranked.slice(0, 5)) {
-    if (await modelAnswers(key, id)) {
-      cachedModel = id;
-      return id;
-    }
-  }
-  const err = new Error('None of the Gemini models this key offers would answer a call.');
-  err.noModel = true;
-  throw err;
+  return ranked[0];
 }
 
 // Vercel caps a serverless request body at 4.5 MB. The app encodes catch
@@ -341,6 +335,35 @@ function googleMessage(raw) {
   try { return (JSON.parse(raw).error || {}).message || ''; } catch (e) { return ''; }
 }
 
+// Google puts "try again in N seconds" in the error details on a 429. Passing
+// it through is the difference between a director waiting the right minute and
+// a director hammering the button, which is the one thing that makes a rate
+// limit worse.
+function googleRetrySeconds(raw) {
+  try {
+    const details = ((JSON.parse(raw).error || {}).details) || [];
+    for (const d of details) {
+      const m = /^([0-9]+(?:\.[0-9]+)?)s$/.exec(String((d && d.retryDelay) || ''));
+      if (m) return Math.ceil(parseFloat(m[1]));
+    }
+  } catch (e) {}
+  return 0;
+}
+
+// Per-day and per-minute limits are both a 429 and they do NOT have the same
+// answer: one clears in a minute, the other at midnight Pacific. Telling a
+// director to "wait a moment" when the day's allowance is gone has them
+// pressing the button for an hour.
+function isDailyQuota(raw) {
+  try {
+    const err = JSON.parse(raw).error || {};
+    const blob = JSON.stringify(err.details || []) + ' ' + (err.message || '');
+    return /PerDay|per day|\bdaily\b/i.test(blob);
+  } catch (e) {
+    return false;
+  }
+}
+
 module.exports = async (req, res) => {
   const key = process.env.GEMINI_API_KEY;
 
@@ -368,7 +391,12 @@ module.exports = async (req, res) => {
         });
       }
       const model = await resolveModel(key, req.query && req.query.refresh === '1');
-      return send(res, 200, { ready: true, model, pinned: !!MODEL_OVERRIDE });
+      // `verified` is false until a model has actually answered a review. The
+      // page does not need it to be true - it needs to know a key is present
+      // and this key has vision-capable models, which is what this says.
+      return send(res, 200, {
+        ready: true, model, pinned: !!MODEL_OVERRIDE, verified: cachedModel === model
+      });
     } catch (e) {
       if (e && (e.status === 400 || e.status === 401 || e.status === 403)) {
         return send(res, 200, { ready: false, reason: 'bad-key', detail: e.message });
@@ -459,7 +487,11 @@ module.exports = async (req, res) => {
       ? [cachedModel].concat(ranked.filter(id => id !== cachedModel))
       : ranked;
 
-    for (const id of order.slice(0, 3)) {
+    // Five rather than three, because nothing has been pre-verified any more:
+    // the health check no longer spends quota proving a model callable, so this
+    // loop is the only thing standing between a retired top choice and a failed
+    // review. A 404 comes back fast; a spent quota comes back faster.
+    for (const id of order.slice(0, 5)) {
       model = id;
       upstream = await callModel(id);
       if (!isRetryableModelStatus(upstream.status)) break;
@@ -479,7 +511,19 @@ module.exports = async (req, res) => {
       return send(res, 502, { error: 'The server\'s Gemini API key was rejected. Check GEMINI_API_KEY in Vercel.' });
     }
     if (upstream.status === 429) {
-      return send(res, 429, { error: 'The free Gemini quota is used up for now. Wait a minute, then try again.' });
+      // Every model in the ranking was tried by the time we get here, so this
+      // really is the whole key and not one busy model.
+      const wait = googleRetrySeconds(raw);
+      return send(res, 429, {
+        error: isDailyQuota(raw)
+          ? 'Every Gemini model on this key has used up its free requests for today. ' +
+            'The allowance resets at midnight Pacific. The first-pass checks - ' +
+            'resolution, blur, duplicate photos, boundary, plausible length - are ' +
+            'all local and still running, so catches can still be judged.'
+          : 'Gemini is rate limited right now' + (wait
+              ? ' \u2014 try again in about ' + wait + ' second' + (wait === 1 ? '' : 's') + '.'
+              : '. Wait a minute, then try again.')
+      });
     }
     if (upstream.status === 503 || upstream.status === 500) {
       return send(res, 503, {
@@ -539,4 +583,5 @@ module.exports = async (req, res) => {
 
 // Reachable from test/fish-i.test.mjs. Vercel only cares that module.exports
 // is the handler, and it still is - these hang off it.
-module.exports.__test = { allowedPhotoUrl, clean, normalize, buildPrompt, pickModel, rankModels, isRetryableModelStatus };
+module.exports.__test = { allowedPhotoUrl, clean, normalize, buildPrompt, pickModel,
+                          rankModels, isRetryableModelStatus, googleRetrySeconds, isDailyQuota };

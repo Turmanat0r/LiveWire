@@ -46,6 +46,8 @@ globalThis.__t = {
   cachedRows, saveCollection, rowEventId, isActiveEventRow, mergeIntoCache,
   loadAnglers, saveAnglers, loadCatches, saveCatches, loadDonations, saveDonations,
   loadCatchesAllEvents, allRows, evaluateFirstPass,
+  photoHashList, photoHashDistance, hammingHex, PRECHECK_HASH_WINDOWS,
+  PRECHECK_DUP_MAX_DISTANCE, PRECHECK_DUP_CROP_MAX_DISTANCE, filedByBadgeHtml,
   eventSettings, saveEventSettings, targetSpecies, recordInches, courseBoundary,
   isScoringSpecies, OTHER_SPECIES, evaluateBoundary, boundaryIsUsable,
   pointInPolygon, distanceToPolygonEdgeMiles, normalizeBoundary, parsePointLines,
@@ -108,7 +110,9 @@ globalThis.__t = {
   set serverClockOffset(v){ serverClockOffset = v; },
   loadAwardsBudget, saveAwardsBudget, awardsBudgetMap,
   standingsFor, byLengthThenEarliest, bySmallestThenEarliest, catchTime,
-  canActFor, reviewCatch, showAdminTool,
+  canActFor, actionGuard, filedByFor, reviewCatch, showAdminTool,
+  ensureFishI, initFishI, photoHashes, filingNotice, renderFilingNotice,
+  get fishIStarted(){ return fishIStarted; }, set fishIStarted(v){ fishIStarted = v; },
   galleryOrder, galleryTileHtml, galleryTime, openLightbox, closeLightbox, hideLightbox,
   buildResults, bigFishWinner, frozenResults, saveFrozenResults, setupTodos,
   loadBetsAllEvents, renderResultsAdmin, renderSetupTodos,
@@ -2251,6 +2255,246 @@ section('29l. the reminder that outlives this conversation');
         .find(x => x.id === 'accounts').detail), true);
   check('and an empty roster does not throw',
     t.setupTodos(openEvt, null, beforeClose).length > 0, true);
+}
+
+// ============================================================
+section('29m. who may file a catch, checked when it is written');
+// The picker was scoped a while ago. The WRITE never re-checked, and a <select>
+// holds whatever it held when the screen was painted - so switching event, or
+// opening the inspector, still got a catch filed under somebody else's name.
+{
+  const roster = [
+    { id:'g-me',      name:'Me',      division:'solo', teamId:null },
+    { id:'g-partner', name:'Partner', division:'team', teamId:'T1' },
+    { id:'g-other',   name:'Stranger',division:'solo', teamId:null }
+  ];
+  const wasAdmin = t.adminUnlocked;
+  const wasMine = t.getMyAnglerId();
+
+  t.adminUnlocked = false;
+  t.setMyAnglerId('g-me');
+  check('filing for yourself is allowed', t.actionGuard('g-me', roster, 'Open').ok, true);
+  check('and it hands back the entry', t.actionGuard('g-me', roster, 'Open').angler.name, 'Me');
+
+  const other = t.actionGuard('g-other', roster, 'Open');
+  check('filing under somebody else is refused', other.ok, false);
+  check('and says which of the two problems it is', other.code, 'not-yours');
+  check('naming them, so the message is not a riddle', /Stranger/.test(other.message), true);
+
+  // A pick that is on no roster in this event. loadAnglers() is event-scoped,
+  // so this is exactly how a leftover selection from last year's tournament
+  // reads - and the old code wrote it down as "Unknown" and saved it.
+  const ghost = t.actionGuard('g-ghost', roster, 'Montana Kayak Walleye Open');
+  check('an entry that is not registered is refused', ghost.ok, false);
+  check('and refused for THAT reason, not the other one', ghost.code, 'not-registered');
+  check('the message names the tournament they are missing from',
+    /Montana Kayak Walleye Open/.test(ghost.message), true);
+  check('an empty pick is its own case', t.actionGuard('', roster, 'Open').code, 'no-angler');
+
+  // A team registers once, on one phone. Scoping to "just me" would strand the
+  // partner with no way to file anything.
+  t.setMyAnglerId('g-partner');
+  check('a captain may still file for their partner',
+    t.actionGuard('g-partner', roster, 'Open').ok, true);
+
+  // THE ORDER MATTERS. canActFor answers true for anything once the director is
+  // unlocked - including an id on no roster. Membership has to be tested first
+  // or director access becomes a way to file a catch for a person who never
+  // entered, which is the "submit while not registered" report.
+  t.adminUnlocked = true;
+  check('a director may file for anyone ON the roster',
+    t.actionGuard('g-other', roster, 'Open').ok, true);
+  const dirGhost = t.actionGuard('g-ghost', roster, 'Open');
+  check('but not for somebody who never registered', dirGhost.ok, false);
+  check('membership is checked before permission', dirGhost.code, 'not-registered');
+  check('an empty roster refuses everyone', t.actionGuard('g-me', [], 'Open').ok, false);
+  check('and a null one does not throw', t.actionGuard('g-me', null, 'Open').ok, false);
+
+  // Filing for someone else is legitimate - a dead phone at the ramp - so it is
+  // not blocked for a director. It is RECORDED, which is the honest answer to a
+  // capability that cannot be removed.
+  t.setMyAnglerId('g-me');
+  check('filing for yourself leaves no mark', t.filedByFor('g-me', roster), null);
+  const mark = t.filedByFor('g-other', roster);
+  check('filing for another does', !!mark, true);
+  check('and names the device that did it', mark.name, 'Me');
+  check('and that it was a director', mark.director, true);
+  check('the badge is silent on an ordinary catch', t.filedByBadgeHtml({}), '');
+  check('and speaks up on this one',
+    /Filed by Me \(director\)/.test(t.filedByBadgeHtml({ filedBy: mark })), true);
+  check('escaping the name it prints',
+    /&lt;b&gt;/.test(t.filedByBadgeHtml({ filedBy: { name:'<b>x</b>' } })), true);
+
+  // The director's picker lists the whole field on purpose - a dead phone at
+  // the ramp has no other way in - so the capability cannot be removed. What it
+  // can do is stop being silent, because a full list on a screen that is
+  // normally about YOUR fish is how a catch lands under the wrong name by
+  // accident rather than on purpose.
+  t.adminUnlocked = true;
+  t.setMyAnglerId('g-me');
+  check('filing your own catch says nothing', t.filingNotice('g-me', roster), '');
+  check('an empty pick says nothing either', t.filingNotice('', roster), '');
+  const warn = t.filingNotice('g-other', roster);
+  check('filing somebody else\'s is announced', warn.length > 0, true);
+  check('and names whose it will be', /Stranger/.test(warn), true);
+  check('and warns the record will show it', /this device/.test(warn), true);
+  // A team partner is not a warning. The captain's phone holds the partner's
+  // record; filing for them is how a team is meant to work, and nagging about
+  // it every time would train the notice out of being read.
+  t.setMyAnglerId('g-partner');
+  const team = [
+    { id:'g-partner', name:'Partner', division:'team', teamId:'T1' },
+    { id:'g-mate',    name:'Mate',    division:'team', teamId:'T1' }
+  ];
+  check('a team partner is not warned about', t.filingNotice('g-mate', team), '');
+  check('an id on no roster says nothing rather than guessing',
+    t.filingNotice('g-ghost', roster), '');
+
+  t.adminUnlocked = wasAdmin;
+  t.setMyAnglerId(wasMine);
+}
+
+// ============================================================
+section('29n. a cropped photo is still the same photo');
+// A dHash describes the whole frame. Crop in and every bit moves, so the check
+// that exists to catch a reused photo was defeated by the most obvious edit
+// there is - and by an angler innocently tidying a shot before sending it.
+{
+  const WHOLE   = 'ffffffffffffffff';
+  const W70     = 'a5a5a5a5a5a5a5a5';   // the middle of WHOLE's photo
+  const CROPPED = 'a5a5a5a5a5a5a5a4';   // that middle, shot as its own frame: 1 bit off
+  const ELSE    = 'deadbeefdeadbeef';
+
+  const original = { hash: WHOLE, hashes: [WHOLE, ELSE, W70, ELSE] };
+  const crop     = { hash: CROPPED, hashes: [CROPPED, ELSE, ELSE, ELSE] };
+
+  check('the two whole frames look nothing alike',
+    t.hammingHex(WHOLE, CROPPED) > 20, true);
+  const m = t.photoHashDistance(crop, original);
+  check('but the crop matches a window of the original', m.distance, 1);
+  check('and it is reported AS a crop', m.cropped, true);
+
+  // The old shape, which is what every catch already filed carries.
+  const flat = { hash: CROPPED };
+  check('a single-hash record cannot see it',
+    t.photoHashDistance(flat, { hash: WHOLE }).distance > 20, true);
+  check('and does not claim a crop it did not find',
+    t.photoHashDistance(flat, { hash: WHOLE }).cropped, false);
+  // It must still work the ordinary way, or every catch filed before today
+  // stops being checked at all.
+  check('two whole frames still compare as they always did',
+    t.photoHashDistance({ hash: WHOLE }, { hash: 'fffffffffffffffe' }),
+    { distance: 1, cropped: false });
+  check('an unhashed record is not a match', t.photoHashDistance(null, original).distance, 64);
+  check('nor is an empty one', t.photoHashDistance({}, original).distance, 64);
+  check('a legacy hash is read as one window', t.photoHashList({ hash: WHOLE }), [WHOLE]);
+  check('and windows are preferred when present', t.photoHashList(original).length, 4);
+  check('the first window is always the whole frame',
+    t.PRECHECK_HASH_WINDOWS[0], [0, 0, 1, 1]);
+
+  // A crop is less picture, so it is weaker evidence and clears a tighter bar.
+  // Without the separate threshold, comparing narrow windows against whole
+  // frames would start flagging strangers.
+  check('the crop bar is tighter than the whole-frame bar',
+    t.PRECHECK_DUP_CROP_MAX_DISTANCE < t.PRECHECK_DUP_MAX_DISTANCE, true);
+
+  // ---- through the real verdict ----
+  const C = (over) => Object.assign({ eventId: E2, species:'Walleye', status:'approved',
+    division:'solo', length:24, timestamp: Date.UTC(2028, 8, 16, 15) }, over);
+  const corpus = [
+    C({ id:'orig', anglerId:'x1', anglerName:'Ann', length:28, precheck: original })
+  ];
+  const reuser = C({ id:'crop', anglerId:'x2', anglerName:'Bob', length:28,
+    status:'pending', precheck: crop });
+
+  const hit = t.evaluateFirstPass(reuser, corpus, corpus).checks
+    .find(x => /duplicate|reused/i.test(x.label));
+  check('the director is shown it', !!hit, true);
+  check('flagged, not merely noted', hit && hit.level, 'flag');
+  check('the label says a crop, because at a glance they look different',
+    hit && /cropped/.test(hit.label), true);
+  check('and the detail says which way round to look',
+    hit && /CROP of the other/.test(hit.detail), true);
+  check('it still names whose photo it was',
+    hit && /Ann/.test(hit.label), true);
+
+  // A crop match at 5 bits is past the crop bar and must stay quiet, while the
+  // SAME distance between two whole frames is inside the ordinary bar and must
+  // not. One threshold for both would get one of these two wrong.
+  const loose = C({ id:'loose', anglerId:'x3', anglerName:'Cal', status:'pending',
+    precheck: { hash:'a5a5a5a5a5a5a5ba', hashes:['a5a5a5a5a5a5a5ba', ELSE, ELSE, ELSE] } });
+  check('the crop distance under test really is 5',
+    t.photoHashDistance(loose.precheck, original).distance, 5);
+  check('a loose crop match is not raised',
+    t.evaluateFirstPass(loose, corpus, corpus).checks
+      .some(x => /duplicate|reused/i.test(x.label)), false);
+
+  const wholeCorpus = [C({ id:'w', anglerId:'x1', anglerName:'Ann', precheck:{ hash: WHOLE } })];
+  const wholeNear = C({ id:'wn', anglerId:'x4', anglerName:'Dee', status:'pending',
+    precheck: { hash:'ffffffffffffffe0' } });
+  check('the whole-frame distance under test is also 5',
+    t.photoHashDistance(wholeNear.precheck, { hash: WHOLE }).distance, 5);
+  check('and at 5 bits a whole-frame match IS raised',
+    t.evaluateFirstPass(wholeNear, wholeCorpus, wholeCorpus).checks
+      .some(x => /duplicate|reused/i.test(x.label)), true);
+}
+
+// ============================================================
+section('29o. Fish-I does not spend the day’s quota on page loads');
+// Answering "is Fish-I ready" costs a round trip to the server, and on the
+// server it used to cost real Gemini requests - up to five generateContent
+// calls per cold instance, out of a free allowance of a few hundred a day.
+//
+// The page asked on load. EVERY page, not just a director's. A field of thirty
+// refreshing at the ramp could spend the day's allowance before the first catch
+// was reviewed, to paint a status line on a panel none of them can open. So
+// nothing is asked until a director opens the panel.
+{
+  const wasStarted = t.fishIStarted;
+  const wasAdmin = t.adminUnlocked;
+  const wasStatus = t.fishIStatus;
+  const wasSampler = t.fishISampler;
+  const savedLoc = t.appWindow.location;
+  const realFetch = globalThis.fetch;
+  let probes = 0;
+  globalThis.fetch = async () => { probes++; return {
+    ok: true, status: 200, async json(){ return { ready:false, reason:'no-api-key' }; } }; };
+  try{
+    t.appWindow.location = { protocol: 'https:' };
+    t.adminUnlocked = false;          // fishIRefresh must not repaint a panel
+    t.fishISampler = null;
+    t.fishIStarted = false;
+
+    // The state the app is in for every angler who never opens the panel.
+    check('nothing has been asked yet', probes, 0);
+    check('and the flag says so', t.fishIStarted, false);
+
+    t.ensureFishI();
+    await new Promise(r => setTimeout(r, 0));
+    check('the first director to open the panel asks once', probes, 1);
+    check('and it is marked started', t.fishIStarted, true);
+
+    // renderAdmin runs on every repaint of the panel - every sync tick, every
+    // approve, every screen return. Asking each time would be worse than
+    // asking on load.
+    t.ensureFishI();
+    t.ensureFishI();
+    await new Promise(r => setTimeout(r, 0));
+    check('repainting the panel asks no more', probes, 1);
+
+    // The director's own Retry button is the one thing that may ask again.
+    t.fishIStarted = true;
+    await t.initFishI();
+    check('but the Retry button still can', probes, 2);
+  } finally {
+    globalThis.fetch = realFetch;
+    if(savedLoc === undefined) delete t.appWindow.location;
+    else t.appWindow.location = savedLoc;
+    t.fishIStarted = wasStarted;
+    t.adminUnlocked = wasAdmin;
+    t.fishIStatus = wasStatus;
+    t.fishISampler = wasSampler;
+  }
 }
 
 // ============================================================

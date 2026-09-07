@@ -1151,6 +1151,10 @@
   .hist-row.won{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold);}
   .hist-won{display:block;font-size:10.5px;color:var(--gold-deep);margin-top:3px;font-weight:600;}
   .freeze-state{font-size:11px;color:var(--steel);margin:6px 0 0;}
+  .filing-note{
+    margin:6px 0 0;padding:7px 9px;border-radius:4px;font-size:11px;font-weight:600;
+    background:#F7F1E4;border-left:3px solid var(--gold);color:#7A5B14;line-height:1.5;
+  }
   .todo{
     border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:4px;
     padding:9px 10px;margin-bottom:8px;background:var(--paper-2);
@@ -1580,6 +1584,7 @@
           <label for="sub-angler">Angler</label>
           <select id="sub-angler"></select>
           <p class="hint" id="sub-angler-note" style="margin-bottom:0;"></p>
+          <p class="filing-note" id="sub-filing-note" style="display:none;"></p>
         </div>
         <div class="row2">
           <div class="field">
@@ -2586,6 +2591,35 @@ const PRECHECK_BLUR_THRESHOLD = 40;     // Laplacian variance; lower = softer im
 const PRECHECK_DARK_THRESHOLD = 55;     // mean luminance, 0-255
 const PRECHECK_BRIGHT_THRESHOLD = 225;
 const PRECHECK_DUP_MAX_DISTANCE = 6;    // Hamming distance over a 64-bit dHash
+// A crop match is weaker evidence than a whole-frame match - it compares a
+// window of one photo against the whole of another, which is less picture and
+// so fewer ways to disagree. It has to clear a tighter bar to be worth saying.
+const PRECHECK_DUP_CROP_MAX_DISTANCE = 4;
+
+// A dHash describes the WHOLE frame, so it says nothing useful about a photo
+// that has been cropped: the 9x8 grid lands on different content and more or
+// less every bit changes. Cropping in is the obvious way to make a reused photo
+// look new, and it is also what an honest angler does by accident when they
+// tidy a shot up before sending it.
+//
+// So every photo is hashed through each of these windows as well as whole, and
+// two photos are compared by the closest pair they have. A photo cropped to the
+// middle 70% matches the original's middle-70% window, because that is the same
+// picture at the same framing.
+//
+// [x, y, width, height], as fractions of the source. Index 0 MUST be the full
+// frame: it is the one stored as .hash, and photoHashDistance requires one side
+// of every comparison to be a whole photo.
+const PRECHECK_HASH_WINDOWS = [
+  [0,     0,     1,    1   ],   // whole
+  [0.075, 0.075, 0.85, 0.85],   // centred, three depths
+  [0.15,  0.15,  0.70, 0.70],
+  [0.225, 0.225, 0.55, 0.55],
+  [0,     0,     0.75, 0.75],   // and off-centre, for a crop that was not
+  [0.25,  0,     0.75, 0.75],   // taken from the middle
+  [0,     0.25,  0.75, 0.75],
+  [0.25,  0.25,  0.75, 0.75]
+];
 // Per-species plausibility ceiling now lives on the event and is editable by
 // the director - see eventSettings().recordInches.
 
@@ -3015,6 +3049,17 @@ function captureBadgeHtml(c){
   return captureBadges(c).map(b=>
     '<span class="badge" style="' + CAPTURE_TONES[b.tone] + '">' + escapeHtml(b.text) + '</span>'
   ).join('');
+}
+
+// Only appears when the catch was filed from a device other than the angler's
+// own. Silent in the ordinary case, which is every catch an angler submits for
+// themselves - a badge on every card would be noise, and noise is what a
+// director stops reading.
+function filedByBadgeHtml(c){
+  const f = c && c.filedBy;
+  if(!f) return '';
+  return '<span class="badge" style="background:#F1E3C6;color:#7A5B14;">Filed by ' +
+    escapeHtml(f.name || 'another device') + (f.director ? ' (director)' : '') + '</span>';
 }
 
 function boundaryBadgeHtml(c){
@@ -4797,11 +4842,16 @@ function resizeImage(file, stamp){
 // are genuinely reliable to compute locally; the judgement calls that need a
 // vision model (species, is the nose actually on the pin) go to the Fish-I pass.
 
-function greyscaleFrom(img, w, h){
+// `win` is [x, y, w, h] in fractions of the source; omitted means the whole
+// frame, which is what every caller but the hash wants.
+function greyscaleFrom(img, w, h, win){
   const canvas = document.createElement('canvas');
   canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(img, 0, 0, w, h);
+  const r = win || [0, 0, 1, 1];
+  ctx.drawImage(img,
+    img.width * r[0], img.height * r[1], img.width * r[2], img.height * r[3],
+    0, 0, w, h);
   const data = ctx.getImageData(0, 0, w, h).data;
   const grey = new Float64Array(w*h);
   for(let i=0;i<w*h;i++){
@@ -4813,9 +4863,9 @@ function greyscaleFrom(img, w, h){
 // Difference hash: 9x8 greyscale, compare each pixel to its right neighbour.
 // Two photos of the same fish in the same pose hash within a few bits of each
 // other even after resaving, which is what makes duplicate detection work.
-function dHashOf(img){
+function dHashOf(img, win){
   const w = 9, h = 8;
-  const grey = greyscaleFrom(img, w, h);
+  const grey = greyscaleFrom(img, w, h, win);
   let bits = '';
   for(let y=0;y<h;y++){
     for(let x=0;x<w-1;x++){
@@ -4825,6 +4875,45 @@ function dHashOf(img){
   let hex = '';
   for(let i=0;i<bits.length;i+=4) hex += parseInt(bits.slice(i,i+4),2).toString(16);
   return hex;
+}
+
+// One hash per window. [0] is the full frame, so anything reading only .hash -
+// a stored record from before this existed, the director's own eye - still gets
+// exactly the number it always got.
+function photoHashes(img){
+  return PRECHECK_HASH_WINDOWS.map(win=> dHashOf(img, win));
+}
+
+// The windows a stored precheck can be compared through. Catches filed before
+// windowing existed carry one hash and are compared through that alone: they
+// can still be matched BY a cropped photo, but a crop of them cannot be
+// recognised, because the windows that would have caught it were never taken.
+function photoHashList(p){
+  if(!p) return [];
+  if(Array.isArray(p.hashes) && p.hashes.length) return p.hashes;
+  return p.hash ? [p.hash] : [];
+}
+
+// The closest pair of windows the two photos have, and whether that pair was a
+// crop rather than two whole frames.
+//
+// One side of every comparison is a WHOLE photo. If B is a crop of A then B's
+// full frame matches one of A's windows, so the cross product adds nothing this
+// does not already reach - and comparing two narrow windows against each other
+// only adds ways for two low-detail patches to collide by accident.
+function photoHashDistance(a, b){
+  const A = photoHashList(a), B = photoHashList(b);
+  if(!A.length || !B.length) return { distance: 64, cropped: false };
+  let best = 64, cropped = false;
+  for(let j = 0; j < B.length; j++){
+    const d = hammingHex(A[0], B[j]);
+    if(d < best){ best = d; cropped = j !== 0; }
+  }
+  for(let i = 1; i < A.length; i++){
+    const d = hammingHex(A[i], B[0]);
+    if(d < best){ best = d; cropped = true; }
+  }
+  return { distance: best, cropped: cropped };
 }
 
 function hammingHex(a, b){
@@ -4863,8 +4952,12 @@ function analyzePhoto(dataUrl, srcWidth, srcHeight){
     img.onload = ()=>{
       try{
         const ex = exposureAndSharpness(img);
+        const hashes = photoHashes(img);
         resolve({
-          hash: dHashOf(img),
+          // hashes[0] IS hash - kept as its own field so nothing that reads
+          // the old shape has to know windows happened.
+          hash: hashes[0],
+          hashes: hashes,
           brightness: Math.round(ex.brightness*10)/10,
           sharpness: Math.round(ex.sharpness*10)/10,
           srcWidth: srcWidth || img.width,
@@ -4916,11 +5009,17 @@ function evaluateFirstPass(c, allCatches, dupCorpus){
 
   // Duplicate photo detection - the strongest fraud signal available locally,
   // and the one check that deliberately looks across every event.
-  if(p && p.hash){
+  if(p && (p.hash || (p.hashes && p.hashes.length))){
     const near = dupPool
-      .filter(o=> o.id!==c.id && o.precheck && o.precheck.hash)
-      .map(o=> ({ other:o, distance: hammingHex(p.hash, o.precheck.hash) }))
-      .filter(x=> x.distance <= PRECHECK_DUP_MAX_DISTANCE)
+      .filter(o=> o.id!==c.id && o.precheck && (o.precheck.hash || o.precheck.hashes))
+      .map(o=>{
+        const m = photoHashDistance(p, o.precheck);
+        return { other:o, distance:m.distance, cropped:m.cropped };
+      })
+      // A crop clears a tighter bar than a whole-frame match, because it is
+      // less picture and so weaker evidence.
+      .filter(x=> x.distance <= (x.cropped ? PRECHECK_DUP_CROP_MAX_DISTANCE
+                                           : PRECHECK_DUP_MAX_DISTANCE))
       .sort((a,b)=> a.distance-b.distance);
     if(near.length){
       const hit = near[0];
@@ -4935,21 +5034,29 @@ function evaluateFirstPass(c, allCatches, dupCorpus){
       const when = new Date(hit.other.timestamp).toLocaleString([], crossEvent
         ? {year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}
         : {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+      // Worth saying out loud. "Near-identical" invites the answer "but they
+      // are different photos, look" - and at a glance they are, because one has
+      // been cropped in. Naming it is what makes the flag hold up.
+      const how = hit.cropped
+        ? 'One is a CROP of the other (' + hit.distance + '/64 bits differ once the ' +
+          'crop is matched up)'
+        : 'Near-identical photo (' + hit.distance + '/64 bits differ)';
 
       let label, detail;
       if(crossEvent){
         const which = hitEvent ? eventDateRangeText(hitEvent) : hitEventId;
-        label = sameAngler
+        label = (sameAngler
           ? 'Photo reused from this angler\'s earlier event entry'
-          : 'Photo reused from an earlier event';
-        detail = 'Near-identical photo ('+hit.distance+'/64 bits differ) to '+
+          : 'Photo reused from an earlier event') + (hit.cropped ? ', cropped' : '');
+        detail = how + ' to '+
           hit.other.anglerName+'\'s '+hit.other.length+'" '+hit.other.species+
           ' from '+which+', submitted '+when+'.';
       } else {
-        label = sameAngler
+        label = (sameAngler
           ? 'Possible duplicate of this angler\'s own entry'
-          : 'Possible duplicate of '+hit.other.anglerName+'\'s entry';
-        detail = 'Near-identical photo ('+hit.distance+'/64 bits differ) to a '+
+          : 'Possible duplicate of '+hit.other.anglerName+'\'s entry') +
+          (hit.cropped ? ', cropped' : '');
+        detail = how + ' to a '+
           hit.other.length+'" '+hit.other.species+' submitted '+when+'.';
       }
       checks.push({ level:'flag', label, detail });
@@ -5092,7 +5199,27 @@ async function initFishI(){
     fishIRefresh();
   }
 }
-initFishI();
+
+// Fish-I is a DIRECTOR tool. Nothing an angler sees mentions it.
+//
+// This used to run on load, which meant every phone that opened the app asked
+// the server whether Fish-I was ready - and answering that question used to
+// cost real Gemini requests (see the header of api/fish-i.js). A field of
+// thirty refreshing at the ramp could spend the day's free allowance before the
+// first catch was reviewed, and the answer went nowhere: it painted a status
+// line on a panel none of them can open.
+//
+// So it starts on first use instead. Both ways into the panel - the passcode
+// and a director sign-in - end at renderAdmin(), which is the only screen that
+// reads the status.
+let fishIStarted = false;
+function ensureFishI(){
+  if(fishIStarted) return;
+  fishIStarted = true;
+  // Deliberately not awaited. The panel paints with the status it has and
+  // repaints itself when this resolves, via fishIRefresh().
+  initFishI();
+}
 
 function fishIStatusText(){
   switch(fishIStatus){
@@ -5879,8 +6006,10 @@ async function renderRoster(){
 }
 
 // ---- check in/out ----
-// An angler picker (rather than just "me") so a partner, or a shared
-// check-in tablet at the ramp, can check any registered angler in or out.
+// An angler picker rather than just "me", so a team captain can check their
+// partner in - the partner's record lives on the captain's phone. It is NOT a
+// shared tablet that can check the whole field in: populateAnglerSelect scopes
+// the list to this device's own entries, and the handler re-checks.
 async function renderCheckin(){
   await populateAnglerSelect('checkin-angler', 'checkin-angler-note');
   await renderCheckinBody();
@@ -5913,6 +6042,11 @@ async function renderCheckinBody(){
   el.querySelectorAll('[data-act]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       const anglers = await loadAnglers();
+      // Same re-check as the catch submit. Checking somebody else in or out is
+      // not a scoring change, but it is the record of who launched and who came
+      // back, which is what the overdue list is read off at dusk.
+      const guard = actionGuard(anglerId, anglers, activeEvent().name);
+      if(!guard.ok){ setText('checkin-angler-note', guard.message); return; }
       const idx = anglers.findIndex(a=>a.id===anglerId);
       if(idx===-1) return;
       const dayKey = btn.dataset.day;
@@ -6047,6 +6181,81 @@ function canActFor(anglerId, anglers){
   return myAnglerIds(anglers || []).indexOf(anglerId) !== -1;
 }
 
+// Whether this device may file or amend anything against an entry, checked at
+// the MOMENT OF WRITING rather than the moment the picker was painted.
+//
+// The pickers are filtered to the same set, but a <select> holds whatever it
+// held when it was last painted, and it is painted once on the way into the
+// screen. Switch event, get taken off the roster, or open the inspector, and
+// the value sitting in it stops meaning what the list meant.
+//
+// Order matters. MEMBERSHIP is checked before PERMISSION, because canActFor
+// answers true for anything at all once director access is unlocked - including
+// an id that is on no roster in this tournament. That is how a catch used to
+// get filed against an angler who was not registered: the handler looked the id
+// up, did not find it, wrote down "Unknown" and saved it anyway.
+function actionGuard(anglerId, anglers, eventName){
+  if(!anglerId){
+    return { ok:false, code:'no-angler', angler:null,
+      message:'Select the angler this belongs to.' };
+  }
+  const roster = anglers || [];
+  const angler = roster.find(a=> a.id === anglerId) || null;
+  // loadAnglers() is scoped to the live event, so "not on the roster" is also
+  // how a leftover pick from a previous tournament reads.
+  if(!angler){
+    return { ok:false, code:'not-registered', angler:null,
+      message:'That entry is not registered for ' + (eventName || 'this tournament') + '. ' +
+        'Open Register to sign up, or choose \u201cSign in to my entry\u201d if you '+
+        'registered on another device.' };
+  }
+  if(!canActFor(anglerId, roster)){
+    return { ok:false, code:'not-yours', angler:angler,
+      message:'This device is not signed in to ' + angler.name + '\u2019s entry, so it '+
+        'cannot act for them. Open Register and choose \u201cSign in to my entry\u201d.' };
+  }
+  return { ok:true, code:'ok', angler:angler, message:'' };
+}
+
+// The director's picker lists the whole field, and that is deliberate: an
+// angler whose phone died at the ramp has no other way to get a fish filed. But
+// a full list on a screen that is normally about YOUR fish is exactly how a
+// catch ends up under the wrong name by accident - the existing scoping comment
+// says as much, "by accident as easily as on purpose".
+//
+// So the screen says out loud whose catch is about to be filed whenever that is
+// not this device's own entry. Empty in the ordinary case, which is every catch
+// an angler submits for themselves.
+function filingNotice(anglerId, anglers){
+  if(!anglerId) return '';
+  const mine = getMyAnglerId();
+  if(mine && mine === anglerId) return '';
+  const angler = (anglers || []).find(a=> a.id === anglerId);
+  if(!angler) return '';
+  // A team partner is not a warning. The captain's phone holds the partner's
+  // record; filing for them is the normal way a team works.
+  if(myAnglerIds(anglers || []).indexOf(anglerId) !== -1) return '';
+  return 'This catch will be filed as ' + angler.name + '’s, not yours, and the ' +
+    'record will show it was submitted from this device.';
+}
+
+// A director filing a catch for an angler whose phone died at the ramp is a
+// real and legitimate thing to do - it is why the whole field stays in their
+// picker. It just should not be INVISIBLE afterwards. So when the entry being
+// filed against is not the one this device is signed in to, the record says who
+// pressed the button.
+function filedByFor(anglerId, anglers){
+  const mine = getMyAnglerId();
+  if(mine && mine === anglerId) return null;
+  const me = (anglers || []).find(a=> a.id === mine);
+  return {
+    anglerId: mine || null,
+    name: me ? me.name : (adminUnlocked ? 'Director' : 'Unknown device'),
+    director: !!adminUnlocked,
+    at: Date.now()
+  };
+}
+
 // The one place a wrong clock can still be FIXED rather than just recorded. A
 // stamp reading 40 minutes out is a mark against the angler's own catch, and
 // they are the only person who can put it right - so they get told here, before
@@ -6069,6 +6278,7 @@ function renderClockNotice(){
 
 async function renderSubmitScreen(){
   await populateAnglerSelect('sub-angler', 'sub-angler-note');
+  await renderFilingNotice();
   renderSpeciesOptions();
   renderClockNotice();
   updateGuide();
@@ -6145,6 +6355,16 @@ function updateGuideCodes(){
   box.style.display = 'flex';
 }
 bindEl('sub-angler','change', updateGuideCodes);
+bindEl('sub-angler','change', renderFilingNotice);
+
+async function renderFilingNotice(){
+  const el = document.getElementById('sub-filing-note');
+  if(!el) return;
+  const sel = document.getElementById('sub-angler');
+  const text = filingNotice(sel ? sel.value : '', await loadAnglers());
+  el.textContent = text;
+  el.style.display = text ? 'block' : 'none';
+}
 
 async function startCamera(){
   const errEl = document.getElementById('vf-cam-err');
@@ -6367,6 +6587,9 @@ bindEl('sub-submit','click', async ()=>{
   const submitBtn = document.getElementById('sub-submit');
   const fail = (msg)=>{ errEl.textContent = msg; errEl.style.display='block'; };
 
+  // Checked here and again below against a fresh roster read. This first pass
+  // only saves the angler a wait; the one that matters is the one inside the
+  // try, because the roster this screen was painted from can be minutes old.
   if(!anglerId){ fail('Select the angler this catch belongs to.'); return; }
   if(!length || length<=0){ fail('Enter a valid length in inches.'); return; }
   if(!capturedPhotoData && !fileInput.files[0]){ fail('Capture or upload a photo on an approved bump board.'); return; }
@@ -6378,7 +6601,10 @@ bindEl('sub-submit','click', async ()=>{
   submitBtn.disabled = true;
   try{
     const anglers = await loadAnglers();
-    const angler = anglers.find(a=>a.id===anglerId);
+    // The roster as it is NOW, not as it was when this screen was painted.
+    const guard = actionGuard(anglerId, anglers, activeEvent().name);
+    if(!guard.ok){ fail(guard.message); return; }
+    const angler = guard.angler;
     let photoData = capturedPhotoData || '';
     let srcWidth = capturedPhotoDims.width, srcHeight = capturedPhotoDims.height;
     let stamp = capturedPhotoStamp;
@@ -6425,8 +6651,12 @@ bindEl('sub-submit','click', async ()=>{
     catches.push({
       id: catchId,
       anglerId,
-      anglerName: angler ? angler.name : 'Unknown',
-      division: angler ? angler.division : 'solo',
+      // Never 'Unknown' any more - actionGuard has already refused anything
+      // that is not on this event's roster.
+      anglerName: angler.name,
+      division: angler.division || 'solo',
+      // Null unless somebody else's device filed this. See filedByFor.
+      filedBy: filedByFor(anglerId, anglers),
       species,
       length,
       hasPhoto: true,
@@ -11166,7 +11396,7 @@ async function openLightbox(catchId, opts){
       (c.division === 'team' ? 'Team' : 'Solo');
     meta.innerHTML = director
       ? head + ' &middot; ' + statusHtml(c.status) +
-        '<div style="margin-top:6px;">' + boundaryBadgeHtml(c) + captureBadgeHtml(c) + '</div>'
+        '<div style="margin-top:6px;">' + boundaryBadgeHtml(c) + captureBadgeHtml(c) + filedByBadgeHtml(c) + '</div>'
       // Publicly: what it is, and when it was caught. The boundary verdict and
       // the capture flags are review notes on a fish already judged, and
       // publishing them would reopen a decision that has been made.
@@ -11302,6 +11532,9 @@ if(typeof document !== 'undefined' && document.addEventListener){
 async function renderAdmin(){
   renderOverdueAlert();   // fire and forget; it paints itself when it resolves
   if(!adminUnlocked) return;
+  // First director to open the panel is what starts the Fish-I probe. See
+  // ensureFishI - it is not run on load any more.
+  ensureFishI();
   await renderPositionsAdmin();
   renderEventAdmin();
   // The list is rebuilt above, so its buttons are new elements each time.
@@ -11326,7 +11559,7 @@ async function renderAdmin(){
       const img = photoSlotHtml(c);
       return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+lengthHtml(c.length)+'</span></div>'+
         '<div class="name">'+escapeHtml(c.anglerName)+' &middot; '+escapeHtml(c.species)+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
-        '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+captureBadgeHtml(c)+'</div>'+
+        '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+captureBadgeHtml(c)+filedByBadgeHtml(c)+'</div>'+
         firstPassHtml(c, catches, dupCorpus)+
         '<div class="actions"><button class="small" data-act="approve" data-id="'+c.id+'">Approve</button>'+
         '<button class="small" data-act="reject" data-id="'+c.id+'">Reject</button></div></div></div>';
@@ -11340,7 +11573,7 @@ async function renderAdmin(){
       return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+lengthHtml(c.length)+'</span></div>'+
         '<div class="name">'+escapeHtml(c.anglerName)+' &middot; '+escapeHtml(c.species)+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
         statusHtml(c.status)+
-        '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+captureBadgeHtml(c)+'</div>'+
+        '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+captureBadgeHtml(c)+filedByBadgeHtml(c)+'</div>'+
         firstPassHtml(c, catches, dupCorpus)+
         '<div class="actions"><button class="small" data-act="delete" data-id="'+c.id+'">Delete</button></div></div></div>';
     }).join('');
@@ -11355,6 +11588,7 @@ async function renderAdmin(){
       if(btn.dataset.act==='ai-review'){ runAiReview(btn.dataset.id, btn); return; }
       if(btn.dataset.act==='fishi-retry'){
         btn.disabled = true; btn.textContent = 'Checking\u2026';
+        fishIStarted = true;
         initFishI().then(()=>renderAdmin());
         return;
       }

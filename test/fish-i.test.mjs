@@ -14,7 +14,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const handler = require(path.join(HERE, '..', 'api', 'fish-i.js'));
 const { allowedPhotoUrl, clean, normalize, buildPrompt, pickModel, rankModels,
-        isRetryableModelStatus } = handler.__test;
+        isRetryableModelStatus, googleRetrySeconds, isDailyQuota } = handler.__test;
 
 let pass = 0, fail = 0;
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -183,13 +183,47 @@ check('a model that is not there', isRetryableModelStatus(404), true);
 check('a busy model', isRetryableModelStatus(503), true);
 check('a model that broke', isRetryableModelStatus(500), true);
 
+// A spent quota IS retried, on the next model. Gemini's free-tier allowances
+// are per model, so flash being out of requests for the day says nothing about
+// flash-lite - which has its own, and a bigger one. This is the difference
+// between one busy model and "Fish-I is down until tomorrow".
+check('a spent quota moves to the next model', isRetryableModelStatus(429), true);
+
 // These are the same on every model, so walking the list would turn one clear
 // error into several slow ones and end on the wrong message.
 check('a bad request is not retried', isRetryableModelStatus(400), false);
 check('a rejected key is not retried', isRetryableModelStatus(401), false);
 check('a forbidden key is not retried', isRetryableModelStatus(403), false);
-check('a spent quota is not retried', isRetryableModelStatus(429), false);
 check('and success certainly is not', isRetryableModelStatus(200), false);
+
+// ============================================================
+section('7. telling a director WHICH rate limit they hit');
+// Per-minute and per-day are both a 429 and they do not have the same answer:
+// one clears in a minute, the other at midnight Pacific. "Wait a moment" when
+// the day's allowance is gone has somebody pressing the button for an hour.
+const perMinute = JSON.stringify({ error: { code: 429,
+  message: 'Quota exceeded for quota metric GenerateRequestsPerMinute',
+  details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '27s' }] } });
+const perDay = JSON.stringify({ error: { code: 429,
+  message: 'You exceeded your current quota',
+  details: [{ '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+              violations: [{ quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier' }] }] } });
+
+check('a retry delay is read off the error', googleRetrySeconds(perMinute), 27);
+check('a fractional one rounds up', googleRetrySeconds(
+  JSON.stringify({ error: { details: [{ retryDelay: '4.2s' }] } })), 5);
+check('no delay offered reads as none', googleRetrySeconds(perDay), 0);
+check('and unparseable junk does not throw', googleRetrySeconds('<html>502</html>'), 0);
+check('a bare number is not seconds', googleRetrySeconds(
+  JSON.stringify({ error: { details: [{ retryDelay: '30' }] } })), 0);
+
+check('the daily allowance is recognised', isDailyQuota(perDay), true);
+check('a per-minute limit is not mistaken for it', isDailyQuota(perMinute), false);
+check('nor is junk', isDailyQuota('nonsense'), false);
+// The wording differs between the message and the violation list depending on
+// which limit tripped, so both have to count.
+check('the wording in the message counts too', isDailyQuota(
+  JSON.stringify({ error: { message: 'limit: 250 requests per day' } })), true);
 
 // ============================================================
 console.log('\n' + (fail === 0 ? 'ALL PASS' : fail + ' FAILED') + '  (' + pass + ' passed)');

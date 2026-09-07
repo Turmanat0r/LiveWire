@@ -67,6 +67,53 @@ The places where a mistake is silent and expensive:
   give half the field an account and half none, which is worse than either. It
   reads the live roster, so a phone number already shared by two entries raises
   the item rather than leaving it as a someday.
+- **A write is checked when it is WRITTEN, not when the picker was painted.**
+  The angler pickers were scoped a while back; the writes behind them were not.
+  A `<select>` holds whatever it held when the screen was last painted, so
+  switching event, or opening the inspector, still put a catch under somebody
+  else's name. `actionGuard` re-reads the roster at the moment of the write and
+  is called from the catch submit and from check in/out.
+  Inside it the order is load-bearing and is tested as such: **membership is
+  checked before permission**, because `canActFor` answers true for any id at
+  all once director access is unlocked. Testing permission first let a director
+  file a catch against an entry on no roster — which the old handler then wrote
+  down as `anglerName: 'Unknown'` and saved. That is the whole of the "submitted
+  a photo while not registered" report: a record that exists, scores nothing and
+  belongs to nobody.
+- **A capability that cannot be removed is recorded instead.** A director filing
+  for an angler whose phone died at the ramp is legitimate, and it is why the
+  whole field stays in their picker. So it is not blocked — it is stamped.
+  `filedBy` goes on the catch whenever the filing device is not the angler's
+  own, and the director's catch card says so.
+- **A cropped photo is still the same photo.** A dHash describes the whole
+  frame, so cropping in moves nearly every bit and the reused-photo check — the
+  strongest fraud signal there is locally — simply missed it. Zooming in is the
+  obvious way to disguise a reused photo and the commonest accidental edit
+  there is. Every photo is now hashed through eight windows as well as whole,
+  and two photos are compared by the closest pair they have.
+  One side of every comparison is a **whole** photo: if B is a crop of A then
+  B's full frame matches one of A's windows, so comparing two narrow windows
+  against each other would add nothing except ways for two low-detail patches
+  to collide. A crop match also clears a **tighter** bar than a whole-frame one,
+  because it is less picture and therefore weaker evidence — the tests pin a
+  distance that must flag as a whole frame and must not flag as a crop, which
+  one shared threshold would get wrong in one direction or the other.
+  Records filed before windows existed carry one hash and still compare exactly
+  as they always did.
+- **Asking whether a feature is ready is not free.** Fish-I's health check used
+  to prove its model choice by *generating* with each candidate, up to five real
+  requests out of a free daily allowance of a few hundred — on every cold
+  serverless instance. And the page asked on load: every page, not only a
+  director's. A field of thirty refreshing at the ramp could spend the day's
+  quota before the first catch was reviewed, to paint a status line on a panel
+  none of them can open. Nothing on the GET path generates now, and the probe
+  waits until a director opens the panel.
+  A 429 also moves to the **next model** rather than ending the review, because
+  Gemini's free-tier quotas are per model: one model's spent allowance says
+  nothing about another's, and treating it as the key's turned "the newest model
+  is busy" into "Fish-I is down until tomorrow" with four untouched models
+  sitting there. Per-day and per-minute limits arrive as the same status code
+  and do not have the same answer, so they are told apart and said differently.
 - **Who you are, across events.** The trophy case shows your history over every
   tournament, and an entry id only means something inside one event — a fresh
   registration each year, a re-rolled handle, and a name typed by hand and
@@ -479,6 +526,34 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Report a missing MediaRecorder as supported | lint |
 | Draw a cross-origin photo straight onto the canvas | lint |
 | Leave a filename unsanitised | 2 failures |
+| Stop re-checking the roster on submit | lint |
+| Call the guard but ignore its answer | lint |
+| File an unregistered entry as 'Unknown' again | lint |
+| Check permission before membership | 6 failures |
+| Drop the roster check from `actionGuard` | 6 failures |
+| Drop the permission check from `actionGuard` | 3 failures |
+| Stop re-checking on check in/out | lint |
+| Leave no trace when filing for somebody else | lint |
+| Stamp your own catches as filed by another | 1 failure |
+| Stop saying whose catch is about to be filed | 3 failures |
+| Warn about a team partner too | 1 failure |
+| Build the notice but never paint it | lint |
+| Stop printing, or stop escaping, who filed it | 1-2 failures |
+| Store only the whole-frame hash | lint |
+| Never take the windows | lint |
+| Drop the window on the way to the canvas | lint |
+| Compare whole frames again in the verdict | 5 failures |
+| Let a crop clear the loose whole-frame bar | 1 failure |
+| Ignore windowed records in favour of the old field | 9 failures |
+| Compare window against window | 3 failures |
+| Stop reporting a crop match as a crop | 4 failures |
+| Make the first window something other than the whole frame | 1 failure |
+| Probe Fish-I on load again | lint |
+| Drop the once-only guard on the probe | 2 failures |
+| Never start the probe from the director panel | lint |
+| Verify a model by generating with it | lint |
+| Reach `generateContent` from the GET path | lint |
+| Treat a spent model quota as the whole key's | lint + 1 failure |
 | Derive a frozen event's placing again | 1 failure |
 | Count a frozen event against the live species | 1 failure |
 | Derive the Big Fish credit when frozen | 1 failure |

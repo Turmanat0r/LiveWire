@@ -33,6 +33,7 @@ const markup = src.replace(/<script>[\s\S]*<\/script>/, '');
 // never mistaken for an identifier. Lengths are preserved so line numbers and
 // offsets stay meaningful.
 const blank = (n) => ' '.repeat(n);
+const blank2 = (m) => ' '.repeat(m.length);
 const code = script
   .replace(/\/\*[\s\S]*?\*\//g, (m) => blank(m.length))
   .replace(/(^|[^:'"`\\])\/\/[^\n]*/g, (m, p1) => p1 + blank(m.length - p1.length))
@@ -471,6 +472,141 @@ for (const [fn, guard, why] of [
   }
 }
 
+// -------------------------------------------------------- writing for others
+// The two write paths that file something against a NAMED entry. Both live in
+// click handlers built inside render functions, so no unit test reaches them,
+// and both shipped without the check: the picker was scoped, the write was not.
+//
+// actionGuard is what closes the gap that let a catch be filed under another
+// angler's name, and under an angler who was never registered at all.
+for (const [needle, guard, why] of [
+  ["bindEl('sub-submit'", 'actionGuard',
+   'lets a catch be filed under an entry this device may not act for, or one that is on no roster'],
+  ['function renderCheckinBody', 'actionGuard',
+   'lets this device check somebody else in or out']
+]) {
+  const at = script.indexOf(needle);
+  if (at === -1) {
+    note('ownership', `cannot find ${needle} - its write guard cannot be verified`);
+  } else {
+    const body = script.slice(at, at + 4000);
+    if (!body.includes(guard + '(')) {
+      note('ownership', `the code at ${needle} no longer calls ${guard}(), which ${why}`);
+    } else if (!/if\(!guard\.ok\)\{[^}]*return;/.test(body)) {
+      // Calling it is not obeying it. An empty or fall-through failure branch
+      // reads as guarded and is not.
+      note('ownership', `the code at ${needle} calls ${guard}() but does not return on ` +
+        'a refusal, so the write happens anyway');
+    }
+  }
+}
+
+// The submit screen has to actually paint the notice that says whose catch is
+// about to be filed. The function can be perfect and never called.
+{
+  const body = (script.match(/async function renderSubmitScreen\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  if (!body) note('ownership', 'renderSubmitScreen is gone');
+  else if (!body.includes('renderFilingNotice(')) {
+    note('ownership', 'the submit screen no longer paints the filing notice, so a catch ' +
+      'about to be filed under another angler’s name says nothing on the way in');
+  }
+}
+
+// The audit trail is its own line and could be dropped on its own. A director
+// filing for an angler whose phone died is legitimate; it being invisible
+// afterwards is not.
+{
+  const at = script.indexOf("bindEl('sub-submit'");
+  if (at !== -1 && !/filedBy:\s*filedByFor\(/.test(script.slice(at, at + 4000))) {
+    note('ownership', 'a catch no longer records which device filed it, so a submission ' +
+      'made under another angler’s name leaves no trace on the record');
+  }
+}
+
+// A catch was written with `anglerName: angler ? angler.name : 'Unknown'`, so
+// an id that matched nobody on the roster was filed anyway with a placeholder
+// name. That IS the "submitted while not registered" bug: the record exists,
+// scores nothing, and belongs to no one. actionGuard now refuses first, and
+// this makes sure the fallback does not creep back in.
+if (/anglerName:\s*angler\s*\?/.test(script)) {
+  note('ownership', "the submit handler still falls back to a placeholder anglerName - " +
+    'a catch filed against an unregistered entry would be saved rather than refused');
+}
+
+// Order matters inside actionGuard: canActFor answers true for ANY id once
+// director access is unlocked, so membership has to be tested first or a
+// director can file a catch for a person who never entered.
+{
+  const body = (script.match(/function actionGuard\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  if (!body) {
+    note('ownership', 'actionGuard is gone - nothing checks who a write is for');
+  } else {
+    const member = body.indexOf('not-registered');
+    const perm = body.indexOf('canActFor');
+    if (member === -1) note('ownership', 'actionGuard no longer checks roster membership');
+    else if (perm === -1) note('ownership', 'actionGuard no longer checks canActFor');
+    else if (perm < member) {
+      note('ownership', 'actionGuard checks canActFor BEFORE roster membership, so an ' +
+        'unlocked director can file against an id that is on no roster');
+    }
+  }
+}
+
+// ------------------------------------------------------- duplicate photos
+// A dHash covers the whole frame, so cropping in defeats it outright. The
+// windowed comparison is the fix, and every part of it is reachable only
+// through a real <canvas>, which the unit tests do not have.
+{
+  const analyze = (script.match(/function analyzePhoto\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  if (!analyze) {
+    note('duplicates', 'analyzePhoto is gone - nothing hashes a photo');
+  } else if (!/hashes:/.test(analyze)) {
+    note('duplicates', 'analyzePhoto stores only a whole-frame hash, so a cropped ' +
+      'reuse of the photo cannot be recognised later');
+  }
+  // Every window has to actually be taken. Returning one hash from photoHashes
+  // leaves the whole windowed comparison in place and inert.
+  const hashes = (script.match(/function photoHashes\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  if (!hashes) {
+    note('duplicates', 'photoHashes is gone - nothing takes the crop windows');
+  } else if (!hashes.includes('PRECHECK_HASH_WINDOWS')) {
+    note('duplicates', 'photoHashes no longer walks PRECHECK_HASH_WINDOWS, so only the ' +
+      'whole frame is hashed and a crop is invisible again');
+  }
+  // And the window has to reach the canvas. drawImage with no source rect
+  // silently hashes the whole frame for every window, which makes all eight
+  // identical and the comparison useless.
+  const grey = (script.match(/function greyscaleFrom\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  if (!grey) {
+    note('duplicates', 'greyscaleFrom is gone');
+  } else if (!/const r = win \|\|/.test(grey) || !/img\.width \* r\[0\]/.test(grey)) {
+    note('duplicates', 'greyscaleFrom no longer crops to the window it was handed, so ' +
+      'every window hashes the whole frame and they all come out identical');
+  }
+
+  const verdict = (script.match(/function evaluateFirstPass\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  if (!verdict) {
+    note('duplicates', 'evaluateFirstPass is gone');
+  } else if (!verdict.includes('photoHashDistance(')) {
+    note('duplicates', 'evaluateFirstPass no longer compares through photoHashDistance(), ' +
+      'so it is back to whole-frame-only matching and a crop walks past it');
+  }
+  // Index 0 of the window list is load-bearing: it is what gets stored as
+  // .hash, and photoHashDistance uses it as "the whole photo" on both sides.
+  const wins = (script.match(/const PRECHECK_HASH_WINDOWS = \[([\s\S]*?)\];/) || ['', ''])[1];
+  if (!wins) note('duplicates', 'PRECHECK_HASH_WINDOWS is gone - nothing to compare crops through');
+  else {
+    const first = (wins.match(/\[([^\]]*)\]/) || ['', ''])[1].split(',').map((x) => parseFloat(x));
+    if (first.join() !== '0,0,1,1') {
+      note('duplicates', `the first hash window is [${first.join(', ')}] and must be the ` +
+        'whole frame [0, 0, 1, 1] - it is the one stored as .hash');
+    }
+    if ((wins.match(/\[/g) || []).length < 4) {
+      note('duplicates', 'too few hash windows to catch a crop of any depth');
+    }
+  }
+}
+
 // --------------------------------------------------------------- sync loop
 // The polling loop runs on real timers, so there is no unit test around its
 // mechanics - these are the guards it must not lose. Each one was a live bug:
@@ -542,6 +678,37 @@ if (cmpBody) {
   note('ties', 'byLengthThenEarliest is gone - every fish ranking depends on it');
 }
 
+// ---------------------------------------------------- the cost of a status line
+// Fish-I is a director tool, and asking whether it is ready costs a round trip
+// to the server - which, on the server, used to cost real Gemini requests out
+// of a free daily allowance. Running that on load ran it on every angler's
+// phone, to paint a status line on a panel they cannot open.
+// Nothing in the script block sits at column 0 except module-level statements,
+// so this finds the call being put back on the load path.
+if (/^initFishI\(\);/m.test(code)) {
+  note('quota', 'initFishI() runs at load again, so every angler’s page probes the ' +
+    'review endpoint - which is how the free Gemini quota got spent before the ' +
+    'first catch was reviewed');
+}
+// And the once-only guard, without which every repaint of the director's panel
+// asks again - worse than asking on load.
+{
+  const body = (script.match(/function ensureFishI\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  if (!body) note('quota', 'ensureFishI is gone - nothing starts the Fish-I probe lazily');
+  else if (!/if\(fishIStarted\) return;/.test(body)) {
+    note('quota', 'ensureFishI has lost its once-only guard, so every repaint of the ' +
+      'director panel probes the endpoint again');
+  }
+}
+{
+  const body = (script.match(/async function renderAdmin\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  if (!body) note('quota', 'renderAdmin is gone - nothing starts Fish-I');
+  else if (!body.includes('ensureFishI(')) {
+    note('quota', 'renderAdmin no longer calls ensureFishI(), so a director opening the ' +
+      'panel never finds out whether the vision pass is available');
+  }
+}
+
 // ------------------------------------------------------- serverless functions
 // A relative endpoint the page calls has to exist as a file in api/, or the
 // deploy goes out and the feature 404s with nothing in the console to explain
@@ -551,6 +718,49 @@ for (const m of script.matchAll(/'(\/api\/[a-z0-9-]+)'/g)) {
   const candidates = ['js', 'mjs', 'ts'].map((ext) => path.join(HERE, '..', 'api', name + '.' + ext));
   if (!candidates.some((p) => fs.existsSync(p))) {
     note('api', `the page calls ${m[1]} but there is no api/${name}.js to answer it`);
+  }
+}
+
+// -------------------------------------------------- the review endpoint's quota
+// api/fish-i.js is not in the page, so nothing above this reaches it, and its
+// unit tests cannot see the request-shaped parts. Both findings below were live
+// bugs that spent a whole day's free allowance.
+{
+  const apiPath = path.join(HERE, '..', 'api', 'fish-i.js');
+  if (fs.existsSync(apiPath)) {
+    const api = fs.readFileSync(apiPath, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, blank2)
+      .replace(/(^|[^:'"`\\])\/\/[^\n]*/g, (m, p1) => p1 + ' '.repeat(m.length - p1.length));
+
+    // The health check must not GENERATE. It ran on every cold instance and
+    // verified up to five candidate models by generating with each one.
+    const getAt = api.indexOf("req.method === 'GET'");
+    const postAt = api.indexOf("req.method !== 'POST'");
+    const resolve = (api.match(/async function resolveModel\([^)]*\)\s*\{([\s\S]*?)\n\}/) || ['', ''])[1];
+    if (!resolve) {
+      note('quota', 'api/fish-i.js has no resolveModel - the health check cannot be verified');
+    } else if (/generateContent/.test(resolve)) {
+      note('quota', 'resolveModel() calls generateContent, so answering "is Fish-I ready" ' +
+        'spends real Gemini requests - on every cold instance, for every page that asks');
+    }
+    if (getAt !== -1 && postAt > getAt) {
+      const getPath = api.slice(getAt, postAt);
+      if (/generateContent/.test(getPath)) {
+        note('quota', 'the GET health-check path in api/fish-i.js reaches generateContent, ' +
+          'which is the only thing that costs quota');
+      }
+    }
+
+    // Free-tier quotas are per MODEL. Treating one spent model as the whole
+    // key turns "the newest model is busy" into "Fish-I is down until
+    // tomorrow" with four untouched models sitting there.
+    const retry = (api.match(/function isRetryableModelStatus\([^)]*\)\s*\{([\s\S]*?)\n\}/) || ['', ''])[1];
+    if (!retry) {
+      note('quota', 'api/fish-i.js has no isRetryableModelStatus');
+    } else if (!/\b429\b/.test(retry)) {
+      note('quota', 'a 429 no longer moves to the next model in api/fish-i.js, but Gemini ' +
+        'free-tier quotas are per model - one model’s spent allowance is not the key’s');
+    }
   }
 }
 
