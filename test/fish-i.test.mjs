@@ -280,7 +280,7 @@ check('and so is a string that merely looks affirmative',
 // Each of these has a different fix, and collapsing them into "unauthorized"
 // is how a five-minute problem becomes an afternoon.
 const reasons = ['no-token', 'anon-key', 'bad-token', 'not-director',
-                 'auth-unreachable', 'auth-unreadable'];
+                 'auth-unreachable', 'auth-unreadable', 'no-auth-config', 'bad-apikey'];
 check('every refusal has its own words',
   reasons.every(r => AUTH_REFUSALS[r] && AUTH_REFUSALS[r].length > 20), true);
 check('and no two say the same thing',
@@ -327,14 +327,27 @@ section('9. verifying the session, not taking its word');
 
   // A token Supabase will not vouch for must never be assumed good. This is the
   // difference between a lock and a sign saying "locked".
-  check('a rejected token is refused', (await run('tok', body({}, false))).ok, false);
-  check('and named as expired rather than as the wrong account',
-    (await run('tok', body({}, false))).reason, 'bad-token');
-  check('a 500 from Supabase is refused too',
-    (await run('tok', { ok: false, status: 500, async json() { return {}; } })).ok, false);
+  // These two are the opposite way round from the obvious guess, and it was
+  // production that said so, not a test. Supabase answers:
+  //   403 bad_jwt        -> the CALLER's session is expired or malformed
+  //   401 Invalid API key -> the SERVER's own anon key is wrong
+  // Reading them the other way sends a director who needs to sign in again off
+  // to check environment variables, and somebody with a misconfigured deploy
+  // round and round the sign-in screen.
+  const status = (n) => ({ ok: false, status: n, async json() { return {}; } });
+  check('a 403 is the caller\'s bad session', (await run('tok', status(403))).reason, 'bad-token');
+  check('a 401 is the SERVER\'s bad key', (await run('tok', status(401))).reason, 'bad-apikey');
+  check('neither is let through',
+    [(await run('tok', status(403))).ok, (await run('tok', status(401))).ok], [false, false]);
+  check('a 500 from Supabase is refused too', (await run('tok', status(500))).ok, false);
   check('carrying the status so it can be diagnosed',
-    (await run('tok', { ok: false, status: 500, async json() { return {}; } })).reason,
-    'auth-http:500');
+    (await run('tok', status(500))).reason, 'auth-http:500');
+  // A wrong server key is not the director's fault, and the words have to say
+  // so or they will spend the event re-entering a password that was fine.
+  check('a bad server key is named as a server problem',
+    /not a problem with your sign-in/.test(refusalText('bad-apikey')), true);
+  check('and points at the variable to fix',
+    /SUPABASE_ANON_KEY/.test(refusalText('bad-apikey')), true);
   check('Supabase being unreachable refuses rather than assumes',
     (await run('tok', new Error('ECONNREFUSED'))).ok, false);
   check('and says so', (await run('tok', new Error('x'))).reason, 'auth-unreachable');

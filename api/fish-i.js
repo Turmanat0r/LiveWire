@@ -261,7 +261,18 @@ async function directorFromToken(token) {
     return { ok: false, reason: 'auth-unreachable' };
   }
   if (!res.ok) {
-    return { ok: false, reason: res.status === 401 ? 'bad-token' : 'auth-http:' + res.status };
+    // These two are the opposite way round from the obvious guess, and
+    // production said so before any test did:
+    //
+    //   403 bad_jwt      -> the CALLER's session is expired or malformed
+    //   401 Invalid API  -> the SERVER's own anon key is wrong
+    //
+    // Reading them the other way sends a director who needs to sign in again
+    // off to check environment variables, and someone with a misconfigured
+    // deployment round and round the sign-in screen.
+    if (res.status === 403) return { ok: false, reason: 'bad-token' };
+    if (res.status === 401) return { ok: false, reason: 'bad-apikey' };
+    return { ok: false, reason: 'auth-http:' + res.status };
   }
   let user;
   try { user = await res.json(); } catch (e) { return { ok: false, reason: 'auth-unreadable' }; }
@@ -286,7 +297,8 @@ const AUTH_REFUSALS = {
   'not-director': 'That account is signed in but is not a director. Set {"director": true} on its app_metadata in Supabase, then sign in again.',
   'auth-unreachable': 'Could not reach Supabase to check who is asking. Try again in a moment.',
   'auth-unreadable': 'Supabase gave an unreadable answer when asked who is asking.',
-  'no-auth-config': 'Fish-I cannot check who is asking: SUPABASE_URL and SUPABASE_ANON_KEY are not set on the server.'
+  'no-auth-config': 'Fish-I cannot check who is asking: SUPABASE_URL and SUPABASE_ANON_KEY are not set on the server.',
+  'bad-apikey': 'Supabase rejected this server\'s own key, so it cannot check who is asking. SUPABASE_ANON_KEY in Vercel is wrong or belongs to another project. This is not a problem with your sign-in.'
 };
 
 function refusalText(reason) {
@@ -559,7 +571,11 @@ module.exports = async (req, res) => {
   if (!who.ok) {
     // 403 for "you are not the director", 401 for "you are nobody yet", so the
     // page can tell a missing session from a wrong one.
-    const status = (who.reason === 'no-token' || who.reason === 'anon-key' ||
+    // 401 "you are nobody yet", 403 "not you", 503 "this server is broken, and
+    // it is not your fault" - a director hammering sign-in over a bad env var
+    // is exactly what the wrong status here produces.
+    const status = (who.reason === 'bad-apikey' || who.reason === 'no-auth-config') ? 503
+                 : (who.reason === 'no-token' || who.reason === 'anon-key' ||
                     who.reason === 'bad-token') ? 401 : 403;
     return send(res, status, { error: refusalText(who.reason) });
   }
