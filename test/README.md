@@ -40,6 +40,40 @@ of sync with it. Change `index.html` and the tests see the change immediately.
 
 The places where a mistake is silent and expensive:
 
+- **Who you are, across events.** The trophy case shows your history over every
+  tournament, and an entry id only means something inside one event — a fresh
+  registration each year, a re-rolled handle, and a name typed by hand and
+  spelled differently. The join is the **phone number**, which is already what
+  `claimEntry` treats as proof an entry is yours. It is used as a key and never
+  displayed. An entry with no number counts for its own event and is matched to
+  nothing else, which is better than guessing on a name.
+- **A past event is scored against the species IT was fished for.** `standingsFor`
+  and `isScoringSpecies` now take an optional target, defaulting to the live
+  event. Without it, a 2027 walleye year scored against a 2029 pike year empties
+  its own board — and the tests check the *placing* follows too, not just the
+  count, because those are two different code paths.
+- **A personal best is the best fish that SCORED.** A 40" pike in a walleye event
+  is a real fish and counts among the fish caught, but treating it as a personal
+  best would put it above every walleye on the board and hand out the
+  thirty-inch badge for a species nobody was fishing for. That was a live bug,
+  caught by the tests, and there is now a case with a big non-scoring fish and
+  nothing else.
+- **Badges have to be checkable.** Every one reads the same stats the screen is
+  showing, so a badge can never claim something the numbers do not. The tests
+  keep a podium-without-a-win fixture on purpose: with a fixture that has both,
+  "top three" and "won it" pass identically.
+- **The highlight reel is your own fish only.** Not a policy bolted on — the
+  builder runs the gallery projection and keeps the rows marked `mine`, so
+  somebody else's photo cannot reach a file about to be posted. A wall inside
+  the app is one thing; an Instagram post is another, and only one of those did
+  the field agree to. Lint fails the build if that filter leaves.
+  Two of its rules cannot be reached from Node — the canvas-taint fetch (a
+  cross-origin image taints a canvas and `captureStream()` then throws, so every
+  remote photo is fetched to a blob first) and the `MediaRecorder` check (Safari
+  11–14.0 has `captureStream` without it). Both are held by lint.
+  MP4 is preferred over WebM deliberately: WebM records fine in Chrome and then
+  will not upload from a phone to most social apps, which makes a working
+  recorder useless at the only moment it matters.
 - **The browser's own Back button.** The app is one page pretending to be
   thirteen, and the browser had no idea: Back from three screens deep left it
   altogether — out to whatever was open before the tournament, or, installed to
@@ -392,6 +426,32 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Take no entry for the panel, so Back skips past it | 6 failures |
 | Leave the panel's entry on the stack when it closes | 1 failure |
 | Let a throwing pushState take the navigation down | crash |
+| Match entries on name, or on an unnormalised phone | crash |
+| Treat everyone with no phone as the same person | 3 failures |
+| Claim every entry in an event as yours | 12 failures |
+| Score a past event against the live event's species | 2 failures |
+| Ignore the target handed to `isScoringSpecies` | 3 failures |
+| Count pending fish, or somebody else's, as yours | 6 failures |
+| Make the personal best any species | 5 failures |
+| Give a disqualified entry a placing | 1 failure |
+| Turn best-3 into an all-time figure | 1 failure |
+| Count a fishing day in UTC | 1 failure |
+| Throw on an unknown time zone | crash |
+| Drop a fishless tournament from the history | crash |
+| Count a check-in with no check-out as a full day | 1 failure |
+| Award a badge regardless of the record | 5 failures |
+| Give the champion badge for any podium | 1 failure |
+| Stop telling a locked badge what it takes | 1 failure |
+| Put everybody's fish in the reel | 5 failures |
+| Open the reel with the smallest fish | 2 failures |
+| Remove the reel's cap, or its end card | 3 failures |
+| Give a scene no duration | crash |
+| Never let the reel clock run out | 3 failures |
+| Land a scene boundary one scene early | 2 failures |
+| Prefer WebM over MP4 | 1 failure |
+| Report a missing MediaRecorder as supported | lint |
+| Draw a cross-origin photo straight onto the canvas | lint |
+| Leave a filename unsanitised | 2 failures |
 | Stop normalising phone numbers | 5 failures |
 | Compare phone numbers in full instead of last ten | 2 failures |
 | Never show the pending notice | 3 failures |

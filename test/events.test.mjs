@@ -110,6 +110,11 @@ globalThis.__t = {
   standingsFor, byLengthThenEarliest, bySmallestThenEarliest, catchTime,
   canActFor, reviewCatch, showAdminTool,
   galleryOrder, galleryTileHtml, galleryTime, openLightbox, closeLightbox, hideLightbox,
+  reelRows, reelPlan, reelSceneAt, reelMimeType, reelFileExt, reelFileName,
+  catchPhotoFileName, reelSupported, REEL_MAX_SHOTS,
+  personKey, myEntryIds, dayKeyIn, trophyEventRow, trophyStats, trophyBadges,
+  TROPHY_BADGES, trophyEventInfo, trophyHistoryHtml, placingText,
+  loadAnglersAllEvents, isScoringSpecies,
   screenHash, screenFromHash, historyApi, pushScreenState, handlePopState, initHistory,
   goto, screens, get currentScreen(){ return currentScreen; },
   splitFor, PAYOUT_SHARES, eventDateRangeText, eventRowCounts, eventDayText,
@@ -1733,6 +1738,331 @@ section('29h. the browser Back button');
     else t.appWindow.location = savedLoc2;
     t.hideLightbox();
     t.goto('home');
+  }
+}
+
+// ============================================================
+section('29i. the trophy case');
+// Personal bests, a row per event, and badges. The interesting part is joining
+// one person's entries across events: ids are per-event, handles get re-rolled,
+// and names are typed by hand.
+{
+  const A = (over) => Object.assign({ division:'solo', checkins:{} }, over);
+  const C = (over) => Object.assign({ status:'approved', species:'Walleye',
+    division:'solo', length:20, timestamp:1000 }, over);
+
+  // Same person, two events, two entry ids, two handles, name typed differently.
+  const tAnglers = [
+    A({ id:'e1-me', eventId:'ev-2027', phone:'(406) 555-0101', name:'Dan Turman',
+        handle:'Old Reel', bigfish:true,
+        checkins:{ day1:{ in:1, out:2 }, day2:{ in:3, out:0 } } }),
+    A({ id:'e2-me', eventId:'ev-2029', phone:'406-555-0101', name:'Daniel Turman',
+        handle:'New Reel' }),
+    A({ id:'e1-rival', eventId:'ev-2027', phone:'4065550202', name:'Rival' }),
+    A({ id:'e2-rival', eventId:'ev-2029', phone:'4065550202', name:'Rival' })
+  ];
+  const tCatches = [
+    // 2027: three walleye, one on day two.
+    C({ id:'k1', eventId:'ev-2027', anglerId:'e1-me', length:22, timestamp:Date.UTC(2027,8,18,15) }),
+    C({ id:'k2', eventId:'ev-2027', anglerId:'e1-me', length:18, timestamp:Date.UTC(2027,8,18,17) }),
+    C({ id:'k3', eventId:'ev-2027', anglerId:'e1-me', length:26, timestamp:Date.UTC(2027,8,19,16) }),
+    C({ id:'k4', eventId:'ev-2027', anglerId:'e1-me', length:40, species:'Other',
+        timestamp:Date.UTC(2027,8,19,18) }),
+    C({ id:'k5', eventId:'ev-2027', anglerId:'e1-me', length:99, status:'pending',
+        timestamp:Date.UTC(2027,8,19,19) }),
+    C({ id:'r1', eventId:'ev-2027', anglerId:'e1-rival', length:30, timestamp:1 }),
+    // 2029: one, and it wins.
+    C({ id:'k6', eventId:'ev-2029', anglerId:'e2-me', length:31, timestamp:Date.UTC(2029,8,15,15) }),
+    C({ id:'r2', eventId:'ev-2029', anglerId:'e2-rival', length:12, timestamp:1 })
+  ];
+  const info = (id) => ({ name: id === 'ev-2027' ? 'Open 2027' : 'Open 2029',
+    year: id === 'ev-2027' ? '2027' : '2029',
+    targetSpecies:'Walleye', timeZone:'America/Denver' });
+
+  // ---- identity ----
+  check('a phone is normalised to ten digits',
+    t.personKey({ phone:'(406) 555-0101' }), t.personKey({ phone:'+1 406 555 0101' }));
+  check('no phone means no key', t.personKey({ phone:'' }), null);
+  check('and neither does a missing angler', t.personKey(null), null);
+  const ids = t.myEntryIds(tAnglers, ['e1-me']);
+  check('signing in to one entry finds the other year\u2019s too',
+    Array.from(ids).sort(), ['e1-me','e2-me']);
+  check('and does not drag in anybody else', ids.has('e1-rival'), false);
+  // An entry with no number cannot be matched to another year - better than
+  // guessing on a name that was typed twice and spelled two ways.
+  const noPhone = [A({ id:'np1', eventId:'ev-2027' }), A({ id:'np2', eventId:'ev-2029' })];
+  check('an entry with no phone still counts for its own event',
+    Array.from(t.myEntryIds(noPhone, ['np1'])), ['np1']);
+  check('nobody signed in matches nothing', Array.from(t.myEntryIds(tAnglers, [])), []);
+
+  // ---- the numbers ----
+  const st = t.trophyStats(tAnglers, tCatches, ['e1-me'], info);
+  check('both tournaments are in the history', st.events, 2);
+  check('newest first', st.history.map(r => r.eventId), ['ev-2029','ev-2027']);
+  check('approved fish are counted, across both', st.fish, 5);
+  check('a pending fish is not', /k5/.test(JSON.stringify(st)), false);
+  check('the personal best is the longest that scored, across both years', st.best, 31);
+  // 40" was logged as Other. It is a real fish and it counts as one caught -
+  // it just never scored, so it must not become a personal best.
+  check('a non-scoring species never becomes the personal best',
+    st.longest.species, 'Walleye');
+  check('best 3 combined is per tournament, not all-time', st.bestTop3, 66);
+  // Denver is UTC-6: the four approved fish fall two on the 18th and two on
+  // the 19th, so the best day is 2 - a UTC reading would say 3.
+  check('the best single day is counted in the event\u2019s own zone', st.bestDay, 2);
+  check('a division win is recorded', st.wins, 1);
+  check('and the best finish overall', st.bestPlacing, 1);
+  check('the podium count is separate from the wins', st.podiums, 2);
+  check('a Big Fish buy-in is remembered', st.bigFishBuyIns, 1);
+  check('a day checked in AND out counts as a full day', st.fullDays, 1);
+  check('species seen are listed once each', st.species, ['Other','Walleye']);
+
+  const y27 = st.history.find(r => r.eventId === 'ev-2027');
+  check('the 2027 row counts every approved fish', y27.fish, 4);
+  check('but only walleye scored', y27.scoring, 3);
+  check('it placed second behind the rival\u2019s 30-incher', y27.placing, 2);
+  check('out of the field that ranked', y27.entrants, 2);
+  const y29 = st.history.find(r => r.eventId === 'ev-2029');
+  check('and 2029 was a win', y29.placing, 1);
+
+  // ---- scoring a past event against ITS species ----
+  // The live event's target must not decide a past event's board. Told 2027 was
+  // a pike year, its walleye stop scoring - and the count has to follow.
+  const pikeInfo = (id) => Object.assign({}, info(id),
+    { targetSpecies: id === 'ev-2027' ? 'Northern Pike' : 'Walleye' });
+  const st2 = t.trophyStats(tAnglers, tCatches, ['e1-me'], pikeInfo);
+  check('a past event is scored against the species IT was fished for',
+    st2.history.find(r => r.eventId === 'ev-2027').scoring, 0);
+  check('while the other year is untouched',
+    st2.history.find(r => r.eventId === 'ev-2029').scoring, 1);
+  check('and isScoringSpecies still defaults to the live event',
+    t.isScoringSpecies('Northern Pike', 'Northern Pike'), true);
+  // Not just the count - the PLACING has to follow it too. Told 2027 was a pike
+  // year, a field of walleye ranks nobody, so the row cannot still claim a
+  // second place it was given by this year's species.
+  check('and the placing follows the same species',
+    st2.history.find(r => r.eventId === 'ev-2027').placing, 0);
+  check('with nobody ranked at all that year',
+    st2.history.find(r => r.eventId === 'ev-2027').entrants, 0);
+
+  // ---- edges ----
+  const empty = t.trophyStats([], [], [], info);
+  check('a blank slate is not an error', empty.events, 0);
+  check('with no personal best', empty.best, 0);
+  check('and no best finish', empty.bestPlacing, 0);
+  check('missing arguments do not throw', t.trophyStats(null, null, null, null).events, 0);
+  // Registered but never landed anything: the event still belongs in the
+  // history, or an angler's first tournament vanishes from their own record.
+  const dnf = t.trophyStats([A({ id:'d1', eventId:'ev-2029', phone:'4065559999' })],
+    [], ['d1'], info);
+  check('a tournament fished with no fish still shows up', dnf.events, 1);
+  check('unranked rather than placed', dnf.history[0].placing, 0);
+
+  // A disqualified entry keeps its fish count and loses its placing.
+  const dqA = [A({ id:'x1', eventId:'ev-2029', phone:'4065558888', disqualified:true })];
+  const dqRow = t.trophyStats(dqA,
+    [C({ id:'x', eventId:'ev-2029', anglerId:'x1', length:33 })], ['x1'], info);
+  check('a disqualified entry still shows the fish it caught', dqRow.history[0].fish, 1);
+  check('but takes no placing', dqRow.history[0].placing, 0);
+  check('and the row says so', dqRow.history[0].disqualified, true);
+  check('the printed row does not offer it a place',
+    /1st/.test(t.trophyHistoryHtml(dqRow.history[0])), false);
+
+  // A day is the event's OWN calendar day. These three are all 18 September in
+  // Denver and split 18/19 in UTC, so reading them in the wrong zone turns one
+  // good day into two ordinary ones.
+  const lateAnglers = [A({ id:'l1', eventId:'ev-2027', phone:'4065556666' })];
+  const lateCatches = [
+    C({ id:'l-a', eventId:'ev-2027', anglerId:'l1', timestamp:Date.UTC(2027,8,18,20) }),
+    C({ id:'l-b', eventId:'ev-2027', anglerId:'l1', timestamp:Date.UTC(2027,8,19,3) }),
+    C({ id:'l-c', eventId:'ev-2027', anglerId:'l1', timestamp:Date.UTC(2027,8,19,5) })
+  ];
+  check('three fish either side of UTC midnight are one Denver day',
+    t.trophyStats(lateAnglers, lateCatches, ['l1'], info).bestDay, 3);
+  check('and the same three read as two days in UTC',
+    t.trophyStats(lateAnglers, lateCatches, ['l1'],
+      (id)=> Object.assign({}, info(id), { timeZone:'UTC' })).bestDay, 2);
+
+  // ---- day keys ----
+  check('a day is the event\u2019s own calendar day',
+    t.dayKeyIn(Date.UTC(2027, 8, 19, 3), 'America/Denver'), '2027-09-18');
+  check('and the same instant is the next day in UTC',
+    t.dayKeyIn(Date.UTC(2027, 8, 19, 3), 'UTC'), '2027-09-19');
+  check('a zone this browser has never heard of falls back rather than throwing',
+    t.dayKeyIn(Date.UTC(2027, 8, 19, 3), 'Mars/Olympus'), '2027-09-19');
+
+  // ---- badges ----
+  const badges = t.trophyBadges(st);
+  const has = (id) => (badges.find(b => b.id === id) || {}).earned;
+  check('every badge is decided', badges.length, t.TROPHY_BADGES.length);
+  check('first fish', has('first-fish'), true);
+  check('twenty-incher', has('twenty'), true);
+  check('twenty-five club', has('twentyfive'), true);
+  check('and thirty, on the 31', has('thirty'), true);
+  check('mixed bag, from the Other', has('mixed-bag'), true);
+  check('champion', has('champion'), true);
+  check('veteran, on two tournaments', has('veteran'), true);
+  check('not fifty fish', has('fifty-fish'), false);
+  check('a locked badge still says what it takes',
+    !!(badges.find(b => b.id === 'fifty-fish') || {}).need, true);
+  // The bug this rule exists for: a 40" pike in a walleye event is a real fish
+  // and it counts among the fish caught, but treating it as a personal best
+  // would put it above every walleye on the board and hand out the thirty-inch
+  // badge for a species nobody was fishing for.
+  const otherOnly = t.trophyStats(
+    [A({ id:'o1', eventId:'ev-2029', phone:'4065557777' })],
+    [C({ id:'o-big', eventId:'ev-2029', anglerId:'o1', length:40, species:'Other' }),
+     C({ id:'o-small', eventId:'ev-2029', anglerId:'o1', length:12 })], ['o1'], info);
+  check('a huge non-scoring fish is still a fish caught', otherOnly.fish, 2);
+  check('but the personal best is the scoring one', otherOnly.best, 12);
+  check('and it earns no size badge',
+    t.trophyBadges(otherOnly).find(b => b.id === 'thirty').earned, false);
+  check('nor the twenty', t.trophyBadges(otherOnly).find(b => b.id === 'twenty').earned, false);
+
+  // A third place is a podium and is not a championship. With a fixture that
+  // has both, either rule passes - so this one has only the podium.
+  const podiumOnly = t.trophyStats(
+    [A({ id:'p1', eventId:'ev-2029', phone:'4065554444' }),
+     A({ id:'w1', eventId:'ev-2029', phone:'4065554445' }),
+     A({ id:'w2', eventId:'ev-2029', phone:'4065554446' })],
+    [C({ id:'pp', eventId:'ev-2029', anglerId:'p1', length:15 }),
+     C({ id:'ww1', eventId:'ev-2029', anglerId:'w1', length:25 }),
+     C({ id:'ww2', eventId:'ev-2029', anglerId:'w2', length:20 })], ['p1'], info);
+  check('third place is third', podiumOnly.bestPlacing, 3);
+  check('it counts as a podium', podiumOnly.podiums, 1);
+  check('but it is not a win', podiumOnly.wins, 0);
+  check('so the podium badge is earned',
+    t.trophyBadges(podiumOnly).find(b => b.id === 'podium').earned, true);
+  check('and the champion badge is not',
+    t.trophyBadges(podiumOnly).find(b => b.id === 'champion').earned, false);
+
+  check('a blank slate earns nothing',
+    t.trophyBadges(empty).some(b => b.earned), false);
+  check('and still lists them all to aim at', t.trophyBadges(empty).length,
+    t.TROPHY_BADGES.length);
+  // Every badge has to be checkable against the record, or the first thing an
+  // angler does is ask why somebody else has one.
+  check('every badge explains itself',
+    t.TROPHY_BADGES.every(b => b.id && b.name && b.need && typeof b.earned === 'function'), true);
+  check('and no two share an id',
+    new Set(t.TROPHY_BADGES.map(b => b.id)).size, t.TROPHY_BADGES.length);
+
+  check('placings read as ordinals',
+    [1,2,3,4].map(t.placingText), ['1st','2nd','3rd','4th']);
+}
+
+// ============================================================
+section('29j. the highlight reel');
+// Compiles the angler's own photos into a video to post.
+{
+  const rAnglers = [
+    { id:'me', name:'Real Name Here', handle:'Quiet Heron' },
+    { id:'them', name:'Someone Else', handle:'Loud Osprey' }
+  ];
+  const rc = (id, who, len) => ({ id, anglerId:who, anglerName:
+    (rAnglers.find(a => a.id === who) || {}).name, species:'Walleye', division:'solo',
+    status:'approved', length:len, timestamp:len * 100 });
+  const rCatches = [
+    rc('m-small','me',18), rc('m-big','me',27), rc('m-mid','me',22),
+    rc('m-pending','me',40), rc('t1','them',31)
+  ];
+  rCatches.find(c => c.id === 'm-pending').status = 'pending';
+
+  const rows = t.reelRows(rCatches, rAnglers, ['me']);
+  check('the reel is your fish, biggest first',
+    rows.map(r => r.id), ['m-big','m-mid','m-small']);
+  // THE RULE THE WHOLE FEATURE RESTS ON. A wall inside the app is one thing;
+  // a file about to go on the internet is another, and only one of those did
+  // anybody agree to.
+  check('somebody else\u2019s fish never reaches the reel',
+    rows.some(r => r.id === 't1'), false);
+  check('nor does a fish still waiting on the director',
+    rows.some(r => r.id === 'm-pending'), false);
+  check('and no real name travels with it',
+    /Real Name Here/.test(JSON.stringify(rows)), false);
+  check('nobody signed in gets no reel', t.reelRows(rCatches, rAnglers, []), []);
+
+  // ---- the running order ----
+  const plan = t.reelPlan(rows);
+  check('a title, every fish, and an end card', plan.scenes.length, rows.length + 2);
+  check('opening on the title', plan.scenes[0].kind, 'title');
+  check('and closing on the end card',
+    plan.scenes[plan.scenes.length - 1].kind, 'end');
+  check('the shots are counted', plan.shots, 3);
+  check('every scene lasts long enough to be seen',
+    plan.scenes.every(sc => sc.ms > 0), true);
+  check('and the total is the sum of them',
+    plan.totalMs, plan.scenes.reduce((n, sc) => n + sc.ms, 0));
+  // Past about thirty seconds a social app truncates it and the reel ends
+  // mid-fish, so the tail is dropped on purpose and the count says so.
+  const many = [];
+  for(let i = 0; i < 30; i++) many.push({ id:'x' + i, length: 30 - i, species:'Walleye' });
+  const capped = t.reelPlan(many);
+  check('a long season is capped', capped.shots, t.REEL_MAX_SHOTS);
+  check('and says how many it left off', capped.dropped, 30 - t.REEL_MAX_SHOTS);
+  check('the cap keeps the biggest fish', capped.scenes[1].row.id, 'x0');
+  check('a reel of everything still fits in half a minute',
+    capped.totalMs <= 35000, true);
+  check('no fish at all is still a valid plan', t.reelPlan([]).shots, 0);
+  check('and missing rows do not throw', t.reelPlan(null).shots, 0);
+
+  // ---- the clock ----
+  check('the title is on screen at the start',
+    t.reelSceneAt(plan, 0).scene.kind, 'title');
+  check('the first fish follows it',
+    t.reelSceneAt(plan, plan.scenes[0].ms + 1).scene.kind, 'shot');
+  check('and it is the biggest one',
+    t.reelSceneAt(plan, plan.scenes[0].ms + 1).scene.row.id, 'm-big');
+  check('the very last millisecond is still inside the reel',
+    t.reelSceneAt(plan, plan.totalMs - 1).scene.kind, 'end');
+  // Past the end must read as nothing, or the recorder never stops.
+  check('past the end there is no scene', t.reelSceneAt(plan, plan.totalMs), null);
+  check('and well past it too', t.reelSceneAt(plan, plan.totalMs + 9999), null);
+  check('a boundary lands on the NEXT scene, never between two',
+    t.reelSceneAt(plan, plan.scenes[0].ms).scene.kind, 'shot');
+  check('progress runs from zero', t.reelSceneAt(plan, 0).progress, 0);
+  check('an empty plan has no scene anywhere', t.reelSceneAt({ scenes: [] }, 0), null);
+
+  // ---- the file ----
+  check('a webm mime yields a webm file', t.reelFileExt('video/webm;codecs=vp9'), 'webm');
+  check('an mp4 mime yields an mp4 file', t.reelFileExt('video/mp4;codecs=avc1'), 'mp4');
+  check('and an unknown one falls back to webm', t.reelFileExt(''), 'webm');
+  const evt = { prefix:'MKWO', dates:['2027-09-18','2027-09-19'] };
+  check('the reel is named so it can be found again',
+    t.reelFileName(evt, 'Quiet Heron', 'mp4'), 'MKWO-2027-Quiet-Heron-highlights.mp4');
+  check('a handle with punctuation cannot break the filename',
+    /^[A-Za-z0-9._-]+$/.test(t.reelFileName(evt, 'O\'Malley / #1', 'mp4')), true);
+  check('and neither can a missing event',
+    /^[A-Za-z0-9._-]+$/.test(t.reelFileName(null, null, 'webm')), true);
+  check('a saved photo is named after the fish',
+    t.catchPhotoFileName(evt, { species:'Walleye', length:22.5 }),
+    'MKWO-Walleye-22.50in.jpg');
+  check('a photo of something odd still gets a usable name',
+    /^[A-Za-z0-9._-]+\.jpg$/.test(t.catchPhotoFileName(evt, { species:'Bass / Other' })), true);
+
+  // ---- what the browser can do ----
+  // Node has no MediaRecorder, which is the same answer an old browser gives:
+  // the card must say so rather than offering a button that cannot work.
+  check('a browser with no recorder is detected', t.reelSupported(), false);
+  check('and asking for a mime type does not throw', t.reelMimeType(), '');
+
+  // MP4 over WebM, deliberately. WebM records fine in Chrome and then will not
+  // upload from a phone to most social apps, which makes a working recorder
+  // useless at the only moment that matters. Proven against a recorder that
+  // claims to support both.
+  const savedRec = globalThis.MediaRecorder;
+  try{
+    globalThis.MediaRecorder = { isTypeSupported: ()=> true };
+    check('mp4 wins when both are offered', /mp4/.test(t.reelMimeType()), true);
+    globalThis.MediaRecorder = { isTypeSupported: (m)=> m.indexOf('webm') !== -1 };
+    check('webm is taken when mp4 is refused', /webm/.test(t.reelMimeType()), true);
+    globalThis.MediaRecorder = { isTypeSupported: ()=> false };
+    check('and nothing is claimed when nothing is supported', t.reelMimeType(), '');
+    globalThis.MediaRecorder = {};
+    check('a recorder that cannot be asked reports nothing', t.reelMimeType(), '');
+  } finally {
+    if(savedRec === undefined) delete globalThis.MediaRecorder;
+    else globalThis.MediaRecorder = savedRec;
   }
 }
 

@@ -374,6 +374,46 @@ for (const m of src.matchAll(/<(script|link)\b[^>]*?(?:src|href)="(https:\/\/[^"
   }
 }
 
+// -------------------------------------------------------------- the reel
+// Two of the reel's rules cannot be reached from a test in Node - one needs a
+// real canvas, the other a browser that has captureStream but no MediaRecorder
+// (Safari 11 to 14.0, which is a real window). Both are load-bearing.
+const reelImg = (script.match(/async function reelImage\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+if (!reelImg) {
+  note('reel', 'cannot find reelImage - the canvas-taint guard cannot be checked');
+} else {
+  // Drawing a cross-origin image onto a canvas taints it, and captureStream()
+  // on a tainted canvas throws SecurityError - so every remote photo has to be
+  // fetched to a blob first. Without this the reel dies on the one path that
+  // matters: photos that reached object storage.
+  if (!/fetch\(/.test(reelImg) || !/createObjectURL/.test(reelImg)) {
+    note('reel', 'reelImage no longer fetches a remote photo to a blob before ' +
+      'drawing it - a cross-origin image taints the canvas and captureStream() ' +
+      'then throws, so the reel would fail on every uploaded photo');
+  }
+}
+const reelSup = (script.match(/function reelSupported\(\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+if (!reelSup) {
+  note('reel', 'cannot find reelSupported - the recorder check cannot be verified');
+} else {
+  for (const [needle, what] of [
+    ['MediaRecorder', 'the MediaRecorder check (Safari 11-14.0 has captureStream without it)'],
+    ['captureStream', 'the captureStream check']
+  ]) {
+    if (!reelSup.includes(needle)) {
+      note('reel', `reelSupported has lost ${what}, so the button would be offered ` +
+        `to a browser that cannot record`);
+    }
+  }
+}
+// The reel is the angler's OWN fish. A wall inside the app is one thing; a file
+// about to be posted is another, and only one of those did the field agree to.
+const reelRowsFn = (script.match(/function reelRows\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+if (reelRowsFn && !/r\.mine/.test(reelRowsFn)) {
+  note('reel', 'reelRows no longer filters to the angler\'s own fish - somebody ' +
+    'else\'s photo would end up in a file being posted to social media');
+}
+
 // ------------------------------------------------------------- the public wall
 // The gallery is the whole field looking at each other's fish, so the angler
 // there is a handle. galleryOrder() enforces that by returning a PROJECTION

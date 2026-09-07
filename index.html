@@ -1130,6 +1130,38 @@
      nested deep inside the director panel and display:none on any ancestor
      would take it with them. */
 
+  /* ---- the trophy case ---- */
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:8px;}
+  .stat{
+    border:1px solid var(--line);border-radius:5px;padding:9px 10px;background:var(--paper-2);
+  }
+  .stat .stat-val{display:block;font-size:19px;font-weight:700;line-height:1.15;font-variant-numeric:tabular-nums;}
+  .stat .stat-key{display:block;font-size:10px;color:var(--steel);margin-top:2px;letter-spacing:.02em;}
+  .stat .stat-sub{display:block;font-size:10px;color:var(--steel);margin-top:3px;}
+  .hist-row{
+    display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+    border:1px solid var(--line);border-radius:5px;padding:9px 10px;margin-bottom:6px;
+  }
+  .hist-main{min-width:0;}
+  .hist-name{display:block;font-weight:600;font-size:12.5px;}
+  .hist-sub{display:block;font-size:10.5px;color:var(--steel);margin-top:2px;}
+  .hist-place{flex:0 0 auto;text-align:right;font-variant-numeric:tabular-nums;}
+  .hist-place .pl{display:block;font-size:16px;font-weight:700;}
+  .hist-place .pl-sub{display:block;font-size:9.5px;color:var(--steel);}
+  .hist-row.won{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold);}
+  .badge-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:7px;}
+  .badge-tile{
+    border:1px solid var(--line);border-radius:5px;padding:9px 6px;text-align:center;
+    background:var(--paper-2);
+  }
+  .badge-tile .bi{display:block;font-size:21px;line-height:1.1;}
+  .badge-tile .bn{display:block;font-size:10px;font-weight:600;margin-top:4px;}
+  .badge-tile .bw{display:block;font-size:9px;color:var(--steel);margin-top:2px;line-height:1.35;}
+  /* Unearned badges stay on the wall, greyed, with what it takes to get one -
+     an empty space tells you nothing about what there is to aim at. */
+  .badge-tile.locked{opacity:.42;}
+  .badge-tile.locked .bi{filter:grayscale(1);}
+
   /* ---- the fish gallery ----
      Square tiles so a wall of fish reads as a wall of fish. The caption sits
      ON the photo rather than under it, because a grid of cards with captions
@@ -1169,6 +1201,11 @@
     position:absolute;top:4px;left:4px;z-index:1;
     background:var(--gold);color:#0C1412;font-size:9px;font-weight:700;
     padding:1px 5px;border-radius:3px;letter-spacing:.04em;
+  }
+
+  .reel-video{
+    display:block;width:100%;max-width:280px;margin:10px auto 0;
+    border-radius:6px;background:#0C1412;aspect-ratio:9/16;
   }
 
   /* ---- full-size catch photo ----
@@ -1356,6 +1393,10 @@
         <button class="home-tile" type="button" data-goto="livewell">
           <span class="home-tile-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12c4-5 10-6 15-2l3-3v10l-3-3c-5 4-11 3-15-2Z"/><circle cx="16" cy="11" r=".7" fill="currentColor" stroke="none"/></svg></span>
           <span class="home-tile-copy"><span class="home-tile-label">CPR Livewell</span><span class="home-tile-sub">Your scoring fish</span></span>
+        </button>
+        <button class="home-tile" type="button" data-goto="trophy">
+          <span class="home-tile-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v6a5 5 0 0 1-10 0V4Z"/><path d="M7 6H4.5A1.5 1.5 0 0 0 3 7.5 3.5 3.5 0 0 0 6.5 11H7"/><path d="M17 6h2.5A1.5 1.5 0 0 1 21 7.5 3.5 3.5 0 0 1 17.5 11H17"/></svg></span>
+          <span class="home-tile-copy"><span class="home-tile-label">Trophy Case</span><span class="home-tile-sub">Bests, history, badges</span></span>
         </button>
         <button class="home-tile" type="button" data-goto="gallery">
           <span class="home-tile-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="m6 16 3.5-4 2.5 3 2.5-3L18 16"/><circle cx="9" cy="9.5" r="1.2"/></svg></span>
@@ -1702,6 +1743,25 @@
       </div>
     </section>
 
+    <!-- TROPHY CASE -->
+    <section class="screen" id="screen-trophy">
+      <a class="backlink" data-goto="home" role="button" tabindex="0">&larr; Home</a>
+      <div class="card">
+        <h2>Trophy case</h2>
+        <p class="hint" style="margin-top:0;" id="trophy-intro"></p>
+        <div id="trophy-bests"></div>
+      </div>
+      <div class="card">
+        <h2 style="margin-bottom:8px;">Tournament history</h2>
+        <div id="trophy-history"></div>
+      </div>
+      <div class="card">
+        <h2 style="margin-bottom:8px;">Badges</h2>
+        <p class="hint" style="margin-top:0;">Everything here is worked out from the record, so it can always be explained.</p>
+        <div id="trophy-badges"></div>
+      </div>
+    </section>
+
     <!-- GALLERY -->
     <section class="screen" id="screen-gallery">
       <a class="backlink" data-goto="home" role="button" tabindex="0">&larr; Home</a>
@@ -1709,6 +1769,21 @@
         <h2>Fish gallery</h2>
         <p class="hint" style="margin-top:0;" id="gallery-note"></p>
         <div class="gallery-grid" id="gallery-grid"></div>
+      </div>
+      <div class="card" id="reel-card" style="display:none;">
+        <h2 style="margin-bottom:8px;">Highlight reel</h2>
+        <p class="hint" style="margin-top:0;" id="reel-intro"></p>
+        <div class="actions">
+          <button class="secondary" type="button" id="reel-build">Make my highlight reel</button>
+        </div>
+        <p class="hint" id="reel-status" style="display:none;"></p>
+        <div id="reel-result" hidden>
+          <video class="reel-video" id="reel-video" controls playsinline></video>
+          <div class="actions" style="margin-top:8px;">
+            <button class="secondary" type="button" id="reel-download">Download</button>
+          </div>
+          <p class="hint" id="reel-savehint"></p>
+        </div>
       </div>
     </section>
 
@@ -4038,6 +4113,11 @@ async function loadCatches(){ return cachedRows('catches'); }
 // strongest case there is. Everything that scores, ranks or pays uses
 // loadCatches() instead.
 async function loadCatchesAllEvents(){ return deepClone(allRows('catches')); }
+// Same again for the roster, and for the same narrow reason: the trophy case
+// shows YOUR history across every tournament, and an entry id only means
+// something inside one event. Nothing that scores, ranks or pays reads either
+// of these - they use loadAnglers()/loadCatches(), which stay on the live event.
+async function loadAnglersAllEvents(){ return deepClone(allRows('anglers')); }
 async function saveCatches(list){ return await saveCollection('catches', list); }
 async function loadDonations(){ return cachedRows('donations'); }
 async function loadMessages(){ return cachedRows('messages'); }
@@ -4124,7 +4204,13 @@ const OTHER_SPECIES = 'Other';
 // Catches carry the species NAME as typed at submit time, so a catch logged
 // before the director renamed the target species still reads correctly. Scoring
 // asks this question instead of comparing to a hardcoded 'Walleye'.
-function isScoringSpecies(name){ return name === targetSpecies(); }
+// The target defaults to the LIVE event's, which is what every screen showing
+// the current tournament wants. The trophy case passes one explicitly, because
+// a past event may have been fished for a different species and scoring it
+// against this year's would silently empty its standings.
+function isScoringSpecies(name, target){
+  return name === (target === undefined ? targetSpecies() : target);
+}
 
 async function loadAwardsBudget(){
   if(liveCache.config) return Number(awardsBudgetMap()[activeEventId()]) || 0;
@@ -5124,7 +5210,7 @@ function fishIErrorCopy(e){
 }
 
 // ---- navigation ----
-const screens = ['home','register','checkin','submit','manage','livewell','gallery','leaderboard','bigfish','gps','payouts','chat','admin'];
+const screens = ['home','register','checkin','submit','manage','livewell','gallery','trophy','leaderboard','bigfish','gps','payouts','chat','admin'];
 let currentScreen = 'home';
 
 // Split out of goto() so a write from another device can repaint what is
@@ -5145,6 +5231,7 @@ function renderScreen(name){
   if(name==='checkin') renderCheckin();
   if(name==='livewell') renderLivewell();
   if(name==='gallery') renderGallery();
+  if(name==='trophy') renderTrophyCase();
   if(name==='bigfish'){ renderBigFish(); renderBets(); }
   if(name==='gps') renderPublicGps();
   if(name==='payouts') renderPayoutCalculator();
@@ -6479,6 +6566,310 @@ async function renderLivewellList(){
   hydratePhotos(el);
 }
 
+// ---- the trophy case ----
+// Personal bests, a row for every event fished, and badges earned.
+//
+// WHO YOU ARE, ACROSS EVENTS. Entry ids are per-event - a fresh registration
+// every year - handles get re-rolled between events, and names are typed by
+// hand and get typed differently each time. The join is the PHONE NUMBER,
+// which is already what claimEntry() treats as proof that an entry is yours.
+//
+// It is used as a key and never displayed. This is matching your own entries
+// on your own phone, not building a directory: nothing here leaves the device
+// and nothing here is shown to anybody else.
+function personKey(angler){
+  const p = normPhone(angler && angler.phone);
+  return p ? 'p:' + p : null;
+}
+
+// Every entry belonging to the same person as the live event's entries. An
+// entry with no phone on it still counts for its own event - it simply cannot
+// be matched to any other, which is better than guessing on a name.
+function myEntryIds(allAnglers, myIds){
+  const out = new Set(myIds || []);
+  const keys = new Set();
+  (allAnglers || []).forEach(a=>{
+    if(!a || !out.has(a.id)) return;
+    const k = personKey(a);
+    if(k) keys.add(k);
+  });
+  if(keys.size){
+    (allAnglers || []).forEach(a=>{
+      const k = personKey(a);
+      if(k && keys.has(k)) out.add(a.id);
+    });
+  }
+  return out;
+}
+
+// A calendar day in a named zone. eventTimeParts() answers this for the LIVE
+// event only, and a past event may have been fished somewhere else.
+const dayKeyFormatters = new Map();
+function dayKeyIn(ts, tz){
+  const zone = tz || 'UTC';
+  let f = dayKeyFormatters.get(zone);
+  if(!f){
+    try{
+      f = new Intl.DateTimeFormat('en-CA',
+        { timeZone: zone, year:'numeric', month:'2-digit', day:'2-digit' });
+    }catch(e){
+      // A record carrying a zone this browser has never heard of should cost a
+      // stat its precision, not take the screen down.
+      f = new Intl.DateTimeFormat('en-CA',
+        { timeZone:'UTC', year:'numeric', month:'2-digit', day:'2-digit' });
+    }
+    dayKeyFormatters.set(zone, f);
+  }
+  return f.format(new Date(Number(ts) || 0));
+}
+
+// One event's line in the history. `settingsFor` and `eventInfo` are passed in
+// rather than read from globals so this can be tested without an app around it.
+function trophyEventRow(eventId, evAnglers, evCatches, mineIds, info){
+  const meHere = evAnglers.filter(a=> mineIds.has(a.id));
+  if(meHere.length === 0) return null;
+  const target = (info && info.targetSpecies) || '';
+  const tz = (info && info.timeZone) || 'UTC';
+  const approved = evCatches.filter(c=>
+    c && c.status === 'approved' && mineIds.has(c.anglerId));
+  const scoring = approved.filter(c=> c.species === target).slice().sort(byLengthThenEarliest);
+  const lengths = scoring.map(c=> Number(c.length) || 0);
+
+  const perDay = {};
+  approved.forEach(c=>{ const k = dayKeyIn(c.timestamp, tz); perDay[k] = (perDay[k] || 0) + 1; });
+  const bestDay = Object.keys(perDay).reduce((m, k)=> Math.max(m, perDay[k]), 0);
+
+  const entry = meHere[0];
+  const division = entry.division || 'solo';
+  // Scored against THIS event's species, not the live one's - see
+  // isScoringSpecies(). Getting that wrong would empty a past event's board.
+  const table = standingsFor(division, evCatches, evAnglers, target);
+  let placing = 0;
+  for(let i = 0; i < table.length; i++){
+    if(table[i].anglerIds.some(id=> mineIds.has(id))){ placing = i + 1; break; }
+  }
+  const days = {};
+  meHere.forEach(a=>{
+    Object.keys(a.checkins || {}).forEach(k=>{
+      const rec = a.checkins[k] || {};
+      if(rec.in && rec.out) days[k] = true;
+    });
+  });
+
+  return {
+    eventId,
+    name: (info && info.name) || eventId,
+    year: (info && info.year) || '',
+    division,
+    fish: approved.length,
+    scoring: scoring.length,
+    best: lengths.length ? lengths[0] : 0,
+    // The actual fish, so the all-time best can name its species and be tied
+    // back to a record rather than being a bare number.
+    bestCatch: scoring[0] || null,
+    top3: lengths.slice(0, 3).reduce((t, v)=> t + v, 0),
+    bestDay,
+    placing,
+    entrants: table.length,
+    disqualified: meHere.some(a=> a.disqualified),
+    bigfish: meHere.some(a=> a.bigfish),
+    fullDays: Object.keys(days).length,
+    species: Array.from(new Set(approved.map(c=> c.species).filter(Boolean))).sort()
+  };
+}
+
+// Everything the trophy case shows, in one pass, so the numbers on the screen
+// and the badges beneath them can never disagree about what you have done.
+function trophyStats(allAnglers, allCatches, myIds, infoFor){
+  const ids = myEntryIds(allAnglers, myIds);
+  const anglersBy = {}, catchesBy = {};
+  (allAnglers || []).forEach(a=>{
+    const k = rowEventId(a); (anglersBy[k] = anglersBy[k] || []).push(a);
+  });
+  (allCatches || []).forEach(c=>{
+    const k = rowEventId(c); (catchesBy[k] = catchesBy[k] || []).push(c);
+  });
+
+  const history = [];
+  Object.keys(anglersBy).forEach(eventId=>{
+    const row = trophyEventRow(eventId, anglersBy[eventId], catchesBy[eventId] || [],
+      ids, infoFor ? infoFor(eventId) : null);
+    if(row) history.push(row);
+  });
+  // Most recent event first, and a stable order when two share a year.
+  history.sort((a, b)=>
+    String(b.year).localeCompare(String(a.year)) || String(a.eventId).localeCompare(String(b.eventId)));
+
+  const mineAll = (allCatches || []).filter(c=>
+    c && c.status === 'approved' && ids.has(c.anglerId));
+  // The personal best is the longest fish that SCORED, taken from each event's
+  // own row so it is measured against the species that event was fished for.
+  //
+  // Not simply the longest thing ever landed: a 40" pike in a walleye event is
+  // a real fish and it counts among the fish caught, but calling it a personal
+  // best would put it above every walleye on the board and hand out the
+  // thirty-inch badge for a species nobody was fishing for.
+  const longest = history.map(r=> r.bestCatch).filter(Boolean)
+    .sort(byLengthThenEarliest)[0] || null;
+  const pick = (key)=> history.reduce((best, r)=> r[key] > best ? r[key] : best, 0);
+  const placed = history.filter(r=> r.placing > 0).map(r=> r.placing);
+
+  return {
+    history,
+    events: history.length,
+    fish: mineAll.length,
+    species: Array.from(new Set(mineAll.map(c=> c.species).filter(Boolean))).sort(),
+    longest,
+    best: longest ? Number(longest.length) || 0 : 0,
+    bestTop3: pick('top3'),
+    bestDay: pick('bestDay'),
+    mostInEvent: pick('fish'),
+    fullDays: history.reduce((t, r)=> t + r.fullDays, 0),
+    bigFishBuyIns: history.filter(r=> r.bigfish).length,
+    // 0 means never ranked, so "best" here is the LOWEST number above zero.
+    bestPlacing: placed.length ? Math.min.apply(null, placed) : 0,
+    wins: history.filter(r=> r.placing === 1).length,
+    podiums: history.filter(r=> r.placing >= 1 && r.placing <= 3).length
+  };
+}
+
+// Badges. Every one of these has to be checkable against the record - a badge
+// nobody can explain is worse than no badge, because the first thing an angler
+// does is ask why somebody else has it.
+//
+// `earned` reads the stats above and nothing else, so a badge can never claim
+// something the trophy case is not also showing.
+const TROPHY_BADGES = [
+  { id:'first-fish', name:'First Fish', icon:'\u{1F41F}',
+    need:'Land an approved fish', earned: s=> s.fish >= 1 },
+  { id:'ten-fish', name:'Ten Fish', icon:'\u{1F3A3}',
+    need:'Ten approved fish, all time', earned: s=> s.fish >= 10 },
+  { id:'fifty-fish', name:'Fifty Fish', icon:'⚓',
+    need:'Fifty approved fish, all time', earned: s=> s.fish >= 50 },
+  { id:'twenty', name:'Twenty-Incher', icon:'\u{1F4CF}',
+    need:'A fish of 20 inches or better', earned: s=> s.best >= 20 },
+  { id:'twentyfive', name:'Twenty-Five Club', icon:'\u{1F947}',
+    need:'A fish of 25 inches or better', earned: s=> s.best >= 25 },
+  { id:'thirty', name:'Thirty-Inch Giant', icon:'\u{1F409}',
+    need:'A fish of 30 inches or better', earned: s=> s.best >= 30 },
+  { id:'mixed-bag', name:'Mixed Bag', icon:'\u{1F3A8}',
+    need:'Two or more species logged', earned: s=> s.species.length >= 2 },
+  { id:'hot-day', name:'Hot Hand', icon:'\u{1F525}',
+    need:'Five approved fish in one day', earned: s=> s.bestDay >= 5 },
+  { id:'full-days', name:'Full Day', icon:'\u{1F305}',
+    need:'Check in and back out on the same day', earned: s=> s.fullDays >= 1 },
+  { id:'pot', name:'In The Pot', icon:'\u{1F3B2}',
+    need:'Buy into the Big Fish pot', earned: s=> s.bigFishBuyIns >= 1 },
+  { id:'podium', name:'Podium', icon:'\u{1F396}',
+    need:'Finish in the top three', earned: s=> s.podiums >= 1 },
+  { id:'champion', name:'Champion', icon:'\u{1F3C6}',
+    need:'Win your division', earned: s=> s.wins >= 1 },
+  { id:'veteran', name:'Veteran', icon:'\u{1F9ED}',
+    need:'Fish two or more tournaments', earned: s=> s.events >= 2 }
+];
+
+function trophyBadges(stats){
+  return TROPHY_BADGES.map(b=> ({
+    id: b.id, name: b.name, icon: b.icon, need: b.need,
+    earned: !!(stats && b.earned(stats))
+  }));
+}
+
+// What trophyStats needs to know about an event in order to score its catches:
+// the species that counted THERE, the zone its days were kept in, and a name
+// to print. Scoring a 2027 walleye event against a 2029 pike event's target
+// would quietly empty its board, which is the whole reason this is passed in.
+function trophyEventInfo(eventId){
+  const evt = eventById(eventId);
+  const dates = (evt && evt.dates) || [];
+  return {
+    name: (evt && evt.name) || eventId,
+    year: dates.length ? String(dates[dates.length - 1]).slice(0, 4) : '',
+    targetSpecies: eventSettings(eventId).targetSpecies,
+    timeZone: (evt && evt.timeZone) || 'UTC'
+  };
+}
+
+function statHtml(val, key, sub){
+  return '<div class="stat"><span class="stat-val">' + escapeHtml(String(val)) + '</span>' +
+    '<span class="stat-key">' + escapeHtml(key) + '</span>' +
+    (sub ? '<span class="stat-sub">' + escapeHtml(sub) + '</span>' : '') + '</div>';
+}
+function placingText(n){
+  if(n === 1) return '1st';
+  if(n === 2) return '2nd';
+  if(n === 3) return '3rd';
+  return n + 'th';
+}
+function trophyHistoryHtml(row){
+  const bits = [row.division === 'team' ? 'Team' : 'Solo'];
+  bits.push(row.fish + ' fish');
+  if(row.best > 0) bits.push('best ' + Number(row.best).toFixed(2) + '"');
+  if(row.disqualified) bits.push('disqualified');
+  const place = row.disqualified ? '&mdash;'
+    : (row.placing > 0 ? placingText(row.placing) : '&mdash;');
+  const placeSub = row.disqualified ? 'no placing'
+    : (row.placing > 0 ? 'of ' + row.entrants : 'unranked');
+  return '<div class="hist-row' + (row.placing === 1 && !row.disqualified ? ' won' : '') + '">' +
+    '<span class="hist-main"><span class="hist-name">' + escapeHtml(row.name) + '</span>' +
+    '<span class="hist-sub">' + escapeHtml(bits.join(' \u00b7 ')) + '</span></span>' +
+    '<span class="hist-place"><span class="pl">' + place + '</span>' +
+    '<span class="pl-sub">' + escapeHtml(placeSub) + '</span></span></div>';
+}
+
+async function renderTrophyCase(){
+  const anglers = await loadAnglers();
+  const mine = myAnglerIds(anglers);
+  const stats = trophyStats(await loadAnglersAllEvents(), await loadCatchesAllEvents(),
+    mine, trophyEventInfo);
+
+  const bests = document.getElementById('trophy-bests');
+  const hist = document.getElementById('trophy-history');
+  const badges = document.getElementById('trophy-badges');
+  if(!bests || !hist || !badges) return;
+
+  if(mine.length === 0){
+    setText('trophy-intro', 'This device is not signed in to an entry, so there is nothing ' +
+      'to show yet. Open Register and choose \u201cSign in to my entry\u201d, or register for ' +
+      'the tournament.');
+    bests.innerHTML = '';
+    hist.innerHTML = '<p class="empty">No tournaments yet.</p>';
+    badges.innerHTML = '';
+    return;
+  }
+
+  setText('trophy-intro', stats.fish === 0
+    ? 'Nothing on the board yet. Everything here fills in as the director approves your catches.'
+    : 'Worked out from every catch of yours the director has approved, across every tournament ' +
+      'this app has a record of.');
+
+  const longest = stats.longest;
+  bests.innerHTML = '<div class="stat-grid">' +
+    statHtml(stats.best > 0 ? Number(stats.best).toFixed(2) + '"' : '\u2014', 'Personal best',
+      longest ? longest.species : '') +
+    statHtml(stats.bestTop3 > 0 ? Number(stats.bestTop3).toFixed(2) + '"' : '\u2014',
+      'Best 3 combined', 'in one tournament') +
+    statHtml(stats.fish, 'Fish on the board', 'approved, all time') +
+    statHtml(stats.bestDay || '\u2014', 'Best single day', 'approved fish') +
+    statHtml(stats.events, 'Tournaments', stats.wins > 0
+      ? stats.wins + (stats.wins === 1 ? ' win' : ' wins') : '') +
+    statHtml(stats.bestPlacing > 0 ? placingText(stats.bestPlacing) : '\u2014',
+      'Best finish', stats.podiums > 0 ? stats.podiums + ' on the podium' : '') +
+    '</div>';
+
+  hist.innerHTML = stats.history.length === 0
+    ? '<p class="empty">No tournaments yet. Your first one shows up here once you have registered.</p>'
+    : stats.history.map(trophyHistoryHtml).join('');
+
+  const earned = trophyBadges(stats);
+  badges.innerHTML = '<div class="badge-grid">' + earned.map(b=>
+    '<div class="badge-tile' + (b.earned ? '' : ' locked') + '">' +
+    '<span class="bi">' + b.icon + '</span>' +
+    '<span class="bn">' + escapeHtml(b.name) + '</span>' +
+    '<span class="bw">' + escapeHtml(b.earned ? 'Earned' : b.need) + '</span></div>').join('') +
+    '</div>';
+}
+
 // ---- the fish gallery ----
 // Every approved fish in the event, the angler's own first.
 //
@@ -6543,6 +6934,293 @@ function galleryTileHtml(row){
     '</span></button>';
 }
 
+// ---- the highlight reel ----
+// Compiles YOUR approved photos into a short vertical video to post.
+//
+// ONLY YOUR OWN FISH. Not a policy bolted on afterwards - reelRows() runs the
+// gallery projection and then keeps the rows marked `mine`, so somebody else's
+// photo cannot reach a file you are about to put on the internet. Whether the
+// field is happy to be on a public wall inside the app is a different question
+// from whether they are happy to be in your Instagram post, and only one of
+// those did anyone agree to.
+const REEL_W = 1080, REEL_H = 1920;      // 9:16, which is what reels and stories want
+const REEL_FPS = 30;
+const REEL_TITLE_MS = 1700;
+const REEL_SHOT_MS = 2200;
+const REEL_END_MS = 1900;
+// Twelve fish is about thirty seconds. Past that every social app truncates it
+// and the reel ends mid-fish.
+const REEL_MAX_SHOTS = 12;
+
+// Your own approved fish, biggest first, because a highlight reel opens with
+// the fish you would open with.
+function reelRows(catches, anglers, myIds){
+  return galleryOrder(catches, anglers, myIds)
+    .filter(r=> r.mine)
+    .sort((a, b)=> (Number(b.length) - Number(a.length))
+                || String(a.id).localeCompare(String(b.id)));
+}
+
+// The running order and how long each scene holds. Split out from the drawing
+// because the TIMING is the part worth checking: a scene of zero length is a
+// frame nobody sees, and a reel that runs long gets cut off by the app it is
+// posted to rather than by us.
+function reelPlan(rows, opts){
+  const o = opts || {};
+  const max = o.maxShots === undefined ? REEL_MAX_SHOTS : o.maxShots;
+  const all = (rows || []).filter(Boolean);
+  const shots = all.slice(0, Math.max(0, max));
+  const scenes = [{ kind:'title', ms: REEL_TITLE_MS }];
+  shots.forEach(row=> scenes.push({ kind:'shot', ms: REEL_SHOT_MS, row: row }));
+  scenes.push({ kind:'end', ms: REEL_END_MS });
+  return {
+    scenes,
+    shots: shots.length,
+    dropped: all.length - shots.length,
+    totalMs: scenes.reduce((t, sc)=> t + sc.ms, 0)
+  };
+}
+
+// Which scene is on screen at t, and how far through it we are. Returns null
+// past the end so the recorder knows to stop.
+function reelSceneAt(plan, ms){
+  let acc = 0;
+  const scenes = (plan && plan.scenes) || [];
+  for(let i = 0; i < scenes.length; i++){
+    if(ms < acc + scenes[i].ms){
+      return { scene: scenes[i], index: i, progress: (ms - acc) / scenes[i].ms };
+    }
+    acc += scenes[i].ms;
+  }
+  return null;
+}
+
+function reelSupported(){
+  try{
+    if(typeof MediaRecorder === 'undefined') return false;
+    const c = document.createElement('canvas');
+    return typeof c.captureStream === 'function';
+  }catch(e){ return false; }
+}
+
+// MP4 first, deliberately. WebM records fine in Chrome and then will not upload
+// from a phone to most social apps, which makes a working recorder useless at
+// the only moment it matters. Safari records MP4 natively.
+function reelMimeType(){
+  const R = typeof MediaRecorder !== 'undefined' ? MediaRecorder : null;
+  if(!R || typeof R.isTypeSupported !== 'function') return '';
+  const wanted = ['video/mp4;codecs=avc1.42E01E', 'video/mp4',
+                  'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  for(let i = 0; i < wanted.length; i++){
+    if(R.isTypeSupported(wanted[i])) return wanted[i];
+  }
+  return '';
+}
+function reelFileExt(mime){ return String(mime || '').indexOf('mp4') !== -1 ? 'mp4' : 'webm'; }
+
+// One fish, named so it is still identifiable in a camera roll six months on.
+function catchPhotoFileName(evt, c){
+  const bits = [(evt && evt.prefix) || 'LiveWire'];
+  if(c && c.species) bits.push(String(c.species));
+  if(c && c.length) bits.push(Number(c.length).toFixed(2) + 'in');
+  return bits.join('-').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/-+/g, '-') + '.jpg';
+}
+
+// A filename somebody can find again in a camera roll six months later.
+function reelFileName(evt, handle, ext){
+  const bits = [(evt && evt.prefix) || 'LiveWire'];
+  const dates = (evt && evt.dates) || [];
+  if(dates.length) bits.push(String(dates[dates.length - 1]).slice(0, 4));
+  if(handle) bits.push(handle);
+  bits.push('highlights');
+  return bits.join('-').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/-+/g, '-') + '.' + ext;
+}
+
+// Drawing a cross-origin image onto a canvas TAINTS it, and captureStream() on
+// a tainted canvas throws SecurityError - so a photo living in object storage
+// is fetched as a blob and loaded from a same-origin blob: URL instead. A data:
+// URL (a photo still on this device) is already safe and is used as it stands.
+// A photo that will not load is skipped: a missing shot is better than no reel.
+async function reelImage(catchId){
+  let revoke = '';
+  try{
+    const url = await loadPhoto(catchId);
+    if(!url) return null;
+    let src = url;
+    if(/^https?:/i.test(url)){
+      const res = await fetch(url, { mode:'cors', credentials:'omit' });
+      if(!res.ok) return null;
+      src = URL.createObjectURL(await res.blob());
+      revoke = src;
+    }
+    const img = await new Promise((resolve)=>{
+      const i = new Image();
+      i.onload = ()=> resolve(i);
+      i.onerror = ()=> resolve(null);
+      i.src = src;
+    });
+    if(!img){ if(revoke) URL.revokeObjectURL(revoke); return null; }
+    return { img, revoke };
+  }catch(e){
+    if(revoke) URL.revokeObjectURL(revoke);
+    console.error(e);
+    return null;
+  }
+}
+
+function reelCover(ctx, img, w, h){
+  const scale = Math.max(w / img.width, h / img.height);
+  const dw = img.width * scale, dh = img.height * scale;
+  ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+}
+function reelText(ctx, text, x, y, font, colour, align){
+  ctx.font = font;
+  ctx.fillStyle = colour;
+  ctx.textAlign = align || 'left';
+  ctx.fillText(text, x, y);
+}
+
+function paintReelFrame(ctx, plan, ms, meta){
+  const at = reelSceneAt(plan, ms);
+  const m = meta || {};
+  ctx.fillStyle = '#0C1412';
+  ctx.fillRect(0, 0, REEL_W, REEL_H);
+  if(!at) return;
+  const sc = at.scene;
+
+  if(sc.kind === 'title' || sc.kind === 'end'){
+    const lines = sc.kind === 'title'
+      ? [m.eventName || 'Tournament', m.dateText || '', m.handle || '']
+      : [(m.shots || 0) + (m.shots === 1 ? ' fish' : ' fish'),
+         m.best ? 'Best ' + Number(m.best).toFixed(2) + '"' : '',
+         'Caught, photographed, released'];
+    ctx.textAlign = 'center';
+    reelText(ctx, lines[0], REEL_W / 2, REEL_H / 2 - 90,
+      '700 78px Oswald, Impact, sans-serif', '#F4F1E9', 'center');
+    if(lines[1]) reelText(ctx, lines[1], REEL_W / 2, REEL_H / 2 + 10,
+      '500 46px Inter, system-ui, sans-serif', '#9FD9BB', 'center');
+    if(lines[2]) reelText(ctx, lines[2], REEL_W / 2, REEL_H / 2 + 96,
+      '500 40px Inter, system-ui, sans-serif', '#C8D3CC', 'center');
+    return;
+  }
+
+  // A fish. Photo behind, a band across the bottom so the numbers stay readable
+  // over whatever the water was doing that day.
+  if(sc.image && sc.image.img) reelCover(ctx, sc.image.img, REEL_W, REEL_H);
+  else reelText(ctx, 'photo unavailable', REEL_W / 2, REEL_H / 2,
+    '500 40px Inter, system-ui, sans-serif', '#6B7B74', 'center');
+
+  const bandTop = REEL_H - 300;
+  const grad = ctx.createLinearGradient(0, bandTop, 0, REEL_H);
+  grad.addColorStop(0, 'rgba(12,20,18,0)');
+  grad.addColorStop(1, 'rgba(12,20,18,0.9)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, bandTop, REEL_W, 300);
+
+  const row = sc.row || {};
+  reelText(ctx, Number(row.length).toFixed(2) + '"', 64, REEL_H - 150,
+    '700 116px Oswald, Impact, sans-serif', '#F4F1E9');
+  reelText(ctx, String(row.species || ''), 64, REEL_H - 86,
+    '500 42px Inter, system-ui, sans-serif', '#9FD9BB');
+  if(m.handle) reelText(ctx, m.handle, REEL_W - 64, REEL_H - 86,
+    '500 38px Inter, system-ui, sans-serif', '#C8D3CC', 'right');
+}
+
+// Builds the file. Every photo is fetched BEFORE recording starts: a fetch
+// stalling halfway through would be recorded as a stall.
+async function buildHighlightReel(rows, meta, onProgress){
+  if(!reelSupported()) throw new Error('This browser cannot record video.');
+  const plan = reelPlan(rows);
+  if(plan.shots === 0) throw new Error('There are no approved photos to use yet.');
+
+  const say = (msg)=>{ if(onProgress) onProgress(msg); };
+  const shots = plan.scenes.filter(sc=> sc.kind === 'shot');
+  for(let i = 0; i < shots.length; i++){
+    say('Fetching photo ' + (i + 1) + ' of ' + shots.length + '…');
+    shots[i].image = await reelImage(shots[i].row.id);
+  }
+  const release = ()=> shots.forEach(sc=>{
+    if(sc.image && sc.image.revoke) URL.revokeObjectURL(sc.image.revoke);
+  });
+
+  try{
+    const canvas = document.createElement('canvas');
+    canvas.width = REEL_W; canvas.height = REEL_H;
+    const ctx = canvas.getContext('2d');
+    paintReelFrame(ctx, plan, 0, meta);
+
+    const mime = reelMimeType();
+    const stream = canvas.captureStream(REEL_FPS);
+    const rec = new MediaRecorder(stream,
+      mime ? { mimeType: mime, videoBitsPerSecond: 6000000 } : undefined);
+    const chunks = [];
+    rec.ondataavailable = (e)=>{ if(e.data && e.data.size) chunks.push(e.data); };
+    const stopped = new Promise((resolve)=>{ rec.onstop = resolve; });
+
+    say('Recording…');
+    rec.start();
+    const started = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const now = ()=> (typeof performance !== 'undefined' ? performance.now() : Date.now()) - started;
+    // Painted against the CLOCK rather than a frame count, so a dropped frame
+    // shortens nothing - the reel is the length it says it is.
+    await new Promise((resolve)=>{
+      const step = ()=>{
+        const t = now();
+        if(t >= plan.totalMs){ resolve(); return; }
+        paintReelFrame(ctx, plan, t, meta);
+        if(typeof requestAnimationFrame === 'function') requestAnimationFrame(step);
+        else setTimeout(step, 1000 / REEL_FPS);
+      };
+      step();
+    });
+    rec.stop();
+    await stopped;
+    (stream.getTracks() || []).forEach(tr=> tr.stop());
+
+    if(chunks.length === 0) throw new Error('The recorder produced nothing.');
+    const type = mime || 'video/webm';
+    return { blob: new Blob(chunks, { type: type }), mime: type, plan: plan };
+  } finally {
+    release();
+  }
+}
+
+// Hands the viewer a file. On iOS a blob download often opens the file rather
+// than saving it, which is why the reel is also left on screen in a <video>:
+// long-pressing that is the reliable way to get it into a camera roll.
+function triggerDownload(href, filename){
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = filename;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+// One photo, saved. Same cross-origin dance as the reel: object storage is
+// fetched to a blob so the file lands with a name rather than opening a tab.
+async function downloadCatchPhoto(catchId, filename){
+  const url = await loadPhoto(catchId);
+  if(!url) return false;
+  let href = url, revoke = '';
+  try{
+    if(/^https?:/i.test(url)){
+      const res = await fetch(url, { mode:'cors', credentials:'omit' });
+      if(!res.ok) return false;
+      href = URL.createObjectURL(await res.blob());
+      revoke = href;
+    }
+    triggerDownload(href, filename);
+    return true;
+  }catch(e){
+    console.error(e);
+    return false;
+  } finally {
+    if(revoke) setTimeout(()=> URL.revokeObjectURL(revoke), 30000);
+  }
+}
+
 async function renderGallery(){
   const anglers = await loadAnglers();
   const rows = galleryOrder(await loadCatches(), anglers, myAnglerIds(anglers));
@@ -6555,7 +7233,89 @@ async function renderGallery(){
       (mineCount > 0 ? ', yours first' : '') + '. Tap one to see it full size.');
   el.innerHTML = rows.length === 0 ? '' : rows.map(galleryTileHtml).join('');
   hydratePhotos(el);
+  renderReelCard(rows);
 }
+
+// ---- the highlight reel, on screen ----
+let reelBlobUrl = '';
+let reelFile = '';
+
+function reelSay(msg){
+  const el = document.getElementById('reel-status');
+  if(!el) return;
+  el.textContent = msg || '';
+  el.style.display = msg ? 'block' : 'none';
+}
+
+async function renderReelCard(rows){
+  const card = document.getElementById('reel-card');
+  if(!card) return;
+  // Nothing of your own on the board yet means nothing to compile. The whole
+  // card stays away rather than offering a button that cannot work.
+  const mine = (rows || []).filter(r=> r.mine);
+  card.style.display = mine.length === 0 ? 'none' : 'block';
+  if(mine.length === 0) return;
+
+  const btn = document.getElementById('reel-build');
+  if(!reelSupported()){
+    setText('reel-intro', 'This browser cannot record video. Safari on iPhone and ' +
+      'Chrome on Android both can \u2014 open the app there and the button appears.');
+    if(btn) btn.disabled = true;
+    return;
+  }
+  if(btn) btn.disabled = false;
+  const plan = reelPlan(mine);
+  const secs = Math.round(plan.totalMs / 1000);
+  setText('reel-intro',
+    'Your ' + (plan.shots === 1 ? 'fish' : plan.shots + ' best fish') +
+    ', biggest first, as a ' + secs + '-second vertical video to post. ' +
+    (plan.dropped > 0 ? 'Your other ' + plan.dropped + ' stay off it so it does not run long. ' : '') +
+    'Yours only \u2014 nobody else\u2019s fish go into a file you are about to put online.');
+}
+
+bindEl('reel-build','click', async ()=>{
+  const btn = document.getElementById('reel-build');
+  const result = document.getElementById('reel-result');
+  const anglers = await loadAnglers();
+  const mineIds = myAnglerIds(anglers);
+  const rows = reelRows(await loadCatches(), anglers, mineIds);
+  if(rows.length === 0){ reelSay('Nothing approved yet.'); return; }
+
+  if(btn){ btn.disabled = true; btn.textContent = 'Working\u2026'; }
+  if(result) result.hidden = true;
+  try{
+    const evt = activeEvent();
+    const me = anglers.find(a=> mineIds.indexOf(a.id) !== -1);
+    const meta = {
+      eventName: stripEntities(evt.name),
+      dateText: eventDateRangeText(evt),
+      handle: displayHandle(me),
+      shots: Math.min(rows.length, REEL_MAX_SHOTS),
+      best: rows.length ? rows[0].length : 0
+    };
+    const out = await buildHighlightReel(rows, meta, reelSay);
+    if(reelBlobUrl) URL.revokeObjectURL(reelBlobUrl);
+    reelBlobUrl = URL.createObjectURL(out.blob);
+    reelFile = reelFileName(evt, meta.handle, reelFileExt(out.mime));
+    const video = document.getElementById('reel-video');
+    if(video) video.src = reelBlobUrl;
+    if(result) result.hidden = false;
+    setText('reel-savehint', 'On an iPhone, press and hold the video and choose Save ' +
+      'to Video if the Download button opens it instead of saving it.');
+    reelSay('Done \u2014 ' + Math.round(out.blob.size / 1024) + ' KB, ' +
+      Math.round(out.plan.totalMs / 1000) + ' seconds.');
+  }catch(e){
+    console.error(e);
+    reelSay((e && e.message) || 'That did not work. Try again with a signal.');
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = 'Make my highlight reel'; }
+  }
+});
+
+bindEl('reel-download','click', ()=>{
+  if(!reelBlobUrl) return;
+  triggerDownload(reelBlobUrl, reelFile || 'highlights.mp4');
+});
 
 // ---- leaderboard ----
 let currentDiv = 'solo';
@@ -6606,12 +7366,12 @@ function bySmallestThenEarliest(a, b){
 // Shared ranking used by BOTH the public leaderboard and the director's
 // contestant view, so "current standing" can never drift between the two.
 // Disqualified anglers are excluded here, which removes them everywhere at once.
-function standingsFor(division, catches, anglers){
+function standingsFor(division, catches, anglers, target){
   const anglerById = {};
   anglers.forEach(a=>{ anglerById[a.id] = a; });
 
   const eligible = catches.filter(c=>{
-    if(c.status!=='approved' || !isScoringSpecies(c.species) || c.division!==division) return false;
+    if(c.status!=='approved' || !isScoringSpecies(c.species, target) || c.division!==division) return false;
     const a = anglerById[c.anglerId];
     // Disqualification only. An entry whose fee has not been matched yet still
     // scores: see feePaid() for why that gate was removed.
@@ -10157,10 +10917,16 @@ async function openLightbox(catchId, opts){
 
   const acts = document.getElementById('lightbox-actions');
   if(acts){
+    // Your own fish can be saved to the phone. Somebody else's cannot: it is
+    // on a wall inside the app because the field agreed to a tournament, which
+    // is not the same as handing their photo out as a file.
+    const isMine = myAnglerIds(await loadAnglers()).indexOf(c.anglerId) !== -1;
+    const save = isMine
+      ? '<button class="small" data-lb-act="save">Save photo</button>' : '';
     acts.innerHTML = (director && c.status === 'pending')
       ? '<button class="small" data-lb-act="approve">Approve</button>' +
         '<button class="small danger" data-lb-act="reject">Reject</button>'
-      : '<button class="secondary" data-lb-act="close">Done</button>';
+      : save + '<button class="secondary" data-lb-act="close">Done</button>';
   }
 }
 
@@ -10206,6 +10972,25 @@ bindEl('lightbox-actions','click', async (e)=>{
   if(!btn) return;
   const act = btn.dataset.lbAct;
   if(act === 'close'){ closeLightbox(); return; }
+  if(act === 'save'){
+    const id = lightboxCatchId;
+    if(!id) return;
+    // Checked again here rather than trusted from the button, which is markup.
+    const c = (await loadCatches()).find(x=> x.id === id);
+    const mine = myAnglerIds(await loadAnglers());
+    if(!c || mine.indexOf(c.anglerId) === -1){
+      window.alert('That fish belongs to another angler.');
+      return;
+    }
+    btn.disabled = true;
+    const was = btn.textContent;
+    btn.textContent = 'Saving…';
+    const ok = await downloadCatchPhoto(id,
+      catchPhotoFileName(activeEvent(), c));
+    btn.textContent = ok ? 'Saved' : 'No photo';
+    setTimeout(()=>{ btn.disabled = false; btn.textContent = was; }, 1800);
+    return;
+  }
   // A verdict is the director's alone. The buttons are only drawn in that mode,
   // but the buttons are markup - so the mode is checked again before writing.
   if(lightboxMode !== LIGHTBOX_DIRECTOR || !adminUnlocked){ closeLightbox(); return; }
