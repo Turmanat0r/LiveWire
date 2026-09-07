@@ -148,6 +148,18 @@ The places where a mistake is silent and expensive:
   A catch with no recorded hash reads as **unchecked**, never as failed: absence
   is not evidence, and `sql/supabase-step4-photo-integrity.sql` is the other
   half — it stops the swap rather than reporting it.
+- **Where a warning is appended is not cosmetic.** The photo-mismatch notice
+  was appended to `.catchcard`, which is a flex **row** - `[photo][info]`. With
+  no basis of its own it shrank to min-content width, which for a sentence is
+  its longest word, then wrapped one word per line and stretched the row to
+  thousands of pixels tall. On a phone that is not a warning; it is a pink
+  stripe down the screen with the app smeared beside it, and that is how it
+  shipped. It belongs in the `.info` column, which lays its children out as
+  blocks, and the lightbox copy has to declare `flex:0 0 auto` or the growing
+  photo stage squeezes it away exactly when it matters.
+  A rendering bug is invisible to every test here - there is no browser - so
+  both placements are pinned by lint instead, along with the once-only guard
+  that stops the notice stacking up on each repaint.
 - **Who you are, across events.** The trophy case shows your history over every
   tournament, and an entry id only means something inside one event — a fresh
   registration each year, a re-rolled handle, and a name typed by hand and
@@ -605,6 +617,11 @@ Break something on purpose and confirm it goes red. Known-good examples:
 | Set the tamper tolerance to 0, or to 40 | 1 failure |
 | Read a missing recorded hash as a mismatch | 3 failures |
 | Show the warning on every card | 2 failures |
+| Append the warning to the flex card instead of `.info` | lint |
+| Drop the once-only guard so it stacks per repaint | lint |
+| Let the lightbox warning be squeezed to nothing | lint |
+| Read a bad session as a bad server key, or the reverse | 3 failures |
+| Stop naming which auth variable is missing | 2 failures |
 | Derive a frozen event's placing again | 1 failure |
 | Count a frozen event against the live species | 1 failure |
 | Derive the Big Fish credit when frozen | 1 failure |
@@ -708,8 +725,11 @@ prompt clamp:
 
 Put it back afterwards.
 
-Seven guards in the app are deliberately redundant, and a sabotage of any of
-them passes: the `isFinite(closeMs)` check in `setupTodos` (a junk date parses
+Eight guards in the app are deliberately redundant, and a sabotage of any of
+them passes: `width:100%` on `.tamper-note` (it lands in `.info`, a block
+container, where a `div` fills the width anyway - it is there in case the
+warning is ever misplaced into a flex row again, which is the bug it was added
+after), the `isFinite(closeMs)` check in `setupTodos` (a junk date parses
 to `NaN`, and `at < NaN` is already false, so the window reads as shut either
 way), the phone-length check in `claimEntry` (the equality check already
 refuses an empty number), the event-day check in `overdueCheckouts` (a
@@ -723,7 +743,7 @@ person cannot appear twice in one division's top three. It is only reachable if
 an angler's catches straddle two divisions, which needs a division edit after
 they had already logged fish. The `seen` check in the same function's Big Fish
 block *is* load-bearing (someone can place and lead the pot at once) and is
-tested. All seven behaviours are enforced twice. A test that went red for them would be asserting the
+tested. All eight behaviours are enforced twice. A test that went red for them would be asserting the
 implementation rather than the rule, so there isn't one.
 
 **A test cannot see a time zone it is already in.** The machine this was

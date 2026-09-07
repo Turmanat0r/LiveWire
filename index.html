@@ -1154,6 +1154,7 @@
   .tamper-note{
     margin:6px 0 0;padding:7px 9px;border-radius:4px;font-size:11px;font-weight:600;
     background:#F6E3E0;border-left:3px solid #A3372A;color:#7E2B20;line-height:1.5;
+    width:100%;box-sizing:border-box;
   }
   .filing-note{
     margin:6px 0 0;padding:7px 9px;border-radius:4px;font-size:11px;font-weight:600;
@@ -1259,6 +1260,8 @@
   .lightbox.zoomed .lightbox-stage{align-items:flex-start;justify-content:flex-start;}
   .lightbox.zoomed .lightbox-stage img{max-width:none;max-height:none;width:auto;cursor:zoom-out;}
   .lightbox-meta{flex:0 0 auto;padding:8px 12px;color:#C8D3CC;font-size:11.5px;line-height:1.5;}
+  #lightbox-tamper{flex:0 0 auto;padding:0 12px 8px;}
+  #lightbox-tamper[hidden]{display:none;}
   .lightbox-meta .badge{vertical-align:middle;}
   .lightbox-actions{
     flex:0 0 auto;display:flex;gap:8px;padding:10px 12px;
@@ -4513,13 +4516,28 @@ function hydratePhotos(root, opts){
 // never be reported as a check that failed.
 function flagPhotoMismatch(host, catchId, img){
   try{
+    if(host.dataset && host.dataset.tamperDone) return;
     const v = photoIntegrity(catchById(catchId), dHashOf(img));
     const html = photoTamperHtml(v);
     if(!html || !host.isConnected) return;
-    const card = host.parentNode || host;
+
+    // WHERE this goes is not cosmetic. A .catchcard is a FLEX ROW - [photo]
+    // then [info] - and appending to the card made the warning a THIRD flex
+    // item. With no basis of its own it shrank to min-content width, which for
+    // a sentence means the longest word, and then wrapped one word per line
+    // and stretched the row to thousands of pixels tall. On a phone that is not
+    // a warning, it is a pink stripe down the screen with the app smeared
+    // beside it.
+    //
+    // It belongs in the info COLUMN, which is flex:1 min-width:0 and lays its
+    // children out as ordinary blocks.
+    const card = host.closest ? host.closest('.catchcard') : null;
+    const target = (card && card.querySelector('.info')) || null;
+    if(!target) return;
     const note = document.createElement('div');
     note.innerHTML = html;
-    card.appendChild(note.firstChild);
+    target.appendChild(note.firstChild);
+    if(host.dataset) host.dataset.tamperDone = '1';
   }catch(e){ console.error(e); }
 }
 

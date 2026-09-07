@@ -750,6 +750,22 @@ for (const [needle, why] of [
     }
     // A cross-origin photo taints the canvas and getImageData throws. A check
     // that cannot RUN must never be reported as a check that FAILED.
+    // Appending is not idempotent: without this the warning stacks every time
+    // the same host is hydrated again, and the card grows a paragraph per
+    // repaint.
+    if (!/dataset\.tamperDone\) return;/.test(fl)) {
+      note('integrity', 'flagPhotoMismatch has lost its once-only guard, so the ' +
+        'warning stacks up on the card every time the photo is re-hydrated');
+    }
+    // WHERE it lands is not cosmetic. .catchcard is a flex ROW, so appending
+    // the warning to the card itself made it a third flex item: min-content
+    // width, one word per line, and a row thousands of pixels tall. It has to
+    // go in the .info column, which lays its children out as blocks.
+    if (!fl.includes(".querySelector('.info')")) {
+      note('integrity', 'the photo warning is no longer placed inside the card’s ' +
+        '.info column - appended to .catchcard itself it becomes a third flex item ' +
+        'and smears down the screen instead of reading as a sentence');
+    }
     if (!/try\{/.test(fl) || !/catch\(/.test(fl)) {
       note('integrity', 'flagPhotoMismatch has lost its try/catch - a tainted canvas ' +
         'would throw inside an onload handler rather than simply not checking');
@@ -770,6 +786,13 @@ for (const [needle, why] of [
         'it would be shown against a photo it has nothing to do with');
     }
   }
+}
+
+// The lightbox is a flex column and its stage grows; every fixed bar in it has
+// to say so or it gets squeezed to nothing on a short screen.
+if (!/#lightbox-tamper\{[^}]*flex:0 0 auto/.test(src)) {
+  note('integrity', 'the lightbox photo warning no longer declares flex:0 0 auto, so ' +
+    'the growing photo stage can squeeze it to nothing exactly when it matters');
 }
 
 // ------------------------------------------------------- serverless functions
