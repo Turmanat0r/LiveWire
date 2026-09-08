@@ -1476,10 +1476,8 @@
 
   /* ---- the desktop shell ----------------------------------------------
      A bar floating along the bottom of a laptop screen is a phone idiom
-     wearing a coat. On a machine with a mouse the nav moves to a rail
-     down the left and the page takes everything to the right of it,
-     which is the point: the column centred at 960 left a third of the
-     screen empty on either side.
+     wearing a coat. On a machine with a mouse the nav moves to a bar
+     across the top and the page takes the whole width beneath it.
 
      Read the query. It is not just "a big screen":
 
@@ -1494,53 +1492,69 @@
      edits them, it only adds. Delete this block and the app is back to
      a centred column with no other trace. */
   @media (min-width:992px) and (hover:hover) and (pointer:fine){
+    /* One number, named once. The bar's height and the room the page
+       has to leave for it are the same measurement, and the two drifting
+       apart is how a fixed header ends up sitting on its own content. */
+    :root{--desk-nav:56px;}
+
     nav.tabbar{
-      /* top AND bottom, so the rail is the full height of the window
-         and the --vv-bottom offset the phone needs stops applying -
-         there is no browser toolbar sliding about up here. */
-      top:0;bottom:0;left:0;right:auto;
-      width:216px;max-width:none;margin:0;
-      flex-direction:column;justify-content:flex-start;gap:3px;
-      padding:16px 12px;
+      /* top and full width. The --vv-bottom offset the phone needs to
+         dodge a browser toolbar stops applying up here, because nothing
+         slides about at the top of a desktop window. */
+      top:0;bottom:auto;left:0;right:0;
+      width:auto;max-width:none;margin:0;
+      height:var(--desk-nav);
+      flex-direction:row;align-items:center;justify-content:center;
+      gap:4px;padding:0 18px;
       border-radius:0;
-      box-shadow:none;
-      border-right:1px solid rgba(255,255,255,.09);
+      box-shadow:0 1px 6px rgba(0,0,0,.22);
       transition:none;
     }
-    /* Icon beside the label rather than above it: a rail is read down
-       the left edge as a list, and stacked pairs read as a toolbar. */
+    /* Icon beside the label rather than above it. Stacked pairs are how
+       you fit five targets across a phone; in a bar with room to spare
+       they just read as cramped. */
     nav.tabbar button{
-      flex:0 0 auto;flex-direction:row;justify-content:flex-start;
-      gap:12px;padding:11px 13px;font-size:13.5px;
-      border-radius:6px;text-align:left;
+      flex:0 0 auto;flex-direction:row;justify-content:center;
+      gap:9px;padding:9px 15px;font-size:13.5px;
+      border-radius:6px;
     }
-    nav.tabbar button .ico{width:20px;height:20px;flex-shrink:0;}
-    /* The unread pip is absolutely positioned against the button, and
-       in a row that put it out over the label. */
-    .chat-unread{position:static;margin-left:auto;flex-shrink:0;}
-    /* The home theme marks the active tab with a border along the top,
-       which in a vertical rail is the wrong edge of the wrong axis. */
+    nav.tabbar button .ico{width:19px;height:19px;flex-shrink:0;}
+    /* The unread pip is absolutely positioned against the button, which
+       in a row put it out over the label. */
+    .chat-unread{position:static;margin-left:2px;flex-shrink:0;}
+    /* The home theme marks the active tab with a border along its TOP,
+       which under a top bar points at the ceiling. Underneath it reads
+       as a tab, which is what it now is. */
     #app[data-theme="home"] nav.tabbar{
-      top:0;bottom:0;max-width:none;border:none;
-      border-right:1px solid var(--line);padding:16px 12px;
+      top:0;bottom:auto;max-width:none;border:none;
+      border-bottom:1px solid var(--line);padding:0 18px;
     }
     #app[data-theme="home"] nav.tabbar button{
-      min-height:0;border-top:2px solid transparent;border-left:2px solid transparent;
+      min-height:0;border-top:2px solid transparent;
+      border-bottom:2px solid transparent;
     }
     #app[data-theme="home"] nav.tabbar button.active{
-      border-top-color:transparent;border-left-color:var(--gold);
+      border-top-color:transparent;border-bottom-color:var(--gold);
       background:rgba(255,255,255,.05);
     }
 
     #app{
-      max-width:none;margin-left:216px;margin-right:0;
-      border-left:1px solid var(--line);border-right:none;
-      box-shadow:none;
+      max-width:none;margin:var(--desk-nav) 0 0;
+      border:none;box-shadow:none;
       /* The 96px reserved for a floating bottom bar is dead space once
          there is no floating bottom bar. */
       padding-bottom:28px;
+      /* A full viewport height BELOW a 56px bar is 56px taller than the
+         window, and the page would scroll by exactly that with nothing
+         in the gap. */
+      min-height:calc(100vh - var(--desk-nav));
+      min-height:calc(100dvh - var(--desk-nav));
     }
-    #app[data-theme="home"]{padding-bottom:28px;}
+    #app[data-theme="home"]{
+      height:calc(100svh - var(--desk-nav));
+      min-height:calc(100svh - var(--desk-nav));
+      padding-bottom:28px;
+    }
     main{padding-left:28px;padding-right:28px;}
     #app[data-theme="home"] main{padding-left:22px;padding-right:22px;}
 
@@ -1559,12 +1573,11 @@
     .director-tools{grid-template-columns:repeat(3,1fr);}
     .director-tool.wide{grid-column:1 / -1;}
 
-    /* Centred in the space right of the rail, not in the window. */
-    .sw-update{left:216px;right:0;bottom:18px;max-width:520px;}
+    .sw-update{left:0;right:0;bottom:18px;max-width:520px;}
   }
 
   /* One clean row of six once there is room for it. Same gate as the
-     rail above - this is only ever the desktop shell. */
+     bar above - this is only ever the desktop shell. */
   @media (min-width:1280px) and (hover:hover) and (pointer:fine){
     .home-grid,.home-info-grid,
     .director-tools{grid-template-columns:repeat(6,1fr);}
