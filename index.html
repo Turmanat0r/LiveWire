@@ -1474,6 +1474,102 @@
     .lw-map.tall{height:500px;}
   }
 
+  /* ---- the desktop shell ----------------------------------------------
+     A bar floating along the bottom of a laptop screen is a phone idiom
+     wearing a coat. On a machine with a mouse the nav moves to a rail
+     down the left and the page takes everything to the right of it,
+     which is the point: the column centred at 960 left a third of the
+     screen empty on either side.
+
+     Read the query. It is not just "a big screen":
+
+       min-width:992  a phone on its side tops out around 932, so it
+                      never reaches this.
+       hover + fine   and no touch screen reports either, so an iPad
+                      held sideways at the ramp - which IS wider than
+                      992 - keeps the bottom bar, where its thumbs are.
+
+     So this is mouse-driven machines and nothing else. Every rule for
+     the bottom bar is left exactly as it was, further up; nothing here
+     edits them, it only adds. Delete this block and the app is back to
+     a centred column with no other trace. */
+  @media (min-width:992px) and (hover:hover) and (pointer:fine){
+    nav.tabbar{
+      /* top AND bottom, so the rail is the full height of the window
+         and the --vv-bottom offset the phone needs stops applying -
+         there is no browser toolbar sliding about up here. */
+      top:0;bottom:0;left:0;right:auto;
+      width:216px;max-width:none;margin:0;
+      flex-direction:column;justify-content:flex-start;gap:3px;
+      padding:16px 12px;
+      border-radius:0;
+      box-shadow:none;
+      border-right:1px solid rgba(255,255,255,.09);
+      transition:none;
+    }
+    /* Icon beside the label rather than above it: a rail is read down
+       the left edge as a list, and stacked pairs read as a toolbar. */
+    nav.tabbar button{
+      flex:0 0 auto;flex-direction:row;justify-content:flex-start;
+      gap:12px;padding:11px 13px;font-size:13.5px;
+      border-radius:6px;text-align:left;
+    }
+    nav.tabbar button .ico{width:20px;height:20px;flex-shrink:0;}
+    /* The unread pip is absolutely positioned against the button, and
+       in a row that put it out over the label. */
+    .chat-unread{position:static;margin-left:auto;flex-shrink:0;}
+    /* The home theme marks the active tab with a border along the top,
+       which in a vertical rail is the wrong edge of the wrong axis. */
+    #app[data-theme="home"] nav.tabbar{
+      top:0;bottom:0;max-width:none;border:none;
+      border-right:1px solid var(--line);padding:16px 12px;
+    }
+    #app[data-theme="home"] nav.tabbar button{
+      min-height:0;border-top:2px solid transparent;border-left:2px solid transparent;
+    }
+    #app[data-theme="home"] nav.tabbar button.active{
+      border-top-color:transparent;border-left-color:var(--gold);
+      background:rgba(255,255,255,.05);
+    }
+
+    #app{
+      max-width:none;margin-left:216px;margin-right:0;
+      border-left:1px solid var(--line);border-right:none;
+      box-shadow:none;
+      /* The 96px reserved for a floating bottom bar is dead space once
+         there is no floating bottom bar. */
+      padding-bottom:28px;
+    }
+    #app[data-theme="home"]{padding-bottom:28px;}
+    main{padding-left:28px;padding-right:28px;}
+    #app[data-theme="home"] main{padding-left:22px;padding-right:22px;}
+
+    /* Counted, not auto-filled. auto-fill sizes tracks to the room and
+       lets the count fall where it may, which at this width came out
+       at FIVE - so the sixth action tile sat alone on a row of its own
+       with four empty slots beside it. Six divides by three and by six
+       and by nothing else useful, so those are the only two counts the
+       row is allowed to take.
+
+       The info pair and the director's tools sit on the same tracks
+       rather than splitting the full width between two enormous tiles.
+       They fill two of the columns and leave the rest, which reads as
+       alignment with the row above instead of as a gap. */
+    .home-grid,.home-info-grid,
+    .director-tools{grid-template-columns:repeat(3,1fr);}
+    .director-tool.wide{grid-column:1 / -1;}
+
+    /* Centred in the space right of the rail, not in the window. */
+    .sw-update{left:216px;right:0;bottom:18px;max-width:520px;}
+  }
+
+  /* One clean row of six once there is room for it. Same gate as the
+     rail above - this is only ever the desktop shell. */
+  @media (min-width:1280px) and (hover:hover) and (pointer:fine){
+    .home-grid,.home-info-grid,
+    .director-tools{grid-template-columns:repeat(6,1fr);}
+  }
+
   /* ---- a phone on its side --------------------------------------------
      About 390px of height, most of it spent by a header and a floating
      nav unless they are told not to. The max-height rules further up
