@@ -1704,7 +1704,8 @@
      To upgrade deliberately: bump the version, re-take the hash with
        curl -s <url> | openssl dgst -sha384 -binary | openssl base64 -A
      and test before an event, never during one. -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.min.js"
+<script id="supabase-sdk"
+        src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.min.js"
         integrity="sha384-EyR2P0dlmjnEGcm9xcjdAn0VedZpRHEwDLP9oSS6wYMvzHBHkUrvgonveazJ/sSx"
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <!-- Leaflet, for drawing and viewing the course boundary. Both of these are
@@ -4003,43 +4004,184 @@ async function signOutDirector(){
   updateSyncUi();
 }
 
-async function initAuth(){
-  if(!SUPABASE_URL || !SUPABASE_ANON_KEY) return;
-  if(typeof supabase === 'undefined' || !supabase || typeof supabase.createClient !== 'function'){
-    console.warn('Supabase SDK unavailable - carrying on with the shared key.');
-    return;
+// ---- the device identity, and why a missing one is fatal now ----
+// Every write policy in the database is granted to the `authenticated` role. A
+// device that never got an anonymous session is on the shared anon key, role
+// `anon`, and matches none of them - so it can read the whole tournament and
+// save nothing.
+//
+// This used to be a soft fallback, commented as "the app works either way".
+// That stopped being true the moment ownership was enforced, and the way it
+// stopped is worth writing down, because it cost an angler a fish:
+//
+//   Registration went through, because the anglers table had been left open.
+//   The catch row went in, because catches was open too. The PHOTO was refused,
+//   because the storage policy asks for an owner - and the submit handler,
+//   correctly, took the catch row back out rather than file a catch with no
+//   evidence. The angler was then told to check a signal that was fine, and the
+//   database held no trace that any of it had happened.
+//
+// An asymmetric permission set will always find a seam like that. So the rule
+// here is now the simple one: no identity, no write, said out loud and up
+// front, before an angler has a fish on a board.
+let identityError = '';
+let identityTimer = null;
+let identityTries = 0;
+// Set once the first attempt has finished either way, so a cold start does not
+// flash "not signed in" across its own first second.
+let identityTried = false;
+const IDENTITY_MAX_DELAY_MS = 30000;
+
+// Only a Supabase-backed copy has row policies to satisfy. The device-only and
+// artifact backends write somewhere that has never heard of auth.uid().
+function identityRequired(){ return !!(SUPABASE_URL && SUPABASE_ANON_KEY); }
+function hasIdentity(){ return authMode !== 'anon-key'; }
+function identityMissing(){ return identityRequired() && !hasIdentity(); }
+function identitySettledMissing(){ return identityTried && identityMissing(); }
+
+// One sentence, in the angler's own terms, wherever a write is refused for want
+// of an identity. "Signing in" is the honest word even though nobody typed a
+// password: what is missing is this device's place in the tournament, and the
+// angler needs to know it is not their fish, their form or their phone.
+function identityBlockedText(what){
+  return 'This device has not finished signing in to the tournament server, so '
+    + what + ' cannot be saved yet. Stay where you have signal for a few seconds '
+    + 'and try again — it keeps retrying on its own. If it will not clear, '
+    + 'see the director.';
+}
+
+// The SDK is a blocking <script> in the head, so ordinarily it is here long
+// before any of this runs. Ordinarily. It comes off a public CDN over a phone's
+// connection, and a content blocker, a filtering DNS, a captive portal or one
+// dropped request leaves the page running perfectly with `supabase` undefined -
+// which is one of the two ways a device ends up with no identity at all.
+//
+// Re-injecting a COPY OF THE SHIPPED TAG rather than a fresh one written out
+// here is deliberate: the src and the SRI hash then cannot drift from the tag
+// that is actually reviewed and deployed.
+function loadSupabaseSdk(){
+  if(typeof supabase !== 'undefined' && supabase && typeof supabase.createClient === 'function'){
+    return Promise.resolve(true);
   }
+  const tag = document.getElementById('supabase-sdk');
+  if(!tag || !tag.src) return Promise.resolve(false);
+  return new Promise(resolve=>{
+    const el = document.createElement('script');
+    el.src = tag.src;
+    if(tag.integrity) el.integrity = tag.integrity;
+    el.crossOrigin = 'anonymous';
+    el.referrerPolicy = 'no-referrer';
+    el.onload = ()=> resolve(typeof supabase !== 'undefined' && !!supabase &&
+                             typeof supabase.createClient === 'function');
+    el.onerror = ()=> resolve(false);
+    document.head.appendChild(el);
+  });
+}
+
+// Idempotent, and safe to call from anywhere: on boot, on regaining signal, and
+// again from any screen that is about to write. Returns whether this device can
+// now be authorised.
+async function ensureIdentity(){
+  if(!identityRequired()) return true;
+  if(hasIdentity()){ identityError = ''; return true; }
   try{
-    sbClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: false,
-        storageKey: STORAGE_PREFIX + 'auth'
+    if(!sbClient){
+      if(!await loadSupabaseSdk()){
+        identityError = 'the sign-in library could not be loaded';
+        return false;
       }
-    });
-    // Fires on refresh as well as sign-in, so the token we send is never stale.
-    sbClient.auth.onAuthStateChange((_evt, session)=> noteAuthSession(session));
+      sbClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: false,
+          storageKey: STORAGE_PREFIX + 'auth'
+        }
+      });
+      // Fires on refresh as well as sign-in, so the token we send is never stale.
+      sbClient.auth.onAuthStateChange((_evt, session)=> noteAuthSession(session));
+    }
 
     const existing = await sbClient.auth.getSession();
     if(existing && existing.data && existing.data.session){
       noteAuthSession(existing.data.session);
-      return;
+      identityError = '';
+      return true;
     }
     const fresh = await sbClient.auth.signInAnonymously();
     if(fresh && fresh.error){
-      // The expected path until the provider is enabled. Not an error worth
-      // showing an angler - the app works either way.
-      console.warn('Anonymous sign-in unavailable (' + fresh.error.message +
-                   ') - carrying on with the shared key.');
-      return;
+      identityError = fresh.error.message || 'anonymous sign-in was refused';
+      console.warn('Anonymous sign-in unavailable: ' + identityError);
+      return false;
     }
-    if(fresh && fresh.data && fresh.data.session) noteAuthSession(fresh.data.session);
+    if(fresh && fresh.data && fresh.data.session){
+      noteAuthSession(fresh.data.session);
+      identityError = '';
+      return true;
+    }
+    identityError = 'anonymous sign-in returned no session';
+    return false;
   }catch(e){
-    console.warn('Could not establish a device identity - carrying on with the shared key.', e);
+    console.warn('Could not establish a device identity.', e);
+    identityError = (e && e.message) || 'the sign-in request failed';
+    return false;
   }
 }
 
+// Retry, where this used to give up after a single attempt. Both of the things
+// that stop a sign-in - a blocked CDN and a refused request - are usually
+// transient, and an angler who opened the app in a dead spot at the ramp has
+// signal again a minute later. Backs off to every 30s and then keeps going,
+// because the alternative is a phone that quietly cannot file a fish all day.
+function noteIdentityAttempt(ok){
+  identityTried = true;
+  try{ updateSyncUi(); }catch(e){}
+  try{ updateRegisterReadiness(); }catch(e){}
+  if(ok){ identityTries = 0; drainOutbox(); }
+  else scheduleIdentityRetry();
+  return ok;
+}
+
+function scheduleIdentityRetry(){
+  if(identityTimer || !identityMissing()) return;
+  const delay = Math.min(2000 * Math.pow(2, identityTries), IDENTITY_MAX_DELAY_MS);
+  identityTries++;
+  identityTimer = setTimeout(async ()=>{
+    identityTimer = null;
+    noteIdentityAttempt(await ensureIdentity());
+  }, delay);
+}
+
+// Getting signal back, or looking at the page again, is worth an attempt NOW
+// rather than at the end of whatever backoff we had already reached.
+function retryIdentityNow(){
+  if(!identityMissing()) return;
+  if(identityTimer){ clearTimeout(identityTimer); identityTimer = null; }
+  identityTries = 0;
+  ensureIdentity().then(noteIdentityAttempt);
+}
+
+// What a screen calls immediately before it writes. One more attempt costs a
+// moment; letting the write go out unauthorised costs the angler the catch.
+async function identityReadyForWrite(){
+  if(!identityRequired()) return true;
+  if(hasIdentity()) return true;
+  return noteIdentityAttempt(await ensureIdentity());
+}
+
+if(typeof window !== 'undefined' && window.addEventListener){
+  window.addEventListener('online', retryIdentityNow);
+}
+if(typeof document !== 'undefined' && document.addEventListener){
+  document.addEventListener('visibilitychange', ()=>{
+    if(!document.hidden) retryIdentityNow();
+  });
+}
+
+async function initAuth(){
+  if(!identityRequired()) return;
+  noteIdentityAttempt(await ensureIdentity());
+}
 // ---- backend: Supabase ----
 // Plain fetch against PostgREST and the storage API - no SDK for data, so this
 // works from any static host and as a local file. Devices pick up each other's
@@ -4441,6 +4583,25 @@ let lastWriteQueued = false;
 // it every rejection reads as "could not save", including the one rejection
 // that has a specific and actionable cause.
 let lastWriteError = null;
+
+// Why the last write failed, in the angler’s terms.
+//
+// A 401 or a 403 is NOT a signal problem, and it is the one case where the old
+// blanket "check your signal and try again" sent people to the one place the
+// answer was not: their bars were full, and the server had refused their
+// identity. Everything else keeps the wording it already had.
+function writeFailureText(what){
+  if(storeFull){
+    return 'The tournament database is full. Show this to the director before submitting anything else.';
+  }
+  const status = lastWriteError && lastWriteError.status;
+  if(status === 401 || status === 403){
+    return identityMissing()
+      ? identityBlockedText('a ' + what)
+      : 'The tournament server refused this ' + what + '. Nothing was submitted \u2014 see the director.';
+  }
+  return 'The ' + what + ' could not be saved. Nothing was submitted \u2014 check your signal and try again.';
+}
 
 // Postgres unique-violation, from supabase-one-entry-per-person.sql. The REST
 // layer hands back the response body, so match on the SQLSTATE and on the
@@ -5036,6 +5197,13 @@ function syncSummary(){
   const queued = outboxCount();
   if(storeFull){
     return { level:'bad', text:'The tournament database is full. Tell the director before submitting anything else.' };
+  }
+  // Ahead of the queue count on purpose. Writes that cannot be authorised will
+  // never drain, so "3 changes waiting to sync" would be a lie told hopefully.
+  if(identitySettledMissing()){
+    return { level:'bad', text:'This device has not finished signing in to the tournament server, '+
+      'so nothing can be saved yet. Keep the app open where you have signal.'+
+      (identityError ? ' (' + identityError + ')' : '') };
   }
   if(queued > 0){
     return { level:'warn', text:queued+' change'+(queued===1?'':'s')+' waiting to sync. Keep the app open once you have signal.' };
@@ -6382,14 +6550,29 @@ async function renderRegisterScreen(){
 // the moment the roster lands even if someone is mid-way through typing their
 // name. The full screen repaint deliberately skips a focused form, which would
 // otherwise leave the button disabled until they clicked away.
+// Kept here rather than read back off the element, because the element's own
+// copy is overwritten the first time this reports a blocked device.
+const REG_ROSTER_NOTE = 'Loading the roster… the button opens as soon as it lands, '+
+  'so a second entry cannot slip past the check.';
+
 function updateRegisterReadiness(){
   const btn = document.getElementById('reg-submit');
   const note = document.getElementById('reg-roster-note');
   if(!btn || !note) return;
   const closed = isRegistrationClosed();
   const ready = rosterIsLoaded();
-  note.style.display = (!ready && !closed) ? 'block' : 'none';
-  btn.disabled = closed || !ready;
+  // No identity, no write. A form that cannot save is worse than a disabled
+  // button, because the angler walks away from it believing they are entered -
+  // which is exactly how somebody turns up at the ramp and is not on the roster.
+  const blocked = identitySettledMissing();
+  if(blocked){
+    note.textContent = identityBlockedText('a registration');
+    note.style.display = 'block';
+  } else {
+    note.textContent = REG_ROSTER_NOTE;
+    note.style.display = (!ready && !closed) ? 'block' : 'none';
+  }
+  btn.disabled = closed || !ready || blocked;
 }
 
 document.querySelectorAll('#reg-division input[type=radio]').forEach(input=>{
@@ -6684,6 +6867,13 @@ async function renderCheckinBody(){
 
   el.querySelectorAll('[data-act]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
+      // A check-out that silently does not save is the one failure on this
+      // screen that can leave somebody off the overdue list at dusk. Same gate
+      // as the catch submit, for a sharper reason.
+      if(!await identityReadyForWrite()){
+        setText('checkin-angler-note', identityBlockedText('a check-in'));
+        return;
+      }
       const anglers = await loadAnglers();
       // Same re-check as the catch submit. Checking somebody else in or out is
       // not a scoring change, but it is the record of who launched and who came
@@ -6766,7 +6956,18 @@ function myAnglerIds(anglers){
 // the records live behind an anon key that ships in this page, so anything the
 // UI declines can still be done against the API directly. Only row-level
 // policies and a real sign-in can make it a boundary.
+// Every write screen in the app draws its picker through here, so this is the
+// one place that has to say "this device cannot save anything" - submit,
+// check-in, manage and the livewell all inherit it rather than each remembering
+// to. It speaks last because it outranks everything else the note can say:
+// whose entry this is does not matter if nothing can be written at all.
 async function populateAnglerSelect(selectId, noteId){
+  const anglers = await fillAnglerSelect(selectId, noteId);
+  if(noteId && identitySettledMissing()) setText(noteId, identityBlockedText('anything filed here'));
+  return anglers;
+}
+
+async function fillAnglerSelect(selectId, noteId){
   const anglers = await loadAnglers();
   const sel = document.getElementById(selectId);
   if(!sel) return anglers;
@@ -7237,6 +7438,12 @@ bindEl('sub-submit','click', async ()=>{
   if(!anglerId){ fail('Select the angler this catch belongs to.'); return; }
   if(!length || length<=0){ fail('Enter a valid length in inches.'); return; }
   if(!capturedPhotoData && !fileInput.files[0]){ fail('Capture or upload a photo on an approved bump board.'); return; }
+
+  // Checked BEFORE the button is disabled and the photo is prepared, so an
+  // angler hears the truth while the fish is still on the board rather than
+  // after a minute of "Saving...". One more sign-in attempt is made here: the
+  // ramp is where signal comes back, and a catch is worth the extra second.
+  if(!await identityReadyForWrite()){ fail(identityBlockedText('a catch')); return; }
   errEl.style.display='none';
 
   // Everything past here runs behind a disabled button, so it all has to sit
@@ -7317,9 +7524,7 @@ bindEl('sub-submit','click', async ()=>{
       status: 'pending'
     });
     if(!await saveCatches(catches)){
-      fail(storeFull
-        ? 'The tournament database is full. Show this to the director before submitting anything else.'
-        : 'This catch could not be saved. Nothing was submitted — check your storage and try again.');
+      fail(writeFailureText('catch'));
       return;
     }
 
@@ -7330,9 +7535,7 @@ bindEl('sub-submit','click', async ()=>{
       const after = await loadCatches();
       const at = after.findIndex(c=> c.id === catchId);
       if(at !== -1){ after.splice(at, 1); await saveCatches(after); }
-      fail(storeFull
-        ? 'The tournament database is full. Show this to the director before submitting anything else.'
-        : 'The photo could not be saved. Nothing was submitted — check your signal and try again.');
+      fail(writeFailureText('photo'));
       return;
     }
 

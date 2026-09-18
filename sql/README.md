@@ -11,6 +11,50 @@ ownership columns alone so the security files can be re-applied afterwards.
 
 This is the only one worth knowing about while standing at a boat ramp.
 
+## The tables and the bucket have to agree
+
+These files do not each own a separate corner of the database. 2b and 3 set the
+**table** policies; 4 sets the **storage** policies; the rollback sets both. Run
+them in an order that leaves those two halves disagreeing and the app does not
+fail — it half-works, which is worse, and it is the one failure this schema can
+produce that nothing in the app will report.
+
+What it looked like the first time: the rollback had been run, so the tables
+were open to `anon` again, and step 4 was run afterwards on its own. Storage now
+wanted an owner and the tables did not care. An angler whose phone never got an
+anonymous session — a blocked CDN is enough — could then register, check in, and
+have every one of those writes accepted with `owner` null. Only the photo was
+refused. The app unwound the catch to avoid filing evidence-free, told them to
+check a signal that was fine, and left nothing behind to find. It was spotted
+because one row in `anglers` had a null `owner` and the bucket had taken no
+uploads since the day step 4 was run.
+
+So: after running **any** of these, check that both halves say the same thing.
+
+```sql
+select tablename, policyname, cmd, roles
+  from pg_policies
+ where (schemaname = 'public' and tablename in ('anglers','catches'))
+    or policyname like 'catch_photos%'
+ order by tablename, policyname;
+```
+
+Every write policy — insert, update, delete — should be granted to
+`{authenticated}` alone, or all of them to `{anon,authenticated}`. A mix is the
+bug. Then confirm nothing is stranded:
+
+```sql
+select count(*) from public.anglers where owner is null;
+select count(*) from public.catches where owner is null;
+```
+
+Rows written while a device was on the shared key have a null `owner`, and under
+enforced policies only the director can touch them. The angler's own way back is
+**Sign in to my entry** on the register screen — their board code and the phone
+on the entry — which calls `claim_entry()` and adds their device to `co_owners`.
+That works on a null-owner row, which is the whole reason it is security
+definer.
+
 ## Setting up a project from nothing
 
 In this order. The Montana Kayak Walleye Open project has had all of them run

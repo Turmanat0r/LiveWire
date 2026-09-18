@@ -78,7 +78,13 @@ globalThis.__t = {
   countsSentence, SHARED_COLLECTIONS,
   get rosterLoaded(){ return rosterLoaded; }, set rosterLoaded(v){ rosterLoaded = v; },
   get syncState(){ return syncState; }, set syncState(v){ syncState = v; },
-  get lastWriteError(){ return lastWriteError; },
+  get lastWriteError(){ return lastWriteError; }, set lastWriteError(v){ lastWriteError = v; },
+  get storeFull(){ return storeFull; }, set storeFull(v){ storeFull = v; },
+  get identityTried(){ return identityTried; }, set identityTried(v){ identityTried = v; },
+  get identityError(){ return identityError; }, set identityError(v){ identityError = v; },
+  writeFailureText, identityBlockedText, identityRequired, hasIdentity,
+  identityMissing, identitySettledMissing, ensureIdentity, identityReadyForWrite,
+  syncSummary,
   aiReviewEndpoint, probeFishIEndpoint, fishIVisionAvailable, fishIStatusText,
   requestAiVisionReview, AI_REVIEW_ENDPOINT,
   get appWindow(){ return window; },
@@ -86,7 +92,7 @@ globalThis.__t = {
   get fishIEndpointOk(){ return fishIEndpointOk; }, set fishIEndpointOk(v){ fishIEndpointOk = v; },
   get fishISampler(){ return fishISampler; }, set fishISampler(v){ fishISampler = v; },
   get beaconTimer(){ return beaconTimer; },
-  get authMode(){ return authMode; },
+  get authMode(){ return authMode; }, set authMode(v){ authMode = v; },
   get adminUnlocked(){ return adminUnlocked; }, set adminUnlocked(v){ adminUnlocked = v; },
   reportSettings, saveReportSettings, lastFiledDetails, REPORT_FILER_FIELDS,
   residencyCounts, reportFieldCounts, reportableCatches, catchDayKey,
@@ -4972,6 +4978,73 @@ check('with how far out it is', note.textContent.indexOf('40 min behind') > -1, 
 check('and what to do about it',
   note.textContent.indexOf('automatic date and time') > -1, true);
 t.serverClockOffset = null;
+}
+
+// ============================================================
+section('a device with no identity');
+{
+// Why this is worth a test at all: the failure it guards against was silent and
+// asymmetric. The tables accepted a registration, storage refused the photo,
+// the submit handler correctly unwound the catch - and the angler was told to
+// check a signal that was fine. Nothing in the database said it had happened.
+
+// ---- what the angler is told when a write is refused ----
+const wasError = t.lastWriteError, wasFull = t.storeFull;
+
+t.storeFull = false;
+t.lastWriteError = { status: 403 };
+check('a refused photo does not blame the signal',
+  t.writeFailureText('photo').indexOf('check your signal') > -1, false);
+check('it points at the server instead',
+  t.writeFailureText('photo').indexOf('refused') > -1, true);
+
+t.lastWriteError = { status: 401 };
+check('401 reads the same way as 403',
+  t.writeFailureText('catch').indexOf('refused') > -1, true);
+
+// A 5xx or a dropped connection IS worth checking a signal over, and that
+// wording had to survive the change.
+t.lastWriteError = { status: 500 };
+check('a server error still says check your signal',
+  t.writeFailureText('photo').indexOf('check your signal') > -1, true);
+t.lastWriteError = null;
+check('and so does a write that failed with nothing to say',
+  t.writeFailureText('catch').indexOf('check your signal') > -1, true);
+
+// A full database outranks everything: it is the one failure the angler cannot
+// fix by waiting, and the director has to hear about it.
+t.storeFull = true;
+t.lastWriteError = { status: 403 };
+check('a full database is reported ahead of the refusal',
+  t.writeFailureText('photo').indexOf('full') > -1, true);
+t.storeFull = wasFull;
+t.lastWriteError = wasError;
+
+// ---- the predicates the gates are built on ----
+// This copy is loaded with SUPABASE_URL blanked, which is the device-only case:
+// there are no row policies to satisfy, so nothing should ever be gated.
+check('a device-only build needs no identity', t.identityRequired(), false);
+check('so it is never reported as missing one', t.identityMissing(), false);
+
+const wasMode = t.authMode, wasTried = t.identityTried;
+t.authMode = 'anon-key';
+check('the shared key is not an identity', t.hasIdentity(), false);
+t.authMode = 'anonymous';
+check('a device session is', t.hasIdentity(), true);
+t.authMode = 'director';
+check('and so is a director sign-in', t.hasIdentity(), true);
+
+// The banner waits for a first attempt to finish, so a cold start does not
+// flash "not signed in" across its own first second.
+t.authMode = 'anon-key';
+t.identityTried = false;
+check('nothing is claimed before the first attempt', t.identitySettledMissing(), false);
+t.authMode = wasMode;
+t.identityTried = wasTried;
+
+// ---- the write gate lets a device-only build straight through ----
+check('a device-only build is never blocked from writing',
+  await t.identityReadyForWrite(), true);
 }
 
 // ============================================================
