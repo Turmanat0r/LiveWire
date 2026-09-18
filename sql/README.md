@@ -95,6 +95,19 @@ curl -s "$SUPABASE_URL/rest/v1/signals?select=id" \
      -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ANON_KEY"
 ```
 
+**It only means anything when the table has rows in it.** An empty `signals`
+returns `[]` whether the policies are enforced or wide open, so on a freshly
+cleared project — or before anybody has switched a beacon on — this test passes
+for the wrong reason and proves nothing. Check the count first:
+
+```sql
+select count(*) from public.signals;
+```
+
+Zero, and skip it: the `pg_policies` query above is the real check and does not
+care whether there is any data. This one is for a running event, where it takes
+five seconds from a phone and needs no database access at all.
+
 Then confirm nothing is stranded:
 
 ```sql
