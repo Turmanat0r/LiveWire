@@ -527,9 +527,14 @@ for (const [needle, guard, why] of [
 // The audit trail is its own line and could be dropped on its own. A director
 // filing for an angler whose phone died is legitimate; it being invisible
 // afterwards is not.
+// The window is a stand-in for "inside the submit handler", and the handler
+// grows: the identity gate and its comment pushed the filedBy line past 4000
+// and this read as the audit trail having been deleted. `filedByFor` is called
+// in exactly one place, so a generous window costs nothing and a tight one
+// cries wolf on the next comment somebody writes above it.
 {
   const at = script.indexOf("bindEl('sub-submit'");
-  if (at !== -1 && !/filedBy:\s*filedByFor\(/.test(script.slice(at, at + 4000))) {
+  if (at !== -1 && !/filedBy:\s*filedByFor\(/.test(script.slice(at, at + 8000))) {
     note('ownership', 'a catch no longer records which device filed it, so a submission ' +
       'made under another angler’s name leaves no trace on the record');
   }
