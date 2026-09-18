@@ -1,0 +1,9 @@
+# The vendored Supabase SDK is verified byte-for-byte against the sha384 the CDN
+# published for it - the hash is recorded in the comment above its <script> tag
+# in index.html, so that the vendoring can be checked rather than trusted.
+#
+# git's line-ending translation would rewrite those bytes on checkout (this repo
+# is developed on Windows, where core.autocrlf is normally on), the hash would
+# stop matching, and the one honest check anybody has on a 214KB minified blob
+# would quietly become a lie. So: hands off.
+vendor/** -text

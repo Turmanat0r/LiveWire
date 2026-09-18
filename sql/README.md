@@ -29,19 +29,73 @@ check a signal that was fine, and left nothing behind to find. It was spotted
 because one row in `anglers` had a null `owner` and the bucket had taken no
 uploads since the day step 4 was run.
 
-So: after running **any** of these, check that both halves say the same thing.
+## An open policy left behind beats every strict one next to it
 
-```sql
-select tablename, policyname, cmd, roles
-  from pg_policies
- where (schemaname = 'public' and tablename in ('anglers','catches'))
-    or policyname like 'catch_photos%'
- order by tablename, policyname;
+This is the trap, and it does not look like one. **Postgres RLS policies are
+permissive: they are OR-ed.** A row is allowed if *any* policy allows it. So a
+single surviving
+
+```
+anglers_public_rw   ALL   {anon,authenticated}   using (true) with check (true)
 ```
 
-Every write policy — insert, update, delete — should be granted to
-`{authenticated}` alone, or all of them to `{anon,authenticated}`. A mix is the
-bug. Then confirm nothing is stranded:
+grants everything to everybody, and the careful `anglers_insert` /
+`anglers_update` / `anglers_delete` sitting beside it in the same table are
+decoration. The policy list looks *more* locked down than before, because there
+are more rows in it.
+
+**How it gets left behind:** `supabase-setup.sql` drops only the `*_public_rw`
+policies before recreating them. It never drops the granular ones. So running
+setup on a project that has already had 2b applied leaves BOTH sets in place,
+and open access wins. That file is for a new project from nothing; on a live one
+it silently undoes step 2b.
+
+So the check is not "do the strict policies exist" — it is **"is there anything
+open still here"**. Run this after any of these files:
+
+```sql
+select 'director accounts'        as check,
+       count(*) filter (where (raw_app_meta_data->>'director') = 'true')::text as value
+  from auth.users
+union all
+select 'anonymous devices',
+       count(*) filter (where is_anonymous)::text
+  from auth.users
+union all
+select 'open-access policies left',
+       count(*)::text
+  from pg_policies where policyname like '%public%rw%'
+union all
+select 'step 3 co_owners clause',
+       case when exists (select 1 from pg_policies
+                          where schemaname = 'public'
+                            and tablename  = 'anglers'
+                            and policyname = 'anglers_update'
+                            and qual like '%co_owners%')
+            then 'yes' else 'NO - re-run step 3' end;
+```
+
+| check | must be |
+|---|---|
+| director accounts | `1` — anything else and you have locked yourself out |
+| anonymous devices | 1 or more |
+| open-access policies left | **`0`** |
+| step 3 co_owners clause | `yes` — or a claimed second device still cannot write |
+
+`open-access policies left` is the one that matters most and the one nobody
+thinks to look for.
+
+There is also a read-only smoke test that needs no SQL editor at all. Ask the
+API for `signals` with the plain anon key: enforced, it returns `[]`, because an
+angler's position is director-and-owner only. Open, it hands back the whole
+table.
+
+```
+curl -s "$SUPABASE_URL/rest/v1/signals?select=id" \
+     -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ANON_KEY"
+```
+
+Then confirm nothing is stranded:
 
 ```sql
 select count(*) from public.anglers where owner is null;
@@ -74,6 +128,39 @@ Between 2 and 3 there is a manual step, described in 3: enable anonymous
 sign-ins, open the app once so a device actually exists, and create the
 director account with `{"director": true}` on its **app_metadata**. Running 3
 before both of those exist locks everybody out, including you.
+
+### 2a is not a one-time step — re-run it whenever a table is added
+
+`supabase-step2a-ownership-columns.sql` names its tables one per line, and step
+2b writes policies against `owner` on every one of them. Add a table to
+`supabase-setup.sql` later — side bets did exactly this — and 2a does not know
+about it until it is re-run. Then 2b dies partway with:
+
+```
+ERROR: 42703: column "owner" does not exist
+```
+
+The SQL editor runs the paste as one transaction, so a failure like that rolls
+the **whole file** back and leaves the database exactly as it was. Nothing is
+half-applied. Re-run 2a, then 2b again.
+
+Cheapest habit: run 2a immediately before 2b, every time. It is `add column if
+not exists` throughout, so on tables that already have it the cost is nothing.
+To see which tables are short:
+
+```sql
+select t.tablename
+  from pg_tables t
+ where t.schemaname = 'public'
+   and t.tablename <> 'config'
+   and not exists (select 1 from information_schema.columns c
+                    where c.table_schema = 'public'
+                      and c.table_name   = t.tablename
+                      and c.column_name  = 'owner');
+```
+
+`config` is excluded on purpose: it is director-only and none of its policies
+read `owner`.
 
 ## Housekeeping
 

@@ -1694,23 +1694,36 @@
     @page{margin:12mm;}
   }
 </style>
-<!-- EVERY EXTERNAL FILE IS PINNED TO AN EXACT VERSION AND CHECKED AGAINST A HASH.
-     This used to read "@supabase/supabase-js@2", which is not a version - it is
-     "whatever the newest 2.x happens to be when the phone asks". Every release
-     upstream landed on every angler's phone, unread and untested, and the first
-     anyone would know of a bad one is on the water. The integrity hash is the
-     other half: it is the fingerprint of the exact file, so a CDN that serves
-     anything else gets refused rather than run.
-     To upgrade deliberately: bump the version, re-take the hash with
-       curl -s <url> | openssl dgst -sha384 -binary | openssl base64 -A
-     and test before an event, never during one. -->
-<script id="supabase-sdk"
-        src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.min.js"
-        integrity="sha384-EyR2P0dlmjnEGcm9xcjdAn0VedZpRHEwDLP9oSS6wYMvzHBHkUrvgonveazJ/sSx"
-        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<!-- Leaflet, for drawing and viewing the course boundary. Both of these are
-     allowed to fail: on the water there is no signal, and every screen that
-     uses them falls back to a text readout computed on the phone. -->
+<!-- SERVED FROM THIS REPO, NOT A CDN, AND THAT IS THE WHOLE POINT.
+     This is the one dependency the app cannot do without. It holds the device's
+     anonymous session, and without a session every write policy in the database
+     refuses this phone: it can read the whole tournament and save nothing.
+     It used to load from cdn.jsdelivr.net, which put a third party on the path
+     of every angler's ability to file a fish. A content blocker, a filtering
+     DNS, a captive portal at the ramp or one dropped request was enough, and
+     the page carried on looking perfectly healthy. That happened. It cost an
+     angler a catch, and it is why this file is now bytes in the repo, served by
+     the same deploy that serves this page and cached by the service worker as
+     part of the offline shell.
+
+     There is deliberately NO integrity hash on it any more. SRI defends against
+     a third party serving something other than what you asked for, and there is
+     no third party left. What a hash WOULD do here is fail the load if somebody
+     upgrades the file and forgets to re-take it - which is precisely the
+     silent, identity-less failure this change exists to remove. The version is
+     in the filename instead, which cannot drift from the file.
+
+     The bytes vendored here are the exact ones the CDN was serving:
+       sha384-EyR2P0dlmjnEGcm9xcjdAn0VedZpRHEwDLP9oSS6wYMvzHBHkUrvgonveazJ/sSx
+     To upgrade: download the new version beside this one, rename the src and
+     the entry in sw.js SHELL_FILES, bump the service worker VERSION, and test
+     before an event - never during one. -->
+<script id="supabase-sdk" src="/vendor/supabase-js-2.115.0.min.js"></script>
+<!-- Leaflet, for drawing and viewing the course boundary, still comes off the
+     CDN - and unlike the SDK it is genuinely allowed to fail. On the water
+     there is no signal, and every screen that uses it falls back to a text
+     readout computed on the phone. Nothing about an angler filing a catch
+     depends on it. -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"
       integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H"
       crossorigin="anonymous" referrerpolicy="no-referrer">
@@ -4051,14 +4064,17 @@ function identityBlockedText(what){
 }
 
 // The SDK is a blocking <script> in the head, so ordinarily it is here long
-// before any of this runs. Ordinarily. It comes off a public CDN over a phone's
-// connection, and a content blocker, a filtering DNS, a captive portal or one
-// dropped request leaves the page running perfectly with `supabase` undefined -
-// which is one of the two ways a device ends up with no identity at all.
+// before any of this runs. Ordinarily.
+//
+// It is same-origin now and in the offline shell, which removes the ways this
+// used to fail - a blocked CDN, a filtering DNS, a captive portal at the ramp.
+// It does not remove all of them: a phone that has never opened the app before
+// and has no signal has no cache to fall back on either. So the retry stays,
+// and it is cheap.
 //
 // Re-injecting a COPY OF THE SHIPPED TAG rather than a fresh one written out
-// here is deliberate: the src and the SRI hash then cannot drift from the tag
-// that is actually reviewed and deployed.
+// here is deliberate: the src cannot drift from the tag that is actually
+// reviewed and deployed.
 function loadSupabaseSdk(){
   if(typeof supabase !== 'undefined' && supabase && typeof supabase.createClient === 'function'){
     return Promise.resolve(true);
