@@ -14,15 +14,30 @@
 // v2: the runtime cache is now capped (see trimRuntime). Bumping the version
 // also drops the uncapped v1 cache on activate, which is the only way to clear
 // the tiles already sitting on phones from before that limit existed.
-const VERSION = 'livewire-v2';
+// v3: the Supabase SDK joined the shell - see SHELL_FILES.
+const VERSION = 'livewire-v3';
 const SHELL = VERSION + '-shell';
 const RUNTIME = VERSION + '-runtime';
 
-// The whole app is one file, so this list is short by design.
+// Nearly one file, plus the one dependency an angler cannot fish without.
+//
+// The SDK holds this device's anonymous session, and with no session every
+// write policy in the database refuses the phone - it can read the tournament
+// and save nothing. It used to sit in the RUNTIME cache with the map tiles,
+// which was quietly the wrong place twice over: that cache is capped and
+// evicts oldest-first, and keys() returns insertion order, so the SDK loaded
+// on the first page view was near the FRONT of the queue to be thrown out by
+// an afternoon of panning the boundary editor. Evicted plus out of range
+// equals a phone that cannot file a fish.
+//
+// In the shell it is fetched once on install, survives the tile churn, and is
+// there in a dead spot. Rename this when the version in index.html changes;
+// the filename carries the version so the two cannot silently disagree.
 const SHELL_FILES = [
   './',
   './index.html',
   './manifest.json',
+  './vendor/supabase-js-2.115.0.min.js',
   './livewire-icon-192.png',
   './livewire-icon-512.png'
 ];
