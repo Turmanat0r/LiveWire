@@ -1,0 +1,81 @@
+{
+  // LiveWire's app code. See README, "TypeScript", for why the settings are
+  // where they are and what the plan is for tightening them.
+  //
+  // THIS IS DELIBERATELY PERMISSIVE AND IS NOT THE FINISHED STATE. The point of
+  // the first pass was to change the toolchain without changing the app: same
+  // code, same behaviour, emitted JavaScript that matches what was already
+  // live. Turning the real checks on is worth about 1,500 more findings and
+  // belongs in its own pass, one category at a time, with the tests green after
+  // each. Switching them all on here would have buried a toolchain change in a
+  // thousand-line diff nobody could review.
+  //
+  // The flags to turn on, in the order they are worth doing:
+  //   strictNullChecks            524 findings, mostly getElementById null
+  //   + noImplicitAny            1,441 running total, untyped parameters
+  //   + noUncheckedIndexedAccess 1,485 running total
+  //   + the rest of strict       1,501 running total, catch variables
+  //
+  // They do not add up separately - each changes what the next can infer - and
+  // noUncheckedIndexedAccess reports nothing without strictNullChecks. See
+  // README, "TypeScript", for the same table with the details.
+  "compilerOptions": {
+    // The app targets phone browsers from the last few years. Nothing here is
+    // downlevelled, which is what keeps the emitted file readable and close to
+    // what was written - a build whose output you cannot recognise is a build
+    // you cannot debug from a phone screenshot.
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+
+    // NOT modules, and this is load-bearing rather than a preference.
+    //
+    // livewire.js is one classic script: 518 top-level declarations sharing one
+    // global scope, no import or export anywhere. Two things depend on that.
+    // The page loads boot-guard before it and relies on both being ordinary
+    // scripts that run in order. And test/events.test.mjs appends a block
+    // referring to those globals by bare name and runs the whole file through
+    // `new Function()`, which cannot execute module syntax at all.
+    //
+    // Emitting modules would break the test harness and the global scope in the
+    // same stroke, and buy nothing this app has a use for.
+    //
+    // What actually makes this a global script is that no file has a top-level
+    // import or export - TypeScript treats such a file as a script, not a
+    // module, and emits it as-is. This setting only says how module syntax
+    // WOULD be emitted, and there is none to emit. ("none" was valid until
+    // TypeScript 7 removed it.) test/lint.mjs fails if an import appears.
+    "module": "es2020",
+
+    // Written in src/, served from app/. The page and the service worker both
+    // name /app/livewire.js, so the output path is fixed by them.
+    "rootDir": "src",
+    "outDir": "app",
+
+    // The comments ARE the documentation here, and they shipped inside the
+    // inline script for years. Stripping them would make the served file
+    // useless to read.
+    "removeComments": false,
+    // .gitattributes pins LF. The compiler should not undo that.
+    "newLine": "lf",
+    // Nothing from @types is wanted. This app has one dependency and it is the
+    // compiler itself.
+    "types": [],
+
+    // --- the permissive half, all of it temporary ---------------------------
+    // TypeScript 7 always emits "use strict" - alwaysStrict:false was removed
+    // from the compiler, so this is not a choice any more, it is a consequence.
+    // It was checked rather than assumed. Strict mode would change this app if
+    // it used `this` in a plain call, `arguments`, or an octal literal, and it
+    // uses none of the three (0, 0 and 0 across both files, counted with
+    // comments and strings blanked out). Everything else strict mode forbids -
+    // assigning to an undeclared name, a duplicate parameter, `with` - is
+    // already a compile error, and the compile is clean.
+    //
+    // Worth re-checking if that ever stops being true. The tests cannot: they
+    // run the app through `new Function()`, which is not strict.
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false
+  },
+  "include": ["src/**/*.ts", "types/**/*.d.ts"]
+}

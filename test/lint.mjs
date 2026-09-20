@@ -24,7 +24,11 @@ const HTML = process.argv[2] || path.join(HERE, '..', 'index.html');
 let source;
 try { source = loadSource(HTML); }
 catch (e) { console.error(e.message); process.exit(1); }
-const { html, script, style, all } = source;
+// `written`, not the build output. These checks grep the app for the shape a
+// person chose - `function reelImage(` and so on - and the compiler re-prints
+// everything it emits, so the same patterns find nothing in app/livewire.js.
+// events.test.mjs takes `script`, which is the build output, because it runs it.
+const { html, written: script, style, all } = source;
 
 const problems = [];
 const NL = String.fromCharCode(10);
@@ -505,13 +509,61 @@ const everyAsset = [...refs];
 for (const ref of refs) if (ref.endsWith('.css')) everyAsset.push(...assetsOf(ref));
 const allAssets = [...new Set(everyAsset)];
 
+// Which of these a person wrote and which the compiler wrote. Getting it
+// backwards in either direction breaks the app only for other people: a
+// committed build output goes stale the moment its source changes and nobody
+// notices, and an uncommitted source means nobody else can build at all.
+//
+// This is checked against git ls-files rather than the filesystem on purpose.
+// The disk cannot tell the two apart - both files are sitting right there.
+const isGenerated = (ref) => /^\/app\/.+\.js$/.test(ref);
+const sourceOf = (ref) => 'src/' + ref.slice('/app/'.length).replace(/\.js$/, '.ts');
+
 for (const ref of allAssets) {
   const rel = ref.replace(/^\//, '');
   if (!fs.existsSync(path.join(ROOT, rel))) {
-    note('assets', `${ref} is loaded by the app and there is no such file`);
-  } else if (tracked && !tracked.has(rel)) {
+    note('assets', `${ref} is loaded by the app and there is no such file` +
+      (isGenerated(ref) ? ' - it is build output, so run `npm run build`' : ''));
+    continue;
+  }
+  if (!tracked) continue;
+
+  if (isGenerated(ref)) {
+    if (tracked.has(rel)) {
+      note('assets', `${ref} is build output and it is committed. A committed copy goes ` +
+        `stale the moment ${sourceOf(ref)} changes and nothing says so, and it is a plain ` +
+        `JavaScript file in a project that forbids them - git rm --cached it`);
+    }
+    const src = sourceOf(ref);
+    if (!fs.existsSync(path.join(ROOT, src))) {
+      note('assets', `${ref} is built from ${src} and there is no such file`);
+    } else if (!tracked.has(src)) {
+      note('assets', `${src} is what ${ref} is built from, and it is not committed - ` +
+        `the app would be unbuildable for everybody but whoever wrote it`);
+    }
+  } else if (!tracked.has(rel)) {
     note('assets', `${ref} is loaded by the app and exists here, but is not committed - ` +
       `it would 404 for everybody else, and the service worker would cache that 404`);
+  }
+}
+
+// Nothing in src/ may import or export. It is not a style rule.
+//
+// The app is one classic script: 518 top-level declarations in a single global
+// scope. index.html loads boot-guard before it and relies on both being
+// ordinary scripts that run in order, and test/events.test.mjs appends a block
+// naming those globals and runs the whole file through `new Function()`, which
+// cannot execute module syntax at all. One `export` turns the file into a
+// module, and all of that stops working at once.
+for (const rel of ['src/livewire.ts', 'src/boot-guard.ts']) {
+  const p = path.join(ROOT, rel);
+  if (!fs.existsSync(p)) continue;
+  const text = fs.readFileSync(p, 'utf8');
+  const bad = text.split(NL).findIndex((l) => /^\s*(import|export)\s/.test(l));
+  if (bad >= 0) {
+    note('assets', `${rel} line ${bad + 1} has a top-level import or export, which makes ` +
+      `it a module - the global scope the app depends on and the test harness that ` +
+      `runs it both stop working`);
   }
 }
 

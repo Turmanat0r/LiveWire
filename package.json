@@ -1,0 +1,14 @@
+{
+  "name": "livewire",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Catch, photo and release scoring for the Montana Kayak Walleye Open",
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "test": "npm run build && node test/lint.mjs && node test/events.test.mjs && node test/fish-i.test.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

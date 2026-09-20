@@ -5,3 +5,9 @@ supabase/.temp/
 *.bak
 .DS_Store
 Thumbs.db
+
+# The compiler writes these. src/*.ts is the source of truth; a committed
+# copy would go stale in silence and be a plain JavaScript file in a project
+# that has none. test/lint.mjs fails if one is ever tracked.
+/app/*.js
+node_modules/
