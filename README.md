@@ -135,24 +135,37 @@ the real `vercel.json` headers:
 - fonts load and render from `vendor/fonts-v1/`
 - all 1,519 checks across the three test files pass
 - each new check in `test/lint.mjs` was deliberately broken to confirm it fails
+- `app/boot-guard.js` was checked both ways: silent on a healthy load, and
+  showing its message when `app/livewire.js` was blocked
+
+Tested on a **phone**, against a preview deployment, installed to the home
+screen — loaded once with signal, force-quit, airplane mode, opened cold:
+
+- **the offline shell fills and works.** The app opened with no network, drew
+  itself in its own fonts out of the shell rather than system fallbacks, and
+  its screens were usable.
+
+That last one is the check this repository cannot make for itself, and it is
+worth repeating whenever `SHELL_FILES` changes. Cache Storage writes are
+refused outright on the machine this was built on — `cache.put` fails for
+every URL, even into an empty cache — so no automated run here can watch the
+shell fill. What the tests *can* prove is narrower and still worth having:
+every path in `SHELL_FILES` returns 200, the worker registers and activates,
+and `test/lint.mjs` fails if the page loads something the shell leaves out.
 
 **Not verified, and you should know it:**
 
-- **iOS Safari and Android Chrome — the browsers that actually matter here.**
-  Everything above was Chrome on a desktop. The install flow, the home-screen
-  app and the offline behaviour on a real phone have not been re-checked since
-  the split into separate files.
-- **The service-worker offline shell.** Cache Storage writes fail on the
-  machine this was built on — `cache.put` is refused for every URL, including
-  into an empty cache — so `SHELL_FILES` could not be observed filling. What
-  *was* checked is that every path in it returns 200, that lint fails if the
-  page loads something the shell omits, and that the worker registers and
-  activates. The app did open with the network off, but from the browser's own
-  HTTP cache, which is not the guarantee that matters.
-  **Install it on a phone, turn on airplane mode, and open it cold before an
-  event.**
+- **Only one mobile browser has seen this.** iOS Safari and Android Chrome
+  differ most in exactly the areas this change touched - service worker
+  lifetime, cache eviction and font loading - so the other one is still an
+  open question.
 - **A real offline → online round trip**, with conflicting edits made on
-  purpose on two devices.
+  purpose on two devices, to watch the declared last-writer-wins policy
+  actually happen.
+- **The v3 → v4 service worker upgrade**, which only exists on the live domain.
+  A phone that picks up the new `index.html` and loses signal before caching
+  `/app/livewire.js` gets the boot guard screen rather than the app. Merge on a
+  quiet day and open it on a phone afterwards.
 
 ## What is still open
 
