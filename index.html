@@ -1165,6 +1165,12 @@
      injected into a chat message or an angler's handle. Same file, same place
      in the document, same global scope - it is a classic script, not a module,
      so everything it defines is still a global and still runs in this order. -->
+<!-- Loaded FIRST, and the order is the whole point: every error handler the
+     app has lives inside livewire.js, which makes livewire.js the one file
+     that cannot report its own failure to arrive. Without this, a 404 after
+     a bad deploy leaves every screen of static markup on display - looking
+     like the app, doing nothing, explaining nothing. -->
+<script src="/app/boot-guard.js"></script>
 <script src="/app/livewire.js"></script>
 </body>
 </html>

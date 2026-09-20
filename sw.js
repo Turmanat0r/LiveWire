@@ -63,6 +63,7 @@ const SHELL_FILES = [
   './',
   './index.html',
   './manifest.json',
+  './app/boot-guard.js',
   './app/livewire.css',
   './app/livewire.js',
   './vendor/supabase-js-2.115.0.min.js',

@@ -24,16 +24,10 @@
 import fs from 'fs';
 import path from 'path';
 
-// Pull one local asset out of the page by the tag that loads it.
-function follow(html, dir, re, what) {
-  const m = html.match(re);
-  if (!m) {
-    throw new Error(`index.html no longer has ${what} - the tests are reading a ` +
-      `page that does not load the code they are about to check`);
-  }
-  const file = path.join(dir, m[1].replace(/^\//, ''));
+function read(dir, ref, what) {
+  const file = path.join(dir, ref.replace(/^\//, ''));
   if (!fs.existsSync(file)) {
-    throw new Error(`index.html loads ${m[1]} but ${file} does not exist`);
+    throw new Error(`index.html loads ${ref} but ${file} does not exist`);
   }
   return fs.readFileSync(file, 'utf8');
 }
@@ -43,18 +37,46 @@ export function loadSource(htmlPath) {
   const html = fs.readFileSync(htmlPath, 'utf8');
   const dir = path.dirname(htmlPath);
 
-  const script = follow(html, dir, /<script src="(\/app\/[^"]+\.js)"><\/script>/,
-    'a <script src="/app/...js"> tag');
-  const style = follow(html, dir, /<link rel="stylesheet" href="(\/app\/[^"]+\.css)">/,
-    'a <link> to /app/...css');
+  // Every script of ours the page loads, in document order.
+  //
+  // THE ORDER MATTERS AND IT IS NOT ARBITRARY. app/boot-guard.js is deliberately
+  // loaded before the application, because it exists to notice when the
+  // application never arrives - every error handler LiveWire has lives inside
+  // livewire.js, which makes livewire.js the one file that cannot report its own
+  // failure. So the guard is always first and the application is always last.
+  //
+  // Taking the FIRST match here is what this file did for about ten minutes,
+  // and it handed every check the guard instead of the app: thirty-six findings
+  // saying the entire application was gone. Loud, which is the point, but the
+  // rule is the last one.
+  const refs = [...html.matchAll(/<script src="(\/app\/[^"]+\.js)"><\/script>/g)].map((m) => m[1]);
+  if (!refs.length) {
+    throw new Error('index.html loads no script from /app/ - the tests are reading ' +
+      'a page that does not load the code they are about to check');
+  }
+  const appRef = refs[refs.length - 1];
+
+  const styleRef = (html.match(/<link rel="stylesheet" href="(\/app\/[^"]+\.css)">/) || [])[1];
+  if (!styleRef) {
+    throw new Error('index.html no longer links a stylesheet from /app/');
+  }
+
+  const script = read(dir, appRef, 'the application');
+  const style = read(dir, styleRef, 'the stylesheet');
+  // The guard and anything else alongside it. Not part of `script`, because the
+  // checks that read `script` are about the application, and a function the
+  // guard happens to define is not the application having it.
+  const others = refs.slice(0, -1).map((r) => read(dir, r, 'a script')).join('\n');
 
   return {
     html,                    // the page: markup, and nothing executable
     script,                  // the application
     style,                   // the application's stylesheet
-    // Both together, for the checks that ask "does this appear anywhere in the
-    // source at all" - a palette colour, a remote origin - and do not care
-    // which of the three files it turned up in.
-    all: html + '\n' + style + '\n' + script
+    others,                  // every other script of ours the page loads
+    refs,                    // their paths, in load order
+    // Everything together, for the checks that ask "does this appear anywhere in
+    // the source at all" - a palette colour, a remote origin - and do not care
+    // which file it turned up in.
+    all: [html, style, others, script].join('\n')
   };
 }

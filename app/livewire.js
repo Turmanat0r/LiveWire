@@ -1,3 +1,10 @@
+// app/boot-guard.js is watching for this. It is set here, on the first line
+// that runs, because the only question the guard has to answer is "did this
+// file arrive and start" - with a 404, or a syntax error, nothing below runs
+// at all and nothing sets it. Anything that goes wrong AFTER this point is
+// reported by the handlers installed just underneath, which is the better
+// message of the two, so the guard stays quiet once this is set.
+window.__livewireStarted = true;
 
 // If anything throws, say so on screen instead of dying silently. A blank or
 // half-rendered app with a clean console is far worse to diagnose than a
