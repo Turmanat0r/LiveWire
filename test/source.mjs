@@ -36,6 +36,8 @@ function read(dir, ref, what) {
 export function loadSource(htmlPath) {
   const html = fs.readFileSync(htmlPath, 'utf8');
   const dir = path.dirname(htmlPath);
+  // src/ sits beside the page rather than inside the folder it is served from.
+  const root = path.dirname(htmlPath);
 
   // Every script of ours the page loads, in document order.
   //
@@ -61,22 +63,38 @@ export function loadSource(htmlPath) {
     throw new Error('index.html no longer links a stylesheet from /app/');
   }
 
-  const script = read(dir, appRef, 'the application');
+  // What ships, and what a person wrote. They are not the same file any more.
+  //
+  // The compiler re-prints the whole thing from its own syntax tree, so the
+  // served JavaScript is reindented and reshaped: `function(){` comes out as
+  // `function () {`. That is cosmetic, but it matters here, because the two
+  // test files want different halves of it.
+  //
+  // events.test.mjs EXECUTES the app, so it has to be handed the build output.
+  // Running the .ts would be testing something no phone will ever run.
+  //
+  // lint.mjs GREPS the app for structure, so it has to be handed the source.
+  // Its patterns are written against the formatting a person chose, and
+  // pointing them at the compiler's formatting made twenty-seven of them
+  // report that the functions they check had been deleted.
+  const compiled = read(dir, appRef, 'the application');
+  const written = read(root, 'src/' + appRef.slice('/app/'.length).replace(/\.js$/, '.ts'),
+    'the application source');
   const style = read(dir, styleRef, 'the stylesheet');
-  // The guard and anything else alongside it. Not part of `script`, because the
-  // checks that read `script` are about the application, and a function the
-  // guard happens to define is not the application having it.
+  // The guard and anything else alongside it. Not part of the application,
+  // because a function the guard happens to define is not the app having it.
   const others = refs.slice(0, -1).map((r) => read(dir, r, 'a script')).join('\n');
 
   return {
     html,                    // the page: markup, and nothing executable
-    script,                  // the application
+    script: compiled,        // the application as it ships and actually runs
+    written,                 // the TypeScript it is built from
     style,                   // the application's stylesheet
     others,                  // every other script of ours the page loads
     refs,                    // their paths, in load order
-    // Everything together, for the checks that ask "does this appear anywhere in
-    // the source at all" - a palette colour, a remote origin - and do not care
-    // which file it turned up in.
-    all: [html, style, others, script].join('\n')
+    // Everything together, for the checks that ask "does this appear anywhere
+    // in the source at all" - a palette colour, a remote origin - and do not
+    // care which file it turned up in.
+    all: [html, style, others, written].join('\n')
   };
 }

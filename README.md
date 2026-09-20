@@ -81,19 +81,31 @@ leaves out.
 ## Running it locally
 
 ```
+npm install                 # once - TypeScript, and nothing else
+npm run build               # src/*.ts  ->  app/*.js
+npm test                    # builds, then runs all three test files
+```
+
+Or the tests one at a time, after a build:
+
+```
 node test/lint.mjs          # structure, policy, assets, offline shell
 node test/events.test.mjs   # behaviour  (1,394 checks)
 node test/fish-i.test.mjs   # the serverless endpoint  (125 checks)
 ```
 
-From the project root. Nothing to install — they need only Node, and there is
-no `package.json` because there are no dependencies. Each exits `0` clean and
-`1` on any finding.
+From the project root. Each exits `0` clean and `1` on any finding. The only
+dependency in the project is the TypeScript compiler.
+
+**The app will not run until you have built it.** `app/livewire.js` is
+generated and not committed, so a fresh clone has an `index.html` pointing at a
+file that is not there yet. `npm run build` is the whole of it, and
+`test/lint.mjs` says so by name if you forget.
 
 To open the app itself you need a static server that sends the headers in
 `vercel.json`, because the Content-Security-Policy is a header and half of what
 it does is invisible without it. Opening `index.html` from the filesystem will
-not work: service workers and module loading both need an origin.
+not work: service workers need an origin.
 
 `api/fish-i.js` runs on Vercel, not in the page. It needs `GEMINI_API_KEY` set
 in the project's environment variables; without it the director simply sees
@@ -103,27 +115,92 @@ Fish-I listed as unavailable and every local photo check keeps working.
 
 | | |
 |---|---|
+| `src/livewire.ts` | the entire application — **written here** |
+| `src/boot-guard.ts` | the failure screen for when the application does not arrive |
+| `types/globals.d.ts` | shared types, no runtime code |
+| `app/livewire.js` | the application **as it ships — generated, not committed** |
+| `app/livewire.css` | the entire stylesheet — hand-written, committed |
 | `index.html` | the markup, and the policy repeated as a `<meta>` tag |
-| `app/livewire.js` | the entire application |
-| `app/livewire.css` | the entire stylesheet |
 | `vendor/` | the Supabase SDK, Leaflet and the fonts, all served from here |
 | `sw.js` | the offline shell |
-| `vercel.json` | security headers and cache rules |
+| `vercel.json` | build command, security headers and cache rules |
 | `sql/` | the database schema and its row policies, applied in order |
 | `test/` | three Node scripts, no framework |
+
+`app/` holds both generated and written files, which is the one muddy corner:
+the `.js` in it is build output and gitignored, the `.css` beside it is
+hand-written and committed. `test/lint.mjs` checks both directions against
+`git ls-files`, because the filesystem cannot tell them apart.
 
 The script and the stylesheet used to be inline in `index.html`. They are
 separate files because the Content-Security-Policy no longer allows
 `script-src 'unsafe-inline'`, and with that allowed the policy could not tell
 the application apart from a block injected through a chat message or an
-angler's handle. Nothing else about them changed — same code, same order, same
-global scope.
+angler's handle.
 
 **Every asset is served from this repository.** The fonts and Leaflet used to
 come off a CDN, which put a third party on the path of an angler filing a fish;
 a content blocker, a filtering DNS or a captive portal at the ramp was enough
 to lose them, and that has happened here before. Out of signal they never
 arrived at all, so the installed app quietly opened in fallback fonts.
+
+## TypeScript
+
+The app is TypeScript compiled to one classic script. It is **not** modules,
+and that is load-bearing rather than a preference: 518 top-level declarations
+share a single global scope, `index.html` loads `boot-guard` before the app and
+relies on both being ordinary scripts that run in order, and
+`test/events.test.mjs` appends a block naming those globals and runs the whole
+file through `new Function()`, which cannot execute module syntax at all. One
+top-level `export` breaks all of that at once, so `test/lint.mjs` fails if one
+appears.
+
+**The compiler settings are deliberately permissive and this is not finished.**
+The first pass changed the toolchain without changing the app: same code, same
+behaviour, and a browser pass confirming it renders and runs exactly as before.
+Switching every check on at the same time would have buried that in about 1,500
+findings nobody could review. What is left, in the order it is worth doing:
+
+Measured against the source as it stands, turning them on one at a time. They
+do not simply add up - each one changes what the next can infer - so these are
+cumulative totals rather than separate piles:
+
+| Turn on | Findings, running total | Mostly |
+|---|---|---|
+| `strictNullChecks` | 524 | `getElementById` returning null |
+| `+ noImplicitAny` | 1,441 | untyped function parameters |
+| `+ noUncheckedIndexedAccess` | 1,485 | array and record access |
+| `+ the rest of strict, and the unused checks` | 1,501 | `catch` variables typed `unknown` |
+
+Worth knowing before you start: `noUncheckedIndexedAccess` on its own reports
+nothing at all, because it has no effect without `strictNullChecks`. And a CLI
+`--strict` will *not* override an explicit `"noImplicitAny": false` in
+`tsconfig.json` - the specific setting wins over the umbrella one, whichever
+side it is written on. That is worth remembering when a run comes back
+suspiciously clean.
+
+The last row already found three real ones: `nameEl`, `recEl` and `catches`
+are declared and never read.
+
+Along the way the `any`s in `types/globals.d.ts` — `L`, `supabase`, `claude` —
+should get real shapes. They are honest `any` for now rather than an invented
+type that reads as verified when nobody checked it.
+
+One thing already earned its keep: the first draft of `GeoFix` called the
+accuracy field `accuracy`, and the compiler pointed out that the code has
+always written `accuracyMiles`, in miles, because every screen shows miles.
+
+`tsc` re-prints everything it emits, so `app/livewire.js` is reindented
+compared to `src/livewire.ts`. That is cosmetic, but it is why `lint.mjs` reads
+the source and `events.test.mjs` reads the build output — one checks the shape
+a person wrote, the other runs what a phone will run.
+
+TypeScript 7 always emits `"use strict"`; `alwaysStrict: false` was removed
+from the compiler. That was checked rather than assumed — strict mode would
+change this app if it used `this` in a plain call, `arguments`, or an octal
+literal, and it uses none of the three. Everything else strict mode forbids is
+already a compile error. Worth re-checking if that stops being true, because
+the tests cannot: `new Function()` is not strict.
 
 ## What was actually tested, and what was not
 
@@ -168,6 +245,17 @@ and `test/lint.mjs` fails if the page loads something the shell leaves out.
   quiet day and open it on a phone afterwards.
 
 ## What is still open
+
+- **The compiler is turned down.** The first TypeScript pass was the toolchain,
+  not the typing - see the table under "TypeScript" for what turning each check
+  on is worth. Until then the type system is catching far less than it could.
+- **`sql/` and `test/` are publicly downloadable**, and always have been:
+  the whole repository root is what gets served. Nothing there is a secret -
+  the anon key ships in the page by design and the row policies are enforced by
+  the database, not by being hard to read - but it does hand anyone a map of
+  the schema and the exact policy logic, including the rollback script. Fixing
+  it means building into a directory that holds only what should be public,
+  rather than serving the repository root.
 
 - **`style-src` still allows `'unsafe-inline'`.** 218 `style="..."` attributes
   have to move to classes first - 148 in `index.html` and 70 more built into

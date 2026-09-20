@@ -259,13 +259,13 @@ function eventClockFormatter(){
 
 // Event dates are bare YYYY-MM-DD, which Date parses as UTC midnight. Format
 // them back in UTC too, or a viewer west of Greenwich reads a day earlier.
-function eventDayText(dateKey, opts){
+function eventDayText(dateKey, opts?){
   const o = Object.assign({ timeZone:'UTC', month:'short', day:'numeric' }, opts||{});
   return new Date(dateKey + 'T00:00:00Z').toLocaleDateString('en-US', o);
 }
 // "Sept 18-19, 2027" when the days share a month, "Sept 30 - Oct 1, 2027" when
 // not. Defaults to the live event; the director's event list passes each one.
-function eventDateRangeText(evt){
+function eventDateRangeText(evt?){
   const dates = (evt || activeEvent()).dates;
   if(dates.length === 0) return '';
   const year = dates[dates.length-1].slice(0,4);
@@ -285,8 +285,8 @@ function registrationCloseText(){
 }
 
 function eventTimeParts(now){
-  const values = {};
-  eventClockFormatter().formatToParts(now).forEach(part=>{
+  const values: Record<string, string> = {};
+  eventClockFormatter().formatToParts(now).forEach((part: Intl.DateTimeFormatPart)=>{
     if(part.type !== 'literal') values[part.type] = part.value;
   });
   return {
@@ -422,7 +422,7 @@ function boundaryIsUsable(b){
 //                  so records written by earlier versions still read correctly
 //   outsideMiles : how far past the line, 0 when inside. Defined for every
 //                  shape, which distanceMiles cannot be.
-function evaluateBoundary(lat, lng, boundary){
+function evaluateBoundary(lat, lng, boundary?): BoundaryVerdict {
   const b = boundary || courseBoundary();
   if(!boundaryIsUsable(b)) return { withinBounds: null, outsideMiles: 0 };
   if(b.kind === 'circle'){
@@ -452,7 +452,7 @@ const METRES_PER_MILE = 1609.344;
 
 // A round, finger-sized handle. A divIcon rather than Leaflet's default pin so
 // there is no marker image to fetch and it matches the rest of the app.
-function handleIcon(label, extraClass){
+function handleIcon(label, extraClass?){
   return L.divIcon({
     className: 'lw-handle-wrap',
     html: '<div class="lw-handle '+(extraClass||'')+'">'+(label||'')+'</div>',
@@ -571,8 +571,8 @@ function fitToBoundary(entry, b){
 
 // A single position fix. Rejects rather than hanging - on the water a fix can
 // simply never arrive, and the caller needs to be able to say so.
-function currentPosition(timeoutMs){
-  return new Promise((resolve, reject)=>{
+function currentPosition(timeoutMs?){
+  return new Promise<GeoFix>((resolve, reject)=>{
     if(!navigator.geolocation){ reject(new Error('This device cannot report a location.')); return; }
     let settled = false;
     const timer = setTimeout(()=>{
@@ -598,7 +598,7 @@ function currentPosition(timeoutMs){
 }
 
 function getCatchLocation(){
-  return new Promise((resolve)=>{
+  return new Promise<GeoFix | null>((resolve)=>{
     if(!navigator.geolocation){ resolve(null); return; }
     const timer = setTimeout(()=>resolve(null), 6000);
     navigator.geolocation.getCurrentPosition(
@@ -908,7 +908,7 @@ function takenCodes(){
 // the director assigns them, and are told that rather than shown a blank.
 function codeBoxHtml(a){
   if(!a) return '';
-  const chip = (label, value, cls) =>
+  const chip = (label, value, cls?) =>
     '<div class="codechip'+(cls ? ' '+cls : '')+'"><span class="k">'+escapeHtml(label)+'</span>'+
     '<span class="v">'+escapeHtml(value || '—')+'</span></div>';
   let html = '<div class="codebox">';
@@ -1158,8 +1158,8 @@ async function signInDirector(){
   const errEl = document.getElementById('admin-signin-err');
   const btn = document.getElementById('admin-signin');
   errEl.style.display = 'none';
-  const email = (document.getElementById('admin-email').value || '').trim();
-  const password = document.getElementById('admin-password').value || '';
+  const email = ((document.getElementById('admin-email') as ValueElement).value || '').trim();
+  const password = (document.getElementById('admin-password') as ValueElement).value || '';
   if(!email || !password){
     errEl.textContent = 'Enter the director email and password.';
     errEl.style.display = 'block';
@@ -1171,7 +1171,7 @@ async function signInDirector(){
     return;
   }
   const was = btn.textContent;
-  btn.textContent = 'Signing in…'; btn.disabled = true;
+  btn.textContent = 'Signing in…'; (btn as DisableableElement).disabled = true;
   try{
     const res = await sbClient.auth.signInWithPassword({ email, password });
     if(res && res.error){
@@ -1179,7 +1179,7 @@ async function signInDirector(){
       errEl.style.display = 'block';
       return;
     }
-    document.getElementById('admin-password').value = '';
+    (document.getElementById('admin-password') as ValueElement).value = '';
     noteAuthSession(res.data && res.data.session);
     if(authMode !== 'director'){
       // Signed in fine, but the account has no director flag. Say exactly that
@@ -1192,7 +1192,7 @@ async function signInDirector(){
     errEl.textContent = (e && e.message) || 'That sign-in did not work.';
     errEl.style.display = 'block';
   }finally{
-    btn.textContent = was; btn.disabled = false;
+    btn.textContent = was; (btn as DisableableElement).disabled = false;
   }
 }
 
@@ -1272,7 +1272,7 @@ function loadSupabaseSdk(){
   if(typeof supabase !== 'undefined' && supabase && typeof supabase.createClient === 'function'){
     return Promise.resolve(true);
   }
-  const tag = document.getElementById('supabase-sdk');
+  const tag = document.getElementById('supabase-sdk') as HTMLScriptElement | null;
   if(!tag || !tag.src) return Promise.resolve(false);
   return new Promise(resolve=>{
     const el = document.createElement('script');
@@ -1418,7 +1418,7 @@ function supabaseBackend(){
     if(!res.ok){
       let detail = '';
       try{ detail = (await res.text()).slice(0, 200); }catch(e){}
-      const err = new Error('Supabase ' + res.status + ' ' + detail);
+      const err: HttpError = new Error('Supabase ' + res.status + ' ' + detail);
       err.status = res.status;
       throw err;
     }
@@ -1487,7 +1487,7 @@ function supabaseBackend(){
     async applyOp(op){
       if(op.kind === 'photo'){
         const blob = dataUrlToBlob(op.body && op.body.data);
-        if(!blob){ const e = new Error('Unreadable photo data'); e.status = 400; throw e; }
+        if(!blob){ const e: HttpError = new Error('Unreadable photo data'); e.status = 400; throw e; }
         await rest('/storage/v1/object/' + SUPABASE_BUCKET + '/' +
                    encodeURIComponent(op.id) + '.jpg', {
           method: 'POST',
@@ -1497,7 +1497,7 @@ function supabaseBackend(){
         return;
       }
       const table = TABLES[op.coll];
-      if(!table){ const e = new Error('Unknown collection ' + op.coll); e.status = 400; throw e; }
+      if(!table){ const e: HttpError = new Error('Unknown collection ' + op.coll); e.status = 400; throw e; }
       if(op.kind === 'delete'){
         await rest('/rest/v1/' + table + '?id=eq.' + encodeURIComponent(op.id), { method: 'DELETE' });
         return;
@@ -2040,7 +2040,7 @@ function awardsBudgetMap(){
 // The EVENTS entry supplies the starting values; anything the director saves
 // for that event in the shared config wins. Same shape as the budgets above,
 // so it reaches every phone through the one config record.
-function eventSettings(id){
+function eventSettings(id?){
   const evt = eventById(id || activeEventId()) || EVENTS[0];
   const all = (liveCache.config && liveCache.config.eventSettings) || {};
   const saved = all[evt.id] || {};
@@ -2075,7 +2075,7 @@ async function saveEventSettings(patch){
 // Every event that existed before this has `targetSpecies` and `recordInches`
 // as plain values, and nothing migrates them - speciesList() builds the list
 // from them on the way past. There is nothing to run and no event to edit.
-function speciesList(settings){
+function speciesList(settings?){
   const s = settings || eventSettings();
   const list = Array.isArray(s.speciesList) ? s.speciesList : [];
   const clean = list
@@ -2092,7 +2092,7 @@ function speciesList(settings){
 }
 
 // Just the names, which is what scoring asks for.
-function scoringSpecies(settings){
+function scoringSpecies(settings?){
   return speciesList(settings).map(x=> x.name);
 }
 
@@ -2119,7 +2119,7 @@ function recordInches(species){
 // "walleye", "walleye or pike", "walleye, pike or lake trout". Every screen
 // that used to name the one species in a sentence now reads naturally with
 // several, rather than saying "scoring species" at anglers.
-function speciesPhrase(settings){
+function speciesPhrase(settings?){
   const names = scoringSpecies(settings).map(n=> n.toLowerCase());
   if(names.length === 0) return 'scoring fish';
   if(names.length === 1) return names[0];
@@ -2145,7 +2145,7 @@ const OTHER_SPECIES = 'Other';
 //
 // Making this one function polymorphic is what let multiple species reach
 // thirteen call sites without touching any of them.
-function isScoringSpecies(name, target){
+function isScoringSpecies(name, target?){
   // OTHER_SPECIES is the sentinel an angler picks to say "this is not one of
   // the scoring species". A function called isScoringSpecies answering true for
   // it would be wrong on its face, so it is refused here and not only filtered
@@ -2342,7 +2342,7 @@ function photoSlotHtml(c){
 // longer matches the record. Director lists only - the gallery and an angler's
 // own list would be reporting a problem to the one person who cannot act on it.
 // It costs nothing extra: the decode has already happened to draw the picture.
-function hydratePhotos(root, opts){
+function hydratePhotos(root, opts?){
   const scope = root || document;
   const verify = !!(opts && opts.verify);
   scope.querySelectorAll('[data-photo-for]').forEach(host=>{
@@ -2521,7 +2521,7 @@ async function claimEntry(code, phone){
   if(!res.ok){
     let detail = '';
     try{ detail = (await res.text()).slice(0, 200); }catch(e){}
-    const err = new Error('claim_entry ' + res.status + ' ' + detail);
+    const err: HttpError = new Error('claim_entry ' + res.status + ' ' + detail);
     err.status = res.status;
     throw err;
   }
@@ -2596,7 +2596,7 @@ function noteResponseClock(res){
   return false;
 }
 
-function noteServerClock(dateHeader, receivedAt){
+function noteServerClock(dateHeader, receivedAt?){
   const at = Date.parse(dateHeader || '');
   if(!at) return false;                       // absent or unparseable: learn nothing
   const now = receivedAt === undefined ? Date.now() : receivedAt;
@@ -2669,7 +2669,7 @@ function photoStampLines(source, at, skewMs){
   return lines;
 }
 
-function photoStamp(source, at){
+function photoStamp(source, at?){
   const when = at === undefined ? Date.now() : at;
   return {
     at: when,
@@ -2730,7 +2730,7 @@ function drawPhotoStamp(ctx, width, height, lines){
 // Takes an <img> or a live <video> frame. On a Supabase event the top rung
 // applies and the director gets a 1400px board photo; on the Artifact store,
 // whose records cap at 256 KiB, it settles a few rungs lower.
-function encodeToBudget(source, naturalW, naturalH, stamp){
+function encodeToBudget(source, naturalW, naturalH, stamp?){
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   const budget = photoBudget();
@@ -2767,7 +2767,7 @@ function encodeToBudget(source, naturalW, naturalH, stamp){
 // ORIGINAL photo's, captured before downscaling, so the resolution check in the
 // first-pass review judges what the angler actually shot, not our stored copy.
 function resizeImage(file, stamp){
-  return new Promise((resolve,reject)=>{
+  return new Promise<ResizedImage>((resolve,reject)=>{
     const reader = new FileReader();
     reader.onload = e=>{
       const img = new Image();
@@ -2778,7 +2778,7 @@ function resizeImage(file, stamp){
         });
       };
       img.onerror = reject;
-      img.src = e.target.result;
+      img.src = e.target.result as string;
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);
@@ -2792,7 +2792,7 @@ function resizeImage(file, stamp){
 
 // `win` is [x, y, w, h] in fractions of the source; omitted means the whole
 // frame, which is what every caller but the hash wants.
-function greyscaleFrom(img, w, h, win){
+function greyscaleFrom(img, w, h, win?){
   const canvas = document.createElement('canvas');
   canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext('2d');
@@ -2811,7 +2811,7 @@ function greyscaleFrom(img, w, h, win){
 // Difference hash: 9x8 greyscale, compare each pixel to its right neighbour.
 // Two photos of the same fish in the same pose hash within a few bits of each
 // other even after resaving, which is what makes duplicate detection work.
-function dHashOf(img, win){
+function dHashOf(img, win?){
   const w = 9, h = 8;
   const grey = greyscaleFrom(img, w, h, win);
   let bits = '';
@@ -3431,14 +3431,14 @@ function pushScreenState(name, replace){
   }
 }
 
-function goto(name, opts){
+function goto(name, opts?){
   const o = opts || {};
   const moved = currentScreen !== name;
   currentScreen = name;
   screens.forEach(s=>{
     document.getElementById('screen-'+s).classList.toggle('active', s===name);
   });
-  document.querySelectorAll('nav.tabbar button').forEach(b=>b.classList.toggle('active', b.dataset.screen===name));
+  document.querySelectorAll('nav.tabbar button').forEach(b=>b.classList.toggle('active', (b as HTMLElement).dataset.screen===name));
   document.getElementById('app').dataset.theme = name;
   if(name!=='submit') stopCamera();
   updateSyncUi();
@@ -3485,19 +3485,19 @@ function initHistory(){
   }
 }
 document.addEventListener('click', (e)=>{
-  const el = e.target.closest('[data-goto]');
-  if(el){ goto(el.dataset.goto); }
+  const el = (e.target as HTMLElement).closest('[data-goto]');
+  if(el){ goto((el as HTMLElement).dataset.goto); }
 });
 // The back links are <a> elements with no href, so the browser gives them no
 // keyboard behaviour of their own. tabindex in the markup makes them focusable;
 // this makes Enter/Space actually navigate.
 document.addEventListener('keydown', (e)=>{
   if(e.key !== 'Enter' && e.key !== ' ') return;
-  const el = e.target.closest && e.target.closest('a.backlink[data-goto]');
-  if(el){ e.preventDefault(); goto(el.dataset.goto); }
+  const el = (e.target as HTMLElement).closest && (e.target as HTMLElement).closest('a.backlink[data-goto]');
+  if(el){ e.preventDefault(); goto((el as HTMLElement).dataset.goto); }
 });
 document.querySelectorAll('nav.tabbar button').forEach(btn=>{
-  btn.addEventListener('click', ()=> goto(btn.dataset.screen));
+  btn.addEventListener('click', ()=> goto((btn as HTMLElement).dataset.screen));
 });
 
 // ---- home ----
@@ -3589,7 +3589,7 @@ function tileAccent(name){
 
 // Painted onto the element as a custom property so the bar itself stays in CSS,
 // where its size and position belong.
-function paintTileAccents(root){
+function paintTileAccents(root?){
   const scope = root || document;
   scope.querySelectorAll('.home-tile[data-goto], .home-info-tile[data-goto]').forEach(el=>{
     el.style.setProperty('--tile-accent', tileAccent(el.dataset.goto));
@@ -3670,8 +3670,8 @@ bindEl('claim-go','click', async ()=>{
   const btn = document.getElementById('claim-go');
   const errEl = document.getElementById('claim-err');
   const okEl = document.getElementById('claim-ok');
-  const code = document.getElementById('claim-code').value.trim();
-  const phone = document.getElementById('claim-phone').value.trim();
+  const code = (document.getElementById('claim-code') as ValueElement).value.trim();
+  const phone = (document.getElementById('claim-phone') as ValueElement).value.trim();
   const fail = (m)=>{ errEl.textContent = m; errEl.style.display = 'block'; okEl.style.display = 'none'; };
   errEl.style.display = 'none';
   okEl.style.display = 'none';
@@ -3679,7 +3679,7 @@ bindEl('claim-go','click', async ()=>{
   if(!code) return fail('Enter your Tournament ID — the four characters on your bump board.');
   if(normPhone(phone).length < 10) return fail('Enter the phone number you registered with, area code included.');
 
-  btn.disabled = true;
+  (btn as DisableableElement).disabled = true;
   const label = btn.textContent;
   btn.textContent = 'Checking…';
   try{
@@ -3698,7 +3698,7 @@ bindEl('claim-go','click', async ()=>{
     console.error(e);
     fail(claimErrorText(e));
   }finally{
-    btn.disabled = false;
+    (btn as DisableableElement).disabled = false;
     btn.textContent = label;
   }
 });
@@ -3747,10 +3747,10 @@ async function renderRegisterScreen(){
   const closed = isRegistrationClosed();
   document.getElementById('reg-closed-notice').style.display = closed ? 'block' : 'none';
   ['reg-name','reg-phone','reg-partner','reg-partner-phone','reg-ice-name','reg-ice-phone','reg-bigfish'].forEach(id=>{
-    document.getElementById(id).disabled = closed;
+    (document.getElementById(id) as DisableableElement).disabled = closed;
   });
   ['#reg-division','#reg-resident','#reg-partner-resident'].forEach(sel=>{
-    document.querySelectorAll(sel+' input[type=radio]').forEach(r=> r.disabled = closed);
+    document.querySelectorAll(sel+' input[type=radio]').forEach(r=> (r as DisableableElement).disabled = closed);
   });
   updateRegisterReadiness();
 }
@@ -3781,7 +3781,7 @@ function updateRegisterReadiness(){
     note.textContent = REG_ROSTER_NOTE;
     note.style.display = (!ready && !closed) ? 'block' : 'none';
   }
-  btn.disabled = closed || !ready || blocked;
+  (btn as DisableableElement).disabled = closed || !ready || blocked;
 }
 
 document.querySelectorAll('#reg-division input[type=radio]').forEach(input=>{
@@ -3811,18 +3811,18 @@ document.querySelectorAll('#reg-division input[type=radio]').forEach(input=>{
 // "registered before the app asked", which is a different thing entirely.
 function pickedResidency(sel){
   const lab = document.querySelector(sel + ' label.active');
-  return lab ? lab.dataset.val === 'yes' : null;
+  return lab ? (lab as HTMLElement).dataset.val === 'yes' : null;
 }
 
 bindEl('reg-submit','click', async ()=>{
-  const name = document.getElementById('reg-name').value.trim();
-  const phone = document.getElementById('reg-phone').value.trim();
-  const division = document.querySelector('#reg-division label.active').dataset.val;
-  const partnerName = document.getElementById('reg-partner').value.trim();
-  const partnerPhone = document.getElementById('reg-partner-phone').value.trim();
-  const iceName = document.getElementById('reg-ice-name').value.trim();
-  const icePhone = document.getElementById('reg-ice-phone').value.trim();
-  const bigfish = document.getElementById('reg-bigfish').checked;
+  const name = (document.getElementById('reg-name') as ValueElement).value.trim();
+  const phone = (document.getElementById('reg-phone') as ValueElement).value.trim();
+  const division = (document.querySelector('#reg-division label.active') as HTMLElement).dataset.val;
+  const partnerName = (document.getElementById('reg-partner') as ValueElement).value.trim();
+  const partnerPhone = (document.getElementById('reg-partner-phone') as ValueElement).value.trim();
+  const iceName = (document.getElementById('reg-ice-name') as ValueElement).value.trim();
+  const icePhone = (document.getElementById('reg-ice-phone') as ValueElement).value.trim();
+  const bigfish = (document.getElementById('reg-bigfish') as HTMLInputElement).checked;
   const errEl = document.getElementById('reg-err');
 
   const fail = (msg)=>{ errEl.textContent = msg; errEl.style.display = 'block'; };
@@ -3997,26 +3997,26 @@ bindEl('reg-submit','click', async ()=>{
   // cleared too, so a second registration on the same device gets its own.
   pendingHandle = null;
   refreshPendingHandle(true);
-  document.getElementById('reg-name').value='';
-  document.getElementById('reg-phone').value='';
-  document.getElementById('reg-partner').value='';
-  document.getElementById('reg-partner-phone').value='';
-  document.getElementById('reg-ice-name').value='';
-  document.getElementById('reg-ice-phone').value='';
-  document.getElementById('reg-bigfish').checked=false;
+  (document.getElementById('reg-name') as ValueElement).value='';
+  (document.getElementById('reg-phone') as ValueElement).value='';
+  (document.getElementById('reg-partner') as ValueElement).value='';
+  (document.getElementById('reg-partner-phone') as ValueElement).value='';
+  (document.getElementById('reg-ice-name') as ValueElement).value='';
+  (document.getElementById('reg-ice-phone') as ValueElement).value='';
+  (document.getElementById('reg-bigfish') as HTMLInputElement).checked=false;
   const soloLabel = document.querySelector('#reg-division label[data-val="solo"]');
   if(soloLabel){
     document.querySelectorAll('#reg-division label').forEach(l=>l.classList.remove('active'));
     soloLabel.classList.add('active');
     const soloRadio = soloLabel.querySelector('input[type=radio]');
-    if(soloRadio) soloRadio.checked = true;
+    if(soloRadio) (soloRadio as HTMLInputElement).checked = true;
   }
   // Cleared rather than reset to a default, for the same reason the form has
   // no default in the first place: a second entry on this device has to ASK
   // again, not inherit the last person's answer.
   ['#reg-resident','#reg-partner-resident'].forEach(sel=>{
     document.querySelectorAll(sel + ' label').forEach(l=>l.classList.remove('active'));
-    document.querySelectorAll(sel + ' input[type=radio]').forEach(r=>{ r.checked = false; });
+    document.querySelectorAll(sel + ' input[type=radio]').forEach(r=>{ (r as HTMLInputElement).checked = false; });
   });
   document.getElementById('reg-partner-field').style.display = 'none';
 
@@ -4052,7 +4052,7 @@ async function renderCheckin(){
 bindEl('checkin-angler','change', renderCheckinBody);
 
 async function renderCheckinBody(){
-  const anglerId = document.getElementById('checkin-angler').value;
+  const anglerId = (document.getElementById('checkin-angler') as ValueElement).value;
   const anglers = await loadAnglers();
   const me = anglers.find(a=>a.id===anglerId);
   const el = document.getElementById('checkin-body');
@@ -4091,9 +4091,9 @@ async function renderCheckinBody(){
       if(!guard.ok){ setText('checkin-angler-note', guard.message); return; }
       const idx = anglers.findIndex(a=>a.id===anglerId);
       if(idx===-1) return;
-      const dayKey = btn.dataset.day;
+      const dayKey = (btn as HTMLElement).dataset.day;
       if(!anglers[idx].checkins) anglers[idx].checkins = { day1:{in:null,out:null}, day2:{in:null,out:null} };
-      if(btn.dataset.act==='in') anglers[idx].checkins[dayKey].in = Date.now();
+      if((btn as HTMLElement).dataset.act==='in') anglers[idx].checkins[dayKey].in = Date.now();
       else anglers[idx].checkins[dayKey].out = Date.now();
       await saveAnglers(anglers);
       renderCheckinBody();
@@ -4170,7 +4170,7 @@ function myAnglerIds(anglers){
 // check-in, manage and the livewell all inherit it rather than each remembering
 // to. It speaks last because it outranks everything else the note can say:
 // whose entry this is does not matter if nothing can be written at all.
-async function populateAnglerSelect(selectId, noteId){
+async function populateAnglerSelect(selectId, noteId?){
   const anglers = await fillAnglerSelect(selectId, noteId);
   if(noteId && identitySettledMissing()) setText(noteId, identityBlockedText('anything filed here'));
   return anglers;
@@ -4353,16 +4353,16 @@ function renderSpeciesOptions(){
   if(!sel) return;
   // Leaving it focused-and-empty would strand the angler with no species to
   // pick, so the focus guard only protects a list that already exists.
-  if(sel.options.length && document.activeElement === sel) return;
+  if((sel as HTMLSelectElement).options.length && document.activeElement === sel) return;
   const names = scoringSpecies();
-  const keep = sel.value;
+  const keep = (sel as ValueElement).value;
   sel.innerHTML =
     names.map(n=> '<option value="'+escapeHtml(n)+'">'+escapeHtml(n)+'</option>').join('')+
     '<option value="'+OTHER_SPECIES+'">Other (not scored)</option>';
   // Hold the angler's choice across a repaint, but never leave them pointed at
   // a species this event no longer scores.
-  if(keep === OTHER_SPECIES || names.indexOf(keep) !== -1) sel.value = keep;
-  else sel.value = names.length ? names[0] : OTHER_SPECIES;
+  if(keep === OTHER_SPECIES || names.indexOf(keep) !== -1) (sel as ValueElement).value = keep;
+  else (sel as ValueElement).value = names.length ? names[0] : OTHER_SPECIES;
 }
 
 // Which species the angler is filing this catch as. Falls back to the scoring
@@ -4371,7 +4371,7 @@ function renderSpeciesOptions(){
 // "not the target species" and hide the board guide entirely.
 function submittedSpecies(){
   const sel = document.getElementById('sub-species');
-  return (sel && sel.value) || targetSpecies();
+  return (sel && (sel as ValueElement).value) || targetSpecies();
 }
 
 function updateGuide(){
@@ -4401,7 +4401,7 @@ function updateGuideCodes(){
   const box = document.getElementById('vf-codes');
   if(!box) return;
   const sel = document.getElementById('sub-angler');
-  const a = sel && sel.value ? anglerById(sel.value) : null;
+  const a = sel && (sel as ValueElement).value ? anglerById((sel as ValueElement).value) : null;
   if(!a || !a.anglerCode){ box.style.display = 'none'; box.innerHTML = ''; return; }
   box.innerHTML =
     (a.teamCode ? '<span>TEAM <b>'+escapeHtml(a.teamCode)+'</b></span>' : '') +
@@ -4415,7 +4415,7 @@ async function renderFilingNotice(){
   const el = document.getElementById('sub-filing-note');
   if(!el) return;
   const sel = document.getElementById('sub-angler');
-  const text = filingNotice(sel ? sel.value : '', await loadAnglers());
+  const text = filingNotice(sel ? (sel as ValueElement).value : '', await loadAnglers());
   el.textContent = text;
   el.style.display = text ? 'block' : 'none';
 }
@@ -4425,7 +4425,7 @@ async function startCamera(){
   errEl.style.display='none';
   try{
     camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-    document.getElementById('vf-video').srcObject = camStream;
+    (document.getElementById('vf-video') as HTMLVideoElement).srcObject = camStream;
     document.getElementById('vf-wrap').style.display='block';
     document.getElementById('vf-controls-idle').style.display='none';
     document.getElementById('vf-controls-live').style.display='flex';
@@ -4506,7 +4506,7 @@ function cancelCountdown(){
 
 function sampleFrame(){
   const video = document.getElementById('vf-video');
-  if(!video || !video.videoWidth) return;
+  if(!video || !(video as HTMLVideoElement).videoWidth) return;
 
   const w = 64, h = 64;
   const grey = greyscaleFrom(video, w, h);
@@ -4543,7 +4543,7 @@ function sampleFrame(){
   else if(sharpness < AUTOCAP_SHARP_MIN) problem = 'Focusing…';
 
   const els = autoEls();
-  const autoOn = document.getElementById('vf-auto-on').checked;
+  const autoOn = (document.getElementById('vf-auto-on') as HTMLInputElement).checked;
 
   if(problem){
     autoGoodStreak = 0;
@@ -4569,7 +4569,7 @@ function beginCountdown(){
   const els = autoEls();
   autoCountdown = AUTOCAP_COUNTDOWN;
   els.count.style.display = 'flex';
-  els.num.textContent = autoCountdown;
+  els.num.textContent = String(autoCountdown);
   els.text.textContent = 'Capturing…';
   autoCountdownTimer = setInterval(()=>{
     autoCountdown--;
@@ -4577,24 +4577,24 @@ function beginCountdown(){
       cancelCountdown();
       capturePhoto();
     } else {
-      els.num.textContent = autoCountdown;
+      els.num.textContent = String(autoCountdown);
     }
   }, 700);
 }
 
 function capturePhoto(){
   const video = document.getElementById('vf-video');
-  if(!video || !video.videoWidth) return;
-  capturedPhotoDims = { width: video.videoWidth, height: video.videoHeight };
+  if(!video || !(video as HTMLVideoElement).videoWidth) return;
+  capturedPhotoDims = { width: (video as HTMLVideoElement).videoWidth, height: (video as HTMLVideoElement).videoHeight };
   // Stamped at the moment the shutter fires, not at submit. An angler who
   // photographs a fish and files it twenty minutes later has a stamp that says
   // when the fish was on the board, which is the question that matters.
   capturedPhotoStamp = photoStamp(PHOTO_SOURCE_CAMERA);
-  capturedPhotoData = encodeToBudget(video, video.videoWidth, video.videoHeight,
+  capturedPhotoData = encodeToBudget(video, (video as HTMLVideoElement).videoWidth, (video as HTMLVideoElement).videoHeight,
                                      capturedPhotoStamp);
 
   stopAutoCapture();
-  document.getElementById('vf-preview-img').src = capturedPhotoData;
+  (document.getElementById('vf-preview-img') as HTMLImageElement).src = capturedPhotoData;
   document.getElementById('vf-preview').style.display='block';
   document.getElementById('vf-wrap').style.display='none';
   document.getElementById('vf-controls-live').style.display='none';
@@ -4634,9 +4634,9 @@ bindEl('sub-photo','change', (e)=>{
 
 bindEl('sub-submit','click', async ()=>{
   const errEl = document.getElementById('sub-err');
-  const anglerId = document.getElementById('sub-angler').value;
-  const length = parseFloat(document.getElementById('sub-length').value);
-  const species = document.getElementById('sub-species').value;
+  const anglerId = (document.getElementById('sub-angler') as ValueElement).value;
+  const length = parseFloat((document.getElementById('sub-length') as ValueElement).value);
+  const species = (document.getElementById('sub-species') as ValueElement).value;
   const fileInput = document.getElementById('sub-photo');
   const submitBtn = document.getElementById('sub-submit');
   const fail = (msg)=>{ errEl.textContent = msg; errEl.style.display='block'; };
@@ -4646,7 +4646,7 @@ bindEl('sub-submit','click', async ()=>{
   // try, because the roster this screen was painted from can be minutes old.
   if(!anglerId){ fail('Select the angler this catch belongs to.'); return; }
   if(!length || length<=0){ fail('Enter a valid length in inches.'); return; }
-  if(!capturedPhotoData && !fileInput.files[0]){ fail('Capture or upload a photo on an approved bump board.'); return; }
+  if(!capturedPhotoData && !(fileInput as HTMLInputElement).files[0]){ fail('Capture or upload a photo on an approved bump board.'); return; }
 
   // Checked BEFORE the button is disabled and the photo is prepared, so an
   // angler hears the truth while the fish is still on the board rather than
@@ -4658,7 +4658,7 @@ bindEl('sub-submit','click', async ()=>{
   // Everything past here runs behind a disabled button, so it all has to sit
   // in a try/finally. A throw anywhere in the middle used to leave the button
   // dead and mislabelled until the angler reloaded the page.
-  submitBtn.disabled = true;
+  (submitBtn as DisableableElement).disabled = true;
   try{
     const anglers = await loadAnglers();
     // The roster as it is NOW, not as it was when this screen was painted.
@@ -4669,13 +4669,13 @@ bindEl('sub-submit','click', async ()=>{
     let srcWidth = capturedPhotoDims.width, srcHeight = capturedPhotoDims.height;
     let stamp = capturedPhotoStamp;
 
-    if(!photoData && fileInput.files[0]){
+    if(!photoData && (fileInput as HTMLInputElement).files[0]){
       submitBtn.textContent = 'Preparing photo…';
       try{
         // A file off the camera roll could have been shot at any time, so its
         // stamp reads as the time of submission and says so on the photo.
         stamp = photoStamp(PHOTO_SOURCE_UPLOAD);
-        const resized = await resizeImage(fileInput.files[0], stamp);
+        const resized = await resizeImage((fileInput as HTMLInputElement).files[0], stamp);
         photoData = resized.dataUrl;
         srcWidth = resized.srcWidth;
         srcHeight = resized.srcHeight;
@@ -4752,13 +4752,13 @@ bindEl('sub-submit','click', async ()=>{
     // runs after and its failure is swallowed rather than reported as a failed
     // submission.
     const announce = document.getElementById('sub-announce');
-    if(!announce || announce.checked) await announceCatch(catchId, angler);
+    if(!announce || (announce as HTMLInputElement).checked) await announceCatch(catchId, angler);
     // The catch already carries a fix, so the director's position view stays
     // current without ever waking the GPS on its own.
     if(catchLocation) await publishSignal(catchLocation);
 
-    document.getElementById('sub-length').value='';
-    fileInput.value='';
+    (document.getElementById('sub-length') as ValueElement).value='';
+    (fileInput as ValueElement).value='';
     capturedPhotoData = null;
     capturedPhotoDims = { width: 0, height: 0 };
     capturedPhotoStamp = null;
@@ -4768,7 +4768,7 @@ bindEl('sub-submit','click', async ()=>{
     console.error(e);
     fail('Something went wrong submitting this catch. Try again.');
   }finally{
-    submitBtn.disabled = false;
+    (submitBtn as DisableableElement).disabled = false;
     submitBtn.textContent = 'Submit catch for scoring';
   }
 });
@@ -4781,7 +4781,7 @@ async function renderManageScreen(){
 bindEl('man-angler','change', renderManageList);
 
 async function renderManageList(){
-  const anglerId = document.getElementById('man-angler').value;
+  const anglerId = (document.getElementById('man-angler') as ValueElement).value;
   const el = document.getElementById('man-list');
   // No entry signed in on this device: the picker is empty, so there is nothing
   // to list and nothing this device may edit.
@@ -4833,11 +4833,11 @@ async function renderManageList(){
   el.querySelectorAll('[data-act="savelen"]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       setText('man-err', '');
-      const input = el.querySelector('.edit-len[data-id="'+btn.dataset.id+'"]');
-      const newLen = parseFloat(input.value);
+      const input = el.querySelector('.edit-len[data-id="'+(btn as HTMLElement).dataset.id+'"]');
+      const newLen = parseFloat((input as ValueElement).value);
       if(!newLen || newLen<=0) return;
       const catches = await loadCatches();
-      const idx = stillEditable(catches, await loadAnglers(), btn.dataset.id);
+      const idx = stillEditable(catches, await loadAnglers(), (btn as HTMLElement).dataset.id);
       if(idx === -1){ renderManageList(); return; }
       catches[idx].length = newLen;
       await saveCatches(catches);
@@ -4848,7 +4848,7 @@ async function renderManageList(){
     btn.addEventListener('click', async ()=>{
       setText('man-err', '');
       const catches = await loadCatches();
-      const idx = stillEditable(catches, await loadAnglers(), btn.dataset.id);
+      const idx = stillEditable(catches, await loadAnglers(), (btn as HTMLElement).dataset.id);
       if(idx === -1){ renderManageList(); return; }
       if(!window.confirm('Withdraw this catch? It is removed along with its photo, and cannot be brought back.')) return;
       catches.splice(idx,1);
@@ -4866,7 +4866,7 @@ async function renderLivewell(){
 bindEl('lw-angler','change', renderLivewellList);
 
 async function renderLivewellList(){
-  const anglerId = document.getElementById('lw-angler').value;
+  const anglerId = (document.getElementById('lw-angler') as ValueElement).value;
   const el = document.getElementById('lw-list');
   if(!anglerId){
     el.innerHTML = '<p class="empty">Sign in to your entry to see your livewell.</p>';
@@ -4895,7 +4895,7 @@ async function renderLivewellList(){
 //
 // Each item says what is missing, what it costs to leave it, and the date it
 // stops being possible to fix cheaply.
-function setupTodos(evt, anglers, now){
+function setupTodos(evt, anglers, now?){
   const at = now === undefined ? Date.now() : now;
   const out = [];
   const closeMs = new Date((evt && evt.registrationClose) || 0).getTime();
@@ -5541,12 +5541,12 @@ function reelRows(catches, anglers, myIds){
 // because the TIMING is the part worth checking: a scene of zero length is a
 // frame nobody sees, and a reel that runs long gets cut off by the app it is
 // posted to rather than by us.
-function reelPlan(rows, opts){
+function reelPlan(rows, opts?){
   const o = opts || {};
   const max = o.maxShots === undefined ? REEL_MAX_SHOTS : o.maxShots;
   const all = (rows || []).filter(Boolean);
   const shots = all.slice(0, Math.max(0, max));
-  const scenes = [{ kind:'title', ms: REEL_TITLE_MS }];
+  const scenes: ReelScene[] = [{ kind:'title', ms: REEL_TITLE_MS }];
   shots.forEach(row=> scenes.push({ kind:'shot', ms: REEL_SHOT_MS, row: row }));
   scenes.push({ kind:'end', ms: REEL_END_MS });
   return {
@@ -5649,7 +5649,7 @@ function reelCover(ctx, img, w, h){
   const dw = img.width * scale, dh = img.height * scale;
   ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
 }
-function reelText(ctx, text, x, y, font, colour, align){
+function reelText(ctx, text, x, y, font, colour, align?){
   ctx.font = font;
   ctx.fillStyle = colour;
   ctx.textAlign = align || 'left';
@@ -5739,7 +5739,7 @@ async function buildHighlightReel(rows, meta, onProgress){
     const now = ()=> (typeof performance !== 'undefined' ? performance.now() : Date.now()) - started;
     // Painted against the CLOCK rather than a frame count, so a dropped frame
     // shortens nothing - the reel is the length it says it is.
-    await new Promise((resolve)=>{
+    await new Promise<void>((resolve)=>{
       const step = ()=>{
         const t = now();
         if(t >= plan.totalMs){ resolve(); return; }
@@ -5836,10 +5836,10 @@ async function renderReelCard(rows){
   if(!reelSupported()){
     setText('reel-intro', 'This browser cannot record video. Safari on iPhone and ' +
       'Chrome on Android both can \u2014 open the app there and the button appears.');
-    if(btn) btn.disabled = true;
+    if(btn) (btn as DisableableElement).disabled = true;
     return;
   }
-  if(btn) btn.disabled = false;
+  if(btn) (btn as DisableableElement).disabled = false;
   const plan = reelPlan(mine);
   const secs = Math.round(plan.totalMs / 1000);
   setText('reel-intro',
@@ -5857,7 +5857,7 @@ bindEl('reel-build','click', async ()=>{
   const rows = reelRows(await loadCatches(), anglers, mineIds);
   if(rows.length === 0){ reelSay('Nothing approved yet.'); return; }
 
-  if(btn){ btn.disabled = true; btn.textContent = 'Working\u2026'; }
+  if(btn){ (btn as DisableableElement).disabled = true; btn.textContent = 'Working\u2026'; }
   if(result) result.hidden = true;
   try{
     const evt = activeEvent();
@@ -5873,7 +5873,7 @@ bindEl('reel-build','click', async ()=>{
     if(reelBlobUrl) URL.revokeObjectURL(reelBlobUrl);
     reelBlobUrl = URL.createObjectURL(out.blob);
     reelFile = reelFileName(evt, meta.handle, reelFileExt(out.mime));
-    const video = document.getElementById('reel-video');
+    const video = document.getElementById('reel-video') as HTMLVideoElement | null;
     if(video) video.src = reelBlobUrl;
     if(result) result.hidden = false;
     setText('reel-savehint', 'On an iPhone, press and hold the video and choose Save ' +
@@ -5884,7 +5884,7 @@ bindEl('reel-build','click', async ()=>{
     console.error(e);
     reelSay((e && e.message) || 'That did not work. Try again with a signal.');
   } finally {
-    if(btn){ btn.disabled = false; btn.textContent = 'Make my highlight reel'; }
+    if(btn){ (btn as DisableableElement).disabled = false; btn.textContent = 'Make my highlight reel'; }
   }
 });
 
@@ -5899,7 +5899,7 @@ document.querySelectorAll('.divtabs button').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     document.querySelectorAll('.divtabs button').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
-    currentDiv = btn.dataset.div;
+    currentDiv = (btn as HTMLElement).dataset.div;
     renderLeaderboard();
   });
 });
@@ -5942,7 +5942,7 @@ function bySmallestThenEarliest(a, b){
 // Shared ranking used by BOTH the public leaderboard and the director's
 // contestant view, so "current standing" can never drift between the two.
 // Disqualified anglers are excluded here, which removes them everywhere at once.
-function standingsFor(division, catches, anglers, target){
+function standingsFor(division, catches, anglers, target?){
   const anglerById = {};
   anglers.forEach(a=>{ anglerById[a.id] = a; });
 
@@ -6147,7 +6147,7 @@ function compassFrom(from, to){
 // Records where this device is, against its own angler row. Best-effort by
 // design: every caller has already done its real job by the time this runs, so
 // a failure here must never surface as that job failing.
-async function publishSignal(pos, opts){
+async function publishSignal(pos, opts?){
   try{
     const o = opts || {};
     const anglers = await loadAnglers();
@@ -6350,13 +6350,13 @@ async function renderChat(){
 
   const input = document.getElementById('chat-input');
   const send = document.getElementById('chat-send');
-  if(input) input.disabled = !me;
+  if(input) (input as DisableableElement).disabled = !me;
   if(send){
-    send.disabled = !me;
+    (send as DisableableElement).disabled = !me;
     send.textContent = chatReplyTo ? 'Reply' : 'Post';
   }
-  if(input && !me) input.placeholder = 'Register to join the chat';
-  else if(input) input.placeholder = chatReplyTo ? 'Your reply…' : 'Say something to the field…';
+  if(input && !me) (input as PlaceholderElement).placeholder = 'Register to join the chat';
+  else if(input) (input as PlaceholderElement).placeholder = chatReplyTo ? 'Your reply…' : 'Say something to the field…';
 
   const ctx = {
     anglerById: {},
@@ -6391,8 +6391,8 @@ async function renderChat(){
 function wireChatActions(){
   document.querySelectorAll('#chat-feed [data-chat-act]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
-      const id = btn.dataset.chatId;
-      if(btn.dataset.chatAct === 'reply'){
+      const id = (btn as HTMLElement).dataset.chatId;
+      if((btn as HTMLElement).dataset.chatAct === 'reply'){
         chatReplyTo = id;
         renderChat();
         const input = document.getElementById('chat-input');
@@ -6423,7 +6423,7 @@ function wireChatActions(){
 
 bindEl('chat-input','input', ()=>{
   const input = document.getElementById('chat-input');
-  const left = CHAT_MAX - (input.value || '').length;
+  const left = CHAT_MAX - ((input as ValueElement).value || '').length;
   setText('chat-remaining', left <= 40 ? left + ' left' : '');
 });
 
@@ -6431,7 +6431,7 @@ bindEl('chat-send','click', async ()=>{
   const errEl = document.getElementById('chat-err');
   errEl.style.display = 'none';
   const input = document.getElementById('chat-input');
-  const text = (input.value || '').trim();
+  const text = ((input as ValueElement).value || '').trim();
   if(!text) return;
   if(text.length > CHAT_MAX){
     errEl.textContent = 'That is longer than ' + CHAT_MAX + ' characters.';
@@ -6460,7 +6460,7 @@ bindEl('chat-send','click', async ()=>{
     errEl.style.display = 'block';
     return;
   }
-  input.value = '';
+  (input as ValueElement).value = '';
   setText('chat-remaining', '');
   chatReplyTo = null;
   renderChat();
@@ -6629,8 +6629,8 @@ async function renderBets(){
 function wireBetActions(){
   document.querySelectorAll('#bet-list [data-bet-act]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
-      const id = btn.dataset.betId;
-      const act = btn.dataset.betAct;
+      const id = (btn as HTMLElement).dataset.betId;
+      const act = (btn as HTMLElement).dataset.betAct;
       const rows = await loadBets();
       const anglers = await loadAnglers();
       const me = chatAuthor(anglers);
@@ -6684,9 +6684,9 @@ bindEl('bet-create','click', async ()=>{
   const fail = (msg)=>{ errEl.textContent = msg; errEl.style.display = 'block'; };
   errEl.style.display = 'none';
 
-  const title = (document.getElementById('bet-title').value || '').trim();
-  const stake = (document.getElementById('bet-stake').value || '').trim();
-  const scoring = document.getElementById('bet-kind').value;
+  const title = ((document.getElementById('bet-title') as ValueElement).value || '').trim();
+  const stake = ((document.getElementById('bet-stake') as ValueElement).value || '').trim();
+  const scoring = (document.getElementById('bet-kind') as ValueElement).value;
   if(!title) return fail('Say what the bet is.');
   if(title.length > BET_TITLE_MAX) return fail('Keep the title under ' + BET_TITLE_MAX + ' characters.');
   if(stake.length > BET_STAKE_MAX) return fail('Keep the stake under ' + BET_STAKE_MAX + ' characters.');
@@ -6716,8 +6716,8 @@ bindEl('bet-create','click', async ()=>{
   rows.push({ id: uid(), kind:'join', betId, anglerId: me.id, timestamp: Date.now() });
   if(!await saveBets(rows)) return fail('That did not save. Check your signal — it will retry.');
 
-  document.getElementById('bet-title').value = '';
-  document.getElementById('bet-stake').value = '';
+  (document.getElementById('bet-title') as ValueElement).value = '';
+  (document.getElementById('bet-stake') as ValueElement).value = '';
   renderBets();
 });
 
@@ -6730,7 +6730,7 @@ let activeAdminTool = 'review';
 function showAdminTool(name){
   activeAdminTool = name;
   document.querySelectorAll('[data-admin-tool]').forEach(btn=>{
-    btn.classList.toggle('active', btn.dataset.adminTool===name);
+    btn.classList.toggle('active', (btn as HTMLElement).dataset.adminTool===name);
   });
   ['gps','payout','contestants','event','positions','report','review','results'].forEach(tool=>{
     document.getElementById('admin-tool-'+tool).style.display = tool===name ? 'block' : 'none';
@@ -6743,11 +6743,11 @@ function showAdminTool(name){
 }
 
 document.querySelectorAll('[data-admin-tool]').forEach(btn=>{
-  btn.addEventListener('click', ()=>showAdminTool(btn.dataset.adminTool));
+  btn.addEventListener('click', ()=>showAdminTool((btn as HTMLElement).dataset.adminTool));
 });
 
 function tryAdminUnlock(){
-  const val = document.getElementById('admin-pass').value;
+  const val = (document.getElementById('admin-pass') as ValueElement).value;
   const errEl = document.getElementById('admin-err');
   // An empty ADMIN_PASS would otherwise let an empty box straight in.
   if(!ADMIN_PASS){
@@ -6758,7 +6758,7 @@ function tryAdminUnlock(){
   if(val === ADMIN_PASS){
     adminUnlocked = true;
     errEl.style.display='none';
-    document.getElementById('admin-pass').value = '';
+    (document.getElementById('admin-pass') as ValueElement).value = '';
     document.getElementById('admin-lock-card').style.display='none';
     document.getElementById('admin-panel').style.display='block';
     showAdminTool(activeAdminTool);
@@ -6909,7 +6909,7 @@ async function renderBeacons(){
   const noteField = document.getElementById('beacon-note-field');
   if(raiseBtn){
     raiseBtn.style.display = mineRaised ? 'none' : 'block';
-    raiseBtn.disabled = !me;
+    (raiseBtn as DisableableElement).disabled = !me;
     raiseBtn.textContent = me ? 'Raise a beacon' : 'Register on this device first';
   }
   if(standBtn) standBtn.style.display = mineRaised ? 'block' : 'none';
@@ -6954,7 +6954,7 @@ bindEl('beacon-raise','click', async (e)=>{
   const btn = e.currentTarget;
   const errEl = document.getElementById('beacon-err');
   errEl.style.display = 'none';
-  const note = (document.getElementById('beacon-note').value || '').trim();
+  const note = ((document.getElementById('beacon-note') as ValueElement).value || '').trim();
   // Deliberately a confirm: this goes to everyone on the water, and a pocket
   // press should not be able to do that.
   if(!window.confirm('Raise a beacon?\n\nYour position goes to the tournament director and to every other angler on the water, and refreshes about every minute while this page stays open. It keeps going until you stand it down.')) return;
@@ -6970,7 +6970,7 @@ bindEl('beacon-raise','click', async (e)=>{
       errEl.textContent = 'The beacon could not be sent. It is queued and will go out when you have signal — get to safety and try again.';
       errEl.style.display = 'block';
     }
-    document.getElementById('beacon-note').value = '';
+    (document.getElementById('beacon-note') as ValueElement).value = '';
     await renderPublicGps();
   }catch(err){
     // No fix means no beacon. Say so plainly rather than raising one that
@@ -7174,7 +7174,7 @@ const FWP_DEADLINE_DAYS = 30;
 
 // Per-event, in the shared config, so the half-finished form is on every one of
 // the director's devices rather than the one they started it on.
-function reportSettings(id){
+function reportSettings(id?){
   const all = (liveCache.config && liveCache.config.fwpReports) || {};
   return Object.assign({}, all[id || activeEventId()] || {});
 }
@@ -7384,7 +7384,7 @@ function reportDueDate(evt){
   if(isNaN(last.getTime())) return null;
   return new Date(last.getTime() + FWP_DEADLINE_DAYS * 86400000);
 }
-function reportDueText(evt, now){
+function reportDueText(evt, now?){
   const due = reportDueDate(evt);
   if(!due) return 'This event has no dates set, so there is no deadline to count from.';
   // Formatted in UTC to match the bare YYYY-MM-DD it was built from - see
@@ -7449,7 +7449,7 @@ function clockToMinutes(hhmm){
 // One day's row. A saved override beats the check-in times, and the total is
 // always recomputed from whichever pair is in force - a corrected stop time
 // sitting next to a stale total is worse than no total at all.
-function reportDayRow(day, settings){
+function reportDayRow(day, settings): ReportDayRow {
   const saved = ((settings || {}).hours || {})[day.dayKey] || {};
   const start = saved.start || reportClockText(day.start);
   const stop  = saved.stop  || reportClockText(day.stop);
@@ -7560,14 +7560,14 @@ function fillReportInputs(cfg, anglerCount){
   document.querySelectorAll('#admin-tool-report [data-fwp]').forEach(el=>{
     // reportValue() rather than `|| ''`, so a saved zero reaches the box as a
     // zero instead of being wiped by its own falsiness.
-    el.value = reportValue(values[el.dataset.fwp]);
+    (el as ValueElement).value = reportValue(values[(el as HTMLElement).dataset.fwp]);
   });
   // Boats is the one field left showing its default as a PLACEHOLDER. It is
   // derived from the roster rather than carried, so writing it in would freeze
   // a number that should keep following the roster until the director
   // deliberately overrides it.
   const boats = document.getElementById('report-boats');
-  if(boats && !reportValue(values.boats)) boats.placeholder = String(anglerCount || 0);
+  if(boats && !reportValue(values.boats)) (boats as PlaceholderElement).placeholder = String(anglerCount || 0);
 }
 
 function renderReportHours(days, cfg){
@@ -7659,7 +7659,7 @@ function sheetValue(v, blank){
   const s = reportValue(v).trim();
   return s === '' ? [blank || SHEET_BLANK, true] : [s, false];
 }
-function fwpValue(v, blank){
+function fwpValue(v, blank?){
   const [text, missing] = sheetValue(v, blank);
   return missing ? '<span class="rblank">' + escapeHtml(text) + '</span>' : escapeHtml(text);
 }
@@ -7678,7 +7678,7 @@ function fwpTick(actual, option){
   const on = String(actual || '').toLowerCase() === option.toLowerCase();
   return '<span class="fwp-box">' + (on ? 'X' : '&nbsp;') + '</span> ' + escapeHtml(option);
 }
-function fwpFill(v, blank){
+function fwpFill(v, blank?){
   return '<span class="fwp-fill">' + fwpValue(v, blank) + '</span>';
 }
 
@@ -8171,7 +8171,7 @@ async function renderPayoutCalculator(){
 
   const budgetInput = document.getElementById('awards-budget');
   if(budgetInput && document.activeElement !== budgetInput){
-    budgetInput.value = awardsBudget ? awardsBudget.toFixed(2) : '';
+    (budgetInput as ValueElement).value = awardsBudget ? awardsBudget.toFixed(2) : '';
   }
   const budgetSummaryEl = document.getElementById('awards-budget-summary');
   if(budgetSummaryEl){
@@ -8255,7 +8255,7 @@ function renderDonationList(donations){
 
   el.querySelectorAll('[data-act="edit-donation"]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
-      editingDonationId = btn.dataset.id;
+      editingDonationId = (btn as HTMLElement).dataset.id;
       renderPayoutCalculator();
     });
   });
@@ -8263,23 +8263,23 @@ function renderDonationList(donations){
     btn.addEventListener('click', async ()=>{
       if(!window.confirm('Remove this donation? This cannot be undone.')) return;
       const list = await loadDonations();
-      const idx = list.findIndex(d=>d.id===btn.dataset.id);
+      const idx = list.findIndex(d=>d.id===(btn as HTMLElement).dataset.id);
       if(idx===-1) return;
       list.splice(idx,1);
       await saveDonations(list);
-      if(editingDonationId===btn.dataset.id) editingDonationId = null;
+      if(editingDonationId===(btn as HTMLElement).dataset.id) editingDonationId = null;
       renderPayoutCalculator();
     });
   });
   el.querySelectorAll('[data-act="save-donation"]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       const row = btn.closest('.lbrow');
-      const target = row.querySelector('[data-field="target"]').value;
-      const amount = parseFloat(row.querySelector('[data-field="amount"]').value);
-      const note = row.querySelector('[data-field="note"]').value.trim();
+      const target = (row.querySelector('[data-field="target"]') as ValueElement).value;
+      const amount = parseFloat((row.querySelector('[data-field="amount"]') as ValueElement).value);
+      const note = (row.querySelector('[data-field="note"]') as ValueElement).value.trim();
       if(!amount || amount<=0){ window.alert('Enter a donation amount greater than $0.'); return; }
       const list = await loadDonations();
-      const idx = list.findIndex(d=>d.id===btn.dataset.id);
+      const idx = list.findIndex(d=>d.id===(btn as HTMLElement).dataset.id);
       if(idx===-1) return;
       list[idx] = { ...list[idx], target, amount, note };
       await saveDonations(list);
@@ -8318,9 +8318,9 @@ bindEl('awards-budget','change', async (e)=>{
 
 bindEl('don-add','click', async ()=>{
   const errEl = document.getElementById('don-err');
-  const target = document.getElementById('don-target').value;
-  const amount = parseFloat(document.getElementById('don-amount').value);
-  const note = document.getElementById('don-note').value.trim();
+  const target = (document.getElementById('don-target') as ValueElement).value;
+  const amount = parseFloat((document.getElementById('don-amount') as ValueElement).value);
+  const note = (document.getElementById('don-note') as ValueElement).value.trim();
 
   if(!amount || amount<=0){ errEl.textContent='Enter a donation amount greater than $0.'; errEl.style.display='block'; return; }
   errEl.style.display='none';
@@ -8329,8 +8329,8 @@ bindEl('don-add','click', async ()=>{
   donations.push({ id: uid(), target, amount, note, timestamp: Date.now() });
   await saveDonations(donations);
 
-  document.getElementById('don-amount').value='';
-  document.getElementById('don-note').value='';
+  (document.getElementById('don-amount') as ValueElement).value='';
+  (document.getElementById('don-note') as ValueElement).value='';
   renderPayoutCalculator();
 });
 
@@ -8413,7 +8413,7 @@ function renderEventAdmin(){
 bindEl('event-apply','click', async ()=>{
   const errEl = document.getElementById('event-err');
   errEl.style.display = 'none';
-  const id = document.getElementById('event-select').value;
+  const id = (document.getElementById('event-select') as ValueElement).value;
   const evt = eventById(id);
   if(!evt){
     errEl.textContent = 'That event is not one this build knows about.';
@@ -8504,11 +8504,11 @@ function speciesPreset(name){
 function chosenSpeciesName(){
   const sel = document.getElementById('species-select');
   if(!sel) return '';
-  if(sel.value === SPECIES_CUSTOM){
+  if((sel as ValueElement).value === SPECIES_CUSTOM){
     const el = document.getElementById('species-name');
-    return el ? el.value.trim() : '';
+    return el ? (el as ValueElement).value.trim() : '';
   }
-  return sel.value;
+  return (sel as ValueElement).value;
 }
 
 // The list this event scores, each with its ceiling and a way to take it off.
@@ -8538,7 +8538,7 @@ function renderSpeciesAdmin(){
   if(listEl){
     listEl.innerHTML = speciesRowsHtml(speciesList(s));
     listEl.querySelectorAll('[data-sp-remove]').forEach(btn=>{
-      btn.addEventListener('click', ()=> removeScoringSpecies(btn.dataset.spRemove));
+      btn.addEventListener('click', ()=> removeScoringSpecies((btn as HTMLElement).dataset.spRemove));
     });
   }
   if(!sel) return;
@@ -8557,7 +8557,7 @@ function renderSpeciesAdmin(){
   // This picker is now an ADD control rather than a mirror of what is saved, so
   // it is left exactly where the director put it. Repainting it from the event
   // would wipe a half-finished entry every time the store ticked.
-  const custom = sel.value === SPECIES_CUSTOM;
+  const custom = (sel as ValueElement).value === SPECIES_CUSTOM;
   document.getElementById('species-custom-field').style.display = custom ? 'block' : 'none';
 }
 
@@ -8603,7 +8603,7 @@ async function saveSpeciesList(list){
 
 bindEl('species-select','change', ()=>{
   const sel = document.getElementById('species-select');
-  const custom = sel.value === SPECIES_CUSTOM;
+  const custom = (sel as ValueElement).value === SPECIES_CUSTOM;
   document.getElementById('species-custom-field').style.display = custom ? 'block' : 'none';
   if(custom){
     document.getElementById('species-name').focus();
@@ -8611,15 +8611,15 @@ bindEl('species-select','change', ()=>{
   }
   // Fill in the ceiling for the species just picked. It stays editable - this
   // is the number a director is least likely to know off the top of their head.
-  const preset = speciesPreset(sel.value);
-  if(preset) document.getElementById('species-record').value = String(preset.inches);
+  const preset = speciesPreset((sel as ValueElement).value);
+  if(preset) (document.getElementById('species-record') as ValueElement).value = String(preset.inches);
 });
 
 bindEl('species-save','click', async ()=>{
   const errEl = document.getElementById('species-err');
   errEl.style.display = 'none';
   const name = chosenSpeciesName();
-  const rec = parseFloat(document.getElementById('species-record').value);
+  const rec = parseFloat((document.getElementById('species-record') as ValueElement).value);
   if(!name){
     errEl.textContent = 'Pick a species, or choose "Other" and type one in — this is what anglers see when they submit.';
     errEl.style.display = 'block';
@@ -8656,9 +8656,9 @@ bindEl('species-save','click', async ()=>{
   }
   // Clear the ADD form, or the next species is entered on top of the last one.
   const nameEl = document.getElementById('species-name');
-  if(nameEl) nameEl.value = '';
+  if(nameEl) (nameEl as ValueElement).value = '';
   const recBox = document.getElementById('species-record');
-  if(recBox) recBox.value = '';
+  if(recBox) (recBox as ValueElement).value = '';
   refreshActiveScreen();
 });
 
@@ -8740,7 +8740,7 @@ function renderEventForm(){
 
   const fill = (id, value)=>{
     const el = document.getElementById(id);
-    if(el && document.activeElement !== el) el.value = value;
+    if(el && document.activeElement !== el) (el as ValueElement).value = value;
   };
   if(editing){
     const s = eventSettings(editing.id);
@@ -8750,7 +8750,7 @@ function renderEventForm(){
     fill('ev-tz', editing.timeZone || '');
     fill('ev-regclose', registrationCloseToDate(editing.registrationClose, editing.timeZone));
     fill('ev-course', stripEntities(editing.courseLabel || ''));
-    if(sp && document.activeElement !== sp && speciesPreset(s.targetSpecies)) sp.value = s.targetSpecies;
+    if(sp && document.activeElement !== sp && speciesPreset(s.targetSpecies)) (sp as ValueElement).value = s.targetSpecies;
   }
 }
 
@@ -8785,10 +8785,10 @@ function resetEventForm(){
   evEditing = null;
   ['ev-name','ev-prefix','ev-dates','ev-tz','ev-regclose','ev-course'].forEach(id=>{
     const el = document.getElementById(id);
-    if(el) el.value = '';
+    if(el) (el as ValueElement).value = '';
   });
   const copy = document.getElementById('ev-copy-course');
-  if(copy) copy.checked = true;
+  if(copy) (copy as HTMLInputElement).checked = true;
   document.getElementById('ev-err').style.display = 'none';
   renderEventForm();
 }
@@ -8800,13 +8800,13 @@ bindEl('ev-save','click', async ()=>{
   const fail = (msg)=>{ errEl.textContent = msg; errEl.style.display = 'block'; };
   errEl.style.display = 'none';
 
-  const name = document.getElementById('ev-name').value.trim();
-  const prefix = document.getElementById('ev-prefix').value.trim().toUpperCase();
-  const tz = document.getElementById('ev-tz').value.trim() || activeEvent().timeZone;
-  const courseLabel = document.getElementById('ev-course').value.trim();
-  const regClose = document.getElementById('ev-regclose').value.trim();
-  const species = document.getElementById('ev-species').value;
-  const parsed = parseDateLines(document.getElementById('ev-dates').value);
+  const name = (document.getElementById('ev-name') as ValueElement).value.trim();
+  const prefix = (document.getElementById('ev-prefix') as ValueElement).value.trim().toUpperCase();
+  const tz = (document.getElementById('ev-tz') as ValueElement).value.trim() || activeEvent().timeZone;
+  const courseLabel = (document.getElementById('ev-course') as ValueElement).value.trim();
+  const regClose = (document.getElementById('ev-regclose') as ValueElement).value.trim();
+  const species = (document.getElementById('ev-species') as ValueElement).value;
+  const parsed = parseDateLines((document.getElementById('ev-dates') as ValueElement).value);
 
   if(!name) return fail('Give the tournament a name.');
   if(!prefix) return fail('Set an entry ID prefix — this is what makes an entry ID unique across years.');
@@ -8831,7 +8831,7 @@ bindEl('ev-save','click', async ()=>{
   const closeIso = registrationCloseFromDate(regClose || dates[0], tz);
   if(!closeIso) return fail('Registration close should be a date, YYYY-MM-DD.');
 
-  const record = {
+  const record: EventRecord = {
     name,
     nameHtml: escapeHtml(name),
     presenter: (eventById(evEditing) || activeEvent()).presenter || '',
@@ -8853,7 +8853,7 @@ bindEl('ev-save','click', async ()=>{
     // Same water next year is the common case, so offer the boundary as a
     // starting point rather than making them redraw it.
     const copy = document.getElementById('ev-copy-course');
-    record.course = (copy && copy.checked)
+    record.course = (copy && (copy as HTMLInputElement).checked)
       ? deepClone(courseBoundary() || { kind:'none' })
       : { kind:'none' };
   }
@@ -8896,7 +8896,7 @@ function confirmByName(evt, verb, detail){
 // it would read another event's rows as nothing to delete. These ops are built
 // directly and the cache is trimmed to match.
 async function wipeEventData(id){
-  const doomed = {};
+  const doomed: Record<string, Set<string>> = {};
   const ops = [];
   for(const coll of SHARED_COLLECTIONS){
     const rows = allRows(coll).filter(r=> rowEventId(r) === id);
@@ -8923,8 +8923,8 @@ async function wipeEventData(id){
 function wireEventListActions(){
   document.querySelectorAll('#event-list [data-ev-act]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
-      const id = btn.dataset.evId;
-      const act = btn.dataset.evAct;
+      const id = (btn as HTMLElement).dataset.evId;
+      const act = (btn as HTMLElement).dataset.evAct;
       const evt = eventById(id);
       if(!evt) return;
 
@@ -9022,12 +9022,12 @@ const BND_HELP = {
   none:    'No boundary. Catches still record where they were taken, but nothing is judged in or out.'
 };
 
-function renderBoundaryEditor(opts){
+function renderBoundaryEditor(opts?){
   const skipInputs = !!(opts && opts.skipInputs);
   const d = ensureBndDraft();
 
   document.querySelectorAll('#bnd-modes [data-bmode]').forEach(b=>
-    b.classList.toggle('active', b.dataset.bmode === d.kind));
+    b.classList.toggle('active', (b as HTMLElement).dataset.bmode === d.kind));
   document.getElementById('bnd-circle-fields').style.display = d.kind === 'circle' ? 'block' : 'none';
   document.getElementById('bnd-poly-fields').style.display   = d.kind === 'polygon' ? 'block' : 'none';
   setText('bnd-help', BND_HELP[d.kind] || '');
@@ -9040,10 +9040,10 @@ function renderBoundaryEditor(opts){
     const lngEl = document.getElementById('bnd-lng');
     const radEl = document.getElementById('bnd-radius');
     const ptsEl = document.getElementById('bnd-points');
-    if(latEl && document.activeElement !== latEl) latEl.value = (d.center && isFinite(d.center.lat)) ? d.center.lat : '';
-    if(lngEl && document.activeElement !== lngEl) lngEl.value = (d.center && isFinite(d.center.lng)) ? d.center.lng : '';
-    if(radEl && document.activeElement !== radEl) radEl.value = d.radiusMiles || '';
-    if(ptsEl && document.activeElement !== ptsEl) ptsEl.value = formatPointLines(d.points);
+    if(latEl && document.activeElement !== latEl) (latEl as ValueElement).value = (d.center && isFinite(d.center.lat)) ? d.center.lat : '';
+    if(lngEl && document.activeElement !== lngEl) (lngEl as ValueElement).value = (d.center && isFinite(d.center.lng)) ? d.center.lng : '';
+    if(radEl && document.activeElement !== radEl) (radEl as ValueElement).value = d.radiusMiles || '';
+    if(ptsEl && document.activeElement !== ptsEl) (ptsEl as ValueElement).value = formatPointLines(d.points);
   }
 
   const saved = courseBoundary();
@@ -9176,8 +9176,8 @@ function describeBoundary(b){
 document.querySelectorAll('#bnd-modes [data-bmode]').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     const d = ensureBndDraft();
-    if(d.kind === btn.dataset.bmode) return;
-    d.kind = btn.dataset.bmode;
+    if(d.kind === (btn as HTMLElement).dataset.bmode) return;
+    d.kind = (btn as HTMLElement).dataset.bmode;
     if(d.kind === 'circle' && !(d.radiusMiles > 0)) d.radiusMiles = 1;
     if(d.kind === 'polygon' && !Array.isArray(d.points)) d.points = [];
     bndFitted = false;
@@ -9187,15 +9187,15 @@ document.querySelectorAll('#bnd-modes [data-bmode]').forEach(btn=>{
 
 ['bnd-lat','bnd-lng','bnd-radius'].forEach(id=> bindEl(id,'input', ()=>{
   const d = ensureBndDraft();
-  const lat = parseFloat(document.getElementById('bnd-lat').value);
-  const lng = parseFloat(document.getElementById('bnd-lng').value);
-  const rad = parseFloat(document.getElementById('bnd-radius').value);
+  const lat = parseFloat((document.getElementById('bnd-lat') as ValueElement).value);
+  const lng = parseFloat((document.getElementById('bnd-lng') as ValueElement).value);
+  const rad = parseFloat((document.getElementById('bnd-radius') as ValueElement).value);
   d.center = { lat, lng };
   d.radiusMiles = rad;
   renderBoundaryEditor({ skipInputs:true });
 }));
 bindEl('bnd-points','input', ()=>{
-  ensureBndDraft().points = parsePointLines(document.getElementById('bnd-points').value);
+  ensureBndDraft().points = parsePointLines((document.getElementById('bnd-points') as ValueElement).value);
   renderBoundaryEditor({ skipInputs:true });
 });
 
@@ -9536,7 +9536,7 @@ async function openLightbox(catchId, opts){
       : head + (c.timestamp ? ' &middot; ' + escapeHtml(chatWhen(c.timestamp)) : '');
   }
 
-  const img = document.getElementById('lightbox-img');
+  const img = document.getElementById('lightbox-img') as HTMLImageElement | null;
   if(img){
     img.style.display = 'none';
     setLightboxMissing(false);
@@ -9577,8 +9577,8 @@ async function openLightbox(catchId, opts){
     nav.hidden = i === -1 || lightboxSequence.length < 2;
     const prev = document.getElementById('lightbox-prev');
     const next = document.getElementById('lightbox-next');
-    if(prev) prev.disabled = i <= 0;
-    if(next) next.disabled = i === -1 || i >= lightboxSequence.length - 1;
+    if(prev) (prev as DisableableElement).disabled = i <= 0;
+    if(next) (next as DisableableElement).disabled = i === -1 || i >= lightboxSequence.length - 1;
     setText('lightbox-count', i === -1 ? '' : (i + 1) + ' of ' + lightboxSequence.length);
   }
 
@@ -9617,11 +9617,11 @@ function setLightboxMissing(missing){
   const host = document.getElementById(pair[0]);
   if(!host || !host.addEventListener) return;
   host.addEventListener('click', (e)=>{
-    const slot = e.target && e.target.closest && e.target.closest('[data-photo-for]');
+    const slot = e.target && (e.target as HTMLElement).closest && (e.target as HTMLElement).closest('[data-photo-for]');
     if(!slot) return;
     const ids = [];
-    host.querySelectorAll('[data-photo-for]').forEach(el=> ids.push(el.dataset.photoFor));
-    openLightbox(slot.dataset.photoFor, { mode: pair[1], sequence: ids });
+    host.querySelectorAll('[data-photo-for]').forEach(el=> ids.push((el as HTMLElement).dataset.photoFor));
+    openLightbox((slot as HTMLElement).dataset.photoFor, { mode: pair[1], sequence: ids });
   });
 });
 
@@ -9734,14 +9734,14 @@ async function renderAdmin(){
   // the donation buttons in the payout tool.
   document.querySelectorAll('#admin-pending [data-act], #admin-all [data-act]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
-      if(btn.dataset.act==='ai-review'){ runAiReview(btn.dataset.id, btn); return; }
-      if(btn.dataset.act==='fishi-retry'){
-        btn.disabled = true; btn.textContent = 'Checking\u2026';
+      if((btn as HTMLElement).dataset.act==='ai-review'){ runAiReview((btn as HTMLElement).dataset.id, btn); return; }
+      if((btn as HTMLElement).dataset.act==='fishi-retry'){
+        (btn as DisableableElement).disabled = true; btn.textContent = 'Checking\u2026';
         fishIStarted = true;
         initFishI().then(()=>renderAdmin());
         return;
       }
-      await reviewCatch(btn.dataset.id, btn.dataset.act);
+      await reviewCatch((btn as HTMLElement).dataset.id, (btn as HTMLElement).dataset.act);
       renderAdmin();
     });
   });
@@ -9841,7 +9841,7 @@ document.querySelectorAll('#contestant-filters button').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     document.querySelectorAll('#contestant-filters button').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
-    contestantFilter = btn.dataset.cfilter;
+    contestantFilter = (btn as HTMLElement).dataset.cfilter;
     renderContestants();
   });
 });
@@ -10130,14 +10130,14 @@ function wireContestantRows(){
                   (owed.entries === 1 ? 'entry' : 'entries') + ' as paid?\n\n' +
                   'That is $' + owed.total.toFixed(2) + ' added to the pools. ' +
                   'Only do this once the money is actually in the account.')) return;
-      btn.disabled = true;
+      (btn as DisableableElement).disabled = true;
       btn.textContent = 'Saving…';
       const anglers = await loadAnglers();
       // Absence IS paid - see feePaid(). Deleting the flag rather than setting
       // it false keeps every record in the one shape the reader expects.
       anglers.forEach(a=>{ delete a.pending; });
       if(!await saveAnglers(anglers)){
-        btn.disabled = false;
+        (btn as DisableableElement).disabled = false;
         btn.textContent = 'Could not save — try again';
         return;
       }
@@ -10148,7 +10148,7 @@ function wireContestantRows(){
   el.querySelectorAll('[data-act="assign-codes"]').forEach(btn=>{
     btn.addEventListener('click', async (e)=>{
       e.stopPropagation();
-      btn.disabled = true;
+      (btn as DisableableElement).disabled = true;
       btn.textContent = 'Issuing…';
       const anglers = await loadAnglers();
       const pool = takenCodes();
@@ -10170,7 +10170,7 @@ function wireContestantRows(){
 
   el.querySelectorAll('[data-act="c-toggle"]').forEach(node=>{
     node.addEventListener('click', ()=>{
-      const id = node.dataset.id;
+      const id = (node as HTMLElement).dataset.id;
       expandedContestantId = (expandedContestantId === id) ? null : id;
       // Never leave a confirm or an edit armed across rows.
       dqConfirmId = null;
@@ -10188,7 +10188,7 @@ function wireContestantRows(){
         editContestantId = null;
         removeContestantId = null;
         dqConfirmId = null;
-        if(onArm) onArm(btn.dataset.id);
+        if(onArm) onArm((btn as HTMLElement).dataset.id);
         renderContestants();
       });
     });
@@ -10198,9 +10198,9 @@ function wireContestantRows(){
   el.querySelectorAll('[data-act="c-confirm"],[data-act="c-unconfirm"]').forEach(btn=>{
     btn.addEventListener('click', async (e)=>{
       e.stopPropagation();
-      const confirming = btn.dataset.act === 'c-confirm';
+      const confirming = (btn as HTMLElement).dataset.act === 'c-confirm';
       const anglers = await loadAnglers();
-      const a = anglers.find(x=> x.id === btn.dataset.id);
+      const a = anglers.find(x=> x.id === (btn as HTMLElement).dataset.id);
       if(!a) return;
       // A team paid one fee, so both halves of it move together - confirming
       // only the captain would leave the partner unable to score.
@@ -10226,24 +10226,24 @@ function wireContestantRows(){
       const showErr = (m)=>{ if(errEl){ errEl.textContent = m; errEl.style.display = 'block'; } };
       if(errEl) errEl.style.display = 'none';
 
-      const name = (document.getElementById('ce-name').value || '').trim();
-      const phone = (document.getElementById('ce-phone').value || '').trim();
-      const handle = (document.getElementById('ce-handle').value || '').trim();
-      const bigfish = document.getElementById('ce-bigfish').checked;
+      const name = ((document.getElementById('ce-name') as ValueElement).value || '').trim();
+      const phone = ((document.getElementById('ce-phone') as ValueElement).value || '').trim();
+      const handle = ((document.getElementById('ce-handle') as ValueElement).value || '').trim();
+      const bigfish = (document.getElementById('ce-bigfish') as HTMLInputElement).checked;
       if(!name) return showErr('An angler needs a real name on record.');
       if(!handle) return showErr('An angler needs a handle — that is how they show up publicly.');
 
       const anglers = await loadAnglers();
-      const idx = anglers.findIndex(a=> a.id === btn.dataset.id);
+      const idx = anglers.findIndex(a=> a.id === (btn as HTMLElement).dataset.id);
       if(idx === -1) return showErr('That angler is no longer on the roster.');
 
       const norm = (v)=> String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
       // Same one-per-person rule the registration form enforces, minus this
       // angler themselves.
-      if(anglers.some(a=> a.id !== btn.dataset.id && norm(a.name) === norm(name))){
+      if(anglers.some(a=> a.id !== (btn as HTMLElement).dataset.id && norm(a.name) === norm(name))){
         return showErr(name + ' is already on the roster under another entry.');
       }
-      if(anglers.some(a=> a.id !== btn.dataset.id && norm(a.handle) === norm(handle))){
+      if(anglers.some(a=> a.id !== (btn as HTMLElement).dataset.id && norm(a.handle) === norm(handle))){
         return showErr('That handle is already taken. Two anglers sharing one makes the chat unreadable.');
       }
 
@@ -10266,7 +10266,7 @@ function wireContestantRows(){
   el.querySelectorAll('[data-act="c-remove-confirm"]').forEach(btn=>{
     btn.addEventListener('click', async (e)=>{
       e.stopPropagation();
-      const id = btn.dataset.id;
+      const id = (btn as HTMLElement).dataset.id;
 
       // Catches first, so their photos go with them. saveCatches() deletes the
       // photo of any catch that disappears from the list.
@@ -10297,7 +10297,7 @@ function wireContestantRows(){
   el.querySelectorAll('[data-act="c-dq"]').forEach(btn=>{
     btn.addEventListener('click', (e)=>{
       e.stopPropagation();
-      dqConfirmId = btn.dataset.id;
+      dqConfirmId = (btn as HTMLElement).dataset.id;
       renderContestants();
     });
   });
@@ -10314,9 +10314,9 @@ function wireContestantRows(){
     btn.addEventListener('click', async (e)=>{
       e.stopPropagation();
       const reasonEl = document.getElementById('dq-reason');
-      const reason = reasonEl ? reasonEl.value.trim() : '';
+      const reason = reasonEl ? (reasonEl as ValueElement).value.trim() : '';
       const anglers = await loadAnglers();
-      const idx = anglers.findIndex(a=>a.id===btn.dataset.id);
+      const idx = anglers.findIndex(a=>a.id===(btn as HTMLElement).dataset.id);
       if(idx===-1) return;
       anglers[idx].disqualified = true;
       anglers[idx].dqReason = reason;
@@ -10332,7 +10332,7 @@ function wireContestantRows(){
       e.stopPropagation();
       if(!window.confirm('Reinstate this angler? They return to the standings immediately.')) return;
       const anglers = await loadAnglers();
-      const idx = anglers.findIndex(a=>a.id===btn.dataset.id);
+      const idx = anglers.findIndex(a=>a.id===(btn as HTMLElement).dataset.id);
       if(idx===-1) return;
       anglers[idx].disqualified = false;
       anglers[idx].dqReason = '';
@@ -10413,7 +10413,7 @@ function syncViewportInset(){
   // A keyboard is not a toolbar. Floating the nav on top of an open keyboard
   // would put it over the very field being typed into, so it stands down
   // instead and comes back when the keyboard closes.
-  if(nav) nav.style.visibility = covered > KEYBOARD_INSET ? 'hidden' : '';
+  if(nav) (nav as HTMLElement).style.visibility = covered > KEYBOARD_INSET ? 'hidden' : '';
   root.style.setProperty('--vv-bottom', (covered > KEYBOARD_INSET ? 0 : Math.round(covered)) + 'px');
 }
 
