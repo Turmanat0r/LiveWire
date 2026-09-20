@@ -1,0 +1,10452 @@
+// app/boot-guard.js is watching for this. It is set here, on the first line
+// that runs, because the only question the guard has to answer is "did this
+// file arrive and start" - with a 404, or a syntax error, nothing below runs
+// at all and nothing sets it. Anything that goes wrong AFTER this point is
+// reported by the handlers installed just underneath, which is the better
+// message of the two, so the guard stays quiet once this is set.
+window.__livewireStarted = true;
+
+// If anything throws, say so on screen instead of dying silently. A blank or
+// half-rendered app with a clean console is far worse to diagnose than a
+// visible message, especially on a phone.
+(function(){
+  function report(msg){
+    try{
+      var b = document.getElementById('boot-error');
+      if(!b){
+        b = document.createElement('div');
+        b.id = 'boot-error';
+        b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#A3372A;'
+          + 'color:#fff;font:12px/1.45 system-ui,sans-serif;padding:10px 12px;white-space:pre-wrap;';
+        (document.body || document.documentElement).appendChild(b);
+      }
+      b.textContent = 'LiveWire error \u2014 screenshot this:\n' + msg;
+    }catch(e){}
+  }
+  window.addEventListener('error', function(e){
+    report((e.message||'error') + '\n' + (e.filename||'') + ':' + (e.lineno||'?'));
+  });
+  window.addEventListener('unhandledrejection', function(e){
+    report('Promise: ' + ((e.reason && e.reason.message) || e.reason || 'unknown'));
+  });
+})();
+
+// Bind a listener only if the element is actually there. Previously a single
+// missing element threw at the top level and stopped the ENTIRE script,
+// which left the app unthemed and inert.
+function bindEl(id, evt, fn){
+  var el = document.getElementById(id);
+  if(el) el.addEventListener(evt, fn);
+  return el;
+}
+
+// CHANGE THIS BEFORE THE EVENT. This is a placeholder, not a secret: it ships
+// in plain text to every phone that opens the page, so treat it as a "keep
+// honest people out of the director panel" latch, not real security.
+// Randomly generated, and deliberately unrelated to the event name, the water
+// or the year: knowing the tournament must not let anyone guess this. It still
+// ships inside the page, so it stops a curious angler, not a determined one -
+// change it between events, and see the read-only policies at the bottom of
+// supabase-setup.sql for locking an event down once it is scored.
+const ADMIN_PASS = "lilac-hazel-15";
+
+// ---- the events this copy of the app knows about ----
+// One entry per tournament. Every angler, catch and donation record is stamped
+// with the id of the event that was active when it was written, and the whole
+// app reads through that stamp - so a second event shares this page, this
+// database and this link with the first without their fields ever mixing.
+//
+// TO ADD NEXT YEAR'S EVENT: copy the last block, give it a NEW id (never reuse
+// one - the id is what the records point at), set the dates, course and prefix,
+// then switch to it from Director -> Event. Nothing else to do.
+//
+// Boundary checks are approximate (straight-line radius from the point below,
+// not the actual shoreline course) and are meant to flag catches for director
+// review, not to auto-reject them.
+const EVENTS = [
+  {
+    id: 'mkwo-2027',
+    name: 'Montana Kayak Walleye Open',
+    nameHtml: 'Montana Kayak<br>Walleye Open',
+    presenter: 'Turmanator Trailer &amp; Ironworks presents',
+    prefix: 'MKWO',
+    dates: ['2027-09-18','2027-09-19'],
+    timeZone: 'America/Denver',
+    courseLabel: 'Canyon Ferry &middot; Silos to the Ponds',
+    courseLabelLong: 'Silos to the Ponds, Canyon Ferry',
+    // Starting values only. The director edits both of these from
+    // Director -> Event, and the edit is what every device then uses.
+    targetSpecies: 'Walleye',
+    recordInches: 36,          // all-tackle world record walleye is ~35"
+    course: { kind:'circle', center:{ lat: 46.38917, lng: -111.57556 }, radiusMiles: 4 },
+    // Registration closes at the very start of this instant (Mountain time).
+    registrationClose: '2027-06-02T00:00:00-06:00'
+  },
+  {
+    id: 'mkwo-2028',
+    name: 'Montana Kayak Walleye Open',
+    nameHtml: 'Montana Kayak<br>Walleye Open',
+    presenter: 'Turmanator Trailer &amp; Ironworks presents',
+    prefix: 'MKWO28',
+    dates: ['2028-09-16','2028-09-17'],
+    timeZone: 'America/Denver',
+    courseLabel: 'Canyon Ferry &middot; Silos to the Ponds',
+    courseLabelLong: 'Silos to the Ponds, Canyon Ferry',
+    targetSpecies: 'Walleye',
+    recordInches: 36,
+    course: { kind:'circle', center:{ lat: 46.38917, lng: -111.57556 }, radiusMiles: 4 },
+    registrationClose: '2028-06-02T00:00:00-06:00'
+  }
+];
+
+// Records written before the app knew about events carry no eventId at all.
+// They belong to the first event, and are read as such without a migration -
+// see rowEventId(). Never renumber this.
+const LEGACY_EVENT_ID = EVENTS[0].id;
+
+// Used only until the shared config says which event is live - which is to say
+// on a store that has never had an event set, i.e. one carrying the original
+// event's records. Defaulting to the FIRST event is what makes installing this
+// version a no-op: the existing field keeps showing up exactly as it did, and
+// nothing moves until the director switches events on purpose.
+const DEFAULT_EVENT_ID = EVENTS[0].id;
+
+// ---- the live event list ----
+// EVENTS above is the list this BUILD ships with. The director can add events
+// and edit them from the portal, and those live in the shared config, so a new
+// tournament no longer means editing this file and redeploying.
+//
+// allEvents() must NOT filter on the active event: activeEventId() resolves
+// through eventById(), which reads this, and filtering here would recurse
+// forever. visibleEvents() does the hiding instead.
+function storedEvents(){
+  return (liveCache.config && liveCache.config.events) || {};
+}
+function allEvents(){
+  const stored = storedEvents();
+  // Built-ins first, with any director edits layered over the top.
+  const out = EVENTS.map(e=> Object.assign({}, e, stored[e.id] || {}, { id: e.id, builtIn: true }));
+  const known = new Set(EVENTS.map(e=> e.id));
+  Object.keys(stored).forEach(id=>{
+    if(!known.has(id)) out.push(Object.assign({}, stored[id], { id, builtIn: false }));
+  });
+  return out;
+}
+// What the switcher offers. An archived event stays resolvable - records still
+// point at it - it just drops out of the list. The live one is never hidden,
+// however it got archived.
+function visibleEvents(){
+  const active = activeEventId();
+  return allEvents().filter(e=> !e.archived || e.id === active);
+}
+function eventById(id){
+  const list = allEvents();
+  for(let i=0;i<list.length;i++){ if(list[i].id === id) return list[i]; }
+  return null;
+}
+
+// Records point at the id for good, so it is derived once at creation and never
+// changes - renaming an event later must not orphan its catches.
+function slugifyEventId(name, year){
+  let base = String(name||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,32);
+  if(!base) base = 'event';
+  const root = year ? base + '-' + year : base;
+  let candidate = root, n = 2;
+  while(eventById(candidate)) candidate = root + '-' + (n++);
+  return candidate;
+}
+
+async function saveEventRecord(id, patch){
+  const all = Object.assign({}, storedEvents());
+  all[id] = Object.assign({}, all[id] || {}, patch);
+  delete all[id].id;        // the key IS the id; storing it twice invites drift
+  delete all[id].builtIn;   // derived, never stored
+  return await saveConfig({ events: all });
+}
+// Only ever reaches a director-created event that holds no records - see the
+// guards in the portal. A built-in cannot be removed this way because it lives
+// in the code and would simply reappear.
+async function deleteEventRecord(id){
+  const all = Object.assign({}, storedEvents());
+  delete all[id];
+  return await saveConfig({ events: all });
+}
+// activeEventId() / activeEvent() read the shared store, so they live with it -
+// see "which event is live" further down.
+
+// ---- automated first-pass review ----
+// Endpoint on YOUR server that holds the Anthropic API key and calls Claude's
+// vision API. NEVER put an API key in this file - it ships to every angler's
+// phone, which is the whole reason the endpoint exists.
+//
+// Leave this blank and the app finds api/fish-i.js on its own origin, which is
+// what runs on Vercel and needs no configuration here. Set it only to point at
+// a different host. Opened as a plain file:// there is no server to call, so
+// the vision pass reports itself unconfigured and the local checks - blur,
+// resolution, duplicates, boundary, plausible length - carry on alone.
+const AI_REVIEW_ENDPOINT = '';
+
+const PRECHECK_MIN_SOURCE_EDGE = 640;   // shortest edge of the original photo, in px
+const PRECHECK_BLUR_THRESHOLD = 40;     // Laplacian variance; lower = softer image
+const PRECHECK_DARK_THRESHOLD = 55;     // mean luminance, 0-255
+const PRECHECK_BRIGHT_THRESHOLD = 225;
+const PRECHECK_DUP_MAX_DISTANCE = 6;    // Hamming distance over a 64-bit dHash
+// A crop match is weaker evidence than a whole-frame match - it compares a
+// window of one photo against the whole of another, which is less picture and
+// so fewer ways to disagree. It has to clear a tighter bar to be worth saying.
+const PRECHECK_DUP_CROP_MAX_DISTANCE = 4;
+
+// A dHash describes the WHOLE frame, so it says nothing useful about a photo
+// that has been cropped: the 9x8 grid lands on different content and more or
+// less every bit changes. Cropping in is the obvious way to make a reused photo
+// look new, and it is also what an honest angler does by accident when they
+// tidy a shot up before sending it.
+//
+// So every photo is hashed through each of these windows as well as whole, and
+// two photos are compared by the closest pair they have. A photo cropped to the
+// middle 70% matches the original's middle-70% window, because that is the same
+// picture at the same framing.
+//
+// [x, y, width, height], as fractions of the source. Index 0 MUST be the full
+// frame: it is the one stored as .hash, and photoHashDistance requires one side
+// of every comparison to be a whole photo.
+const PRECHECK_HASH_WINDOWS = [
+  [0,     0,     1,    1   ],   // whole
+  [0.075, 0.075, 0.85, 0.85],   // centred, three depths
+  [0.15,  0.15,  0.70, 0.70],
+  [0.225, 0.225, 0.55, 0.55],
+  [0,     0,     0.75, 0.75],   // and off-centre, for a crop that was not
+  [0.25,  0,     0.75, 0.75],   // taken from the middle
+  [0,     0.25,  0.75, 0.75],
+  [0.25,  0.25,  0.75, 0.75]
+];
+// Per-species plausibility ceiling now lives on the event and is editable by
+// the director - see eventSettings().recordInches.
+
+// Auto-capture gates. These judge PHOTO QUALITY only - steady, sharp, lit.
+// Nothing here can tell whether the fish is on the board correctly.
+const AUTOCAP_SAMPLE_MS = 200;      // how often to sample the live frame
+const AUTOCAP_MOTION_MAX = 3.5;     // mean per-pixel change between samples
+const AUTOCAP_SHARP_MIN = 25;       // Laplacian variance on the live preview
+const AUTOCAP_BRIGHT_MIN = 50;
+const AUTOCAP_BRIGHT_MAX = 235;
+const AUTOCAP_STABLE_SAMPLES = 3;   // consecutive good samples before arming
+const AUTOCAP_COUNTDOWN = 3;        // ticks shown before the shutter fires
+function eventDates(){ return activeEvent().dates; }
+function isRegistrationClosed(){
+  return Date.now() >= new Date(activeEvent().registrationClose).getTime();
+}
+const LINES_OUT_SECONDS = 14 * 60 * 60;
+const FINAL_CHECKIN_SECONDS = 15 * 60 * 60;
+
+// One formatter per time zone, built on first use. Events can sit in different
+// zones, and building an Intl formatter on every clock tick is wasteful.
+const eventClockFormatters = new Map();
+function eventClockFormatter(){
+  const tz = activeEvent().timeZone;
+  let f = eventClockFormatters.get(tz);
+  if(!f){
+    f = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hourCycle: 'h23'
+    });
+    eventClockFormatters.set(tz, f);
+  }
+  return f;
+}
+
+// Event dates are bare YYYY-MM-DD, which Date parses as UTC midnight. Format
+// them back in UTC too, or a viewer west of Greenwich reads a day earlier.
+function eventDayText(dateKey, opts){
+  const o = Object.assign({ timeZone:'UTC', month:'short', day:'numeric' }, opts||{});
+  return new Date(dateKey + 'T00:00:00Z').toLocaleDateString('en-US', o);
+}
+// "Sept 18-19, 2027" when the days share a month, "Sept 30 - Oct 1, 2027" when
+// not. Defaults to the live event; the director's event list passes each one.
+function eventDateRangeText(evt){
+  const dates = (evt || activeEvent()).dates;
+  if(dates.length === 0) return '';
+  const year = dates[dates.length-1].slice(0,4);
+  const first = eventDayText(dates[0]);
+  if(dates.length === 1) return first + ', ' + year;
+  const last = dates[dates.length-1];
+  const sameMonth = dates[0].slice(0,7) === last.slice(0,7);
+  const lastText = sameMonth ? eventDayText(last, { month:undefined }) : eventDayText(last);
+  return first + '–' + lastText + ', ' + year;
+}
+// registrationClose is the instant registration STOPS, so the last day anyone
+// can enter is the moment before it - "closes June 1", not "closes June 2".
+function registrationCloseText(){
+  const evt = activeEvent();
+  return new Date(new Date(evt.registrationClose).getTime() - 1)
+    .toLocaleDateString('en-US', { timeZone: evt.timeZone, month:'long', day:'numeric', year:'numeric' });
+}
+
+function eventTimeParts(now){
+  const values = {};
+  eventClockFormatter().formatToParts(now).forEach(part=>{
+    if(part.type !== 'literal') values[part.type] = part.value;
+  });
+  return {
+    dateKey: values.year+'-'+values.month+'-'+values.day,
+    seconds: Number(values.hour)*3600 + Number(values.minute)*60 + Number(values.second)
+  };
+}
+
+function formatCountdown(totalSeconds){
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(seconds/3600);
+  const m = Math.floor((seconds%3600)/60);
+  const s = seconds%60;
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+
+function updateEventCountdown(now = new Date()){
+  const wrap = document.getElementById('event-countdown');
+  if(!wrap) return;
+  const eventNow = eventTimeParts(now);
+  const dayIndex = eventDates().indexOf(eventNow.dateKey);
+  if(dayIndex === -1){ wrap.hidden = true; return; }
+
+  wrap.hidden = false;
+  wrap.classList.remove('phase-checkin','phase-complete');
+  document.getElementById('event-day-label').textContent = 'Day '+(dayIndex+1);
+  const phase = document.getElementById('event-phase-label');
+  const linesOut = document.getElementById('lines-out-countdown');
+  const finalCheckin = document.getElementById('final-checkin-countdown');
+
+  if(eventNow.seconds < LINES_OUT_SECONDS){
+    phase.textContent = 'Fishing live';
+    linesOut.textContent = formatCountdown(LINES_OUT_SECONDS-eventNow.seconds);
+    finalCheckin.textContent = formatCountdown(FINAL_CHECKIN_SECONDS-eventNow.seconds);
+  } else if(eventNow.seconds < FINAL_CHECKIN_SECONDS){
+    wrap.classList.add('phase-checkin');
+    phase.textContent = 'Return window';
+    linesOut.textContent = 'CLOSED';
+    finalCheckin.textContent = formatCountdown(FINAL_CHECKIN_SECONDS-eventNow.seconds);
+  } else {
+    wrap.classList.add('phase-complete');
+    phase.textContent = 'Day complete';
+    linesOut.textContent = 'CLOSED';
+    finalCheckin.textContent = 'COMPLETE';
+  }
+}
+
+let eventClockTimer = null;
+function startEventClock(){
+  updateEventCountdown();
+  if(!eventClockTimer) eventClockTimer = setInterval(updateEventCountdown, 1000);
+  // The overdue alert has to be able to APPEAR, not just be there on a repaint.
+  // The deadline passes while the director is looking at a screen they are not
+  // touching, and a minute is fine - this is about a 1500 cut-off, not seconds.
+  if(!overdueTimer) overdueTimer = setInterval(()=>{
+    if(adminUnlocked || authMode === 'director'){
+      try{ renderOverdueAlert(); }catch(e){ console.error(e); }
+    }
+  }, 60 * 1000);
+}
+let overdueTimer = null;
+
+function milesBetween(lat1, lng1, lat2, lng2){
+  const R = 3958.8;
+  const dLat = (lat2-lat1) * Math.PI/180;
+  const dLng = (lng2-lng1) * Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ---- course boundary ----
+// Two shapes. A CIRCLE is a launch point and a radius - quick to set up and the
+// right answer for open water. A POLYGON is an outline traced on the map, which
+// is what a shoreline stretch like Silos-to-the-Ponds actually is. 'none' turns
+// the check off and just records where each catch was taken.
+//
+// All of it runs on the phone with no network: the boundary is a handful of
+// numbers held in the shared config, and the maths below is local. That matters
+// because the reservoir has no signal - map TILES need a connection, knowing
+// whether you are inside the line does not.
+
+// Flat-earth projection about a reference latitude, in miles. Over a course a
+// few miles across the error is far below GPS noise, and it turns the segment
+// maths into ordinary 2D geometry.
+const MILES_PER_DEG_LAT = 69.0546;
+function projectMiles(lat, lng, refLat){
+  return { x: lng * MILES_PER_DEG_LAT * Math.cos(refLat * Math.PI/180),
+           y: lat * MILES_PER_DEG_LAT };
+}
+function polygonRefLat(points){
+  return points.reduce((s,p)=> s + p.lat, 0) / points.length;
+}
+// Ray casting. Counts crossings of the ray heading east from the point.
+function pointInPolygon(lat, lng, points){
+  let inside = false;
+  for(let i=0, j=points.length-1; i<points.length; j=i++){
+    const yi = points[i].lat, xi = points[i].lng;
+    const yj = points[j].lat, xj = points[j].lng;
+    const straddles = (yi > lat) !== (yj > lat);
+    if(straddles && lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+function distanceToSegmentMiles(p, a, b){
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const lenSq = dx*dx + dy*dy;
+  // A degenerate edge (two identical vertices) is just a point.
+  const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((p.x-a.x)*dx + (p.y-a.y)*dy) / lenSq));
+  const cx = a.x + t*dx, cy = a.y + t*dy;
+  return Math.hypot(p.x - cx, p.y - cy);
+}
+function distanceToPolygonEdgeMiles(lat, lng, points){
+  const ref = polygonRefLat(points);
+  const p = projectMiles(lat, lng, ref);
+  const ring = points.map(q=> projectMiles(q.lat, q.lng, ref));
+  let best = Infinity;
+  for(let i=0, j=ring.length-1; i<ring.length; j=i++){
+    best = Math.min(best, distanceToSegmentMiles(p, ring[j], ring[i]));
+  }
+  return best;
+}
+
+function boundaryIsUsable(b){
+  if(!b || b.kind === 'none') return false;
+  if(b.kind === 'circle') return !!(b.center && isFinite(b.center.lat) && isFinite(b.center.lng) && b.radiusMiles > 0);
+  if(b.kind === 'polygon') return Array.isArray(b.points) && b.points.length >= 3;
+  return false;
+}
+
+// The verdict stored on a catch, and the same one the angler sees live.
+//   withinBounds : true / false, or null when there is no boundary to judge by
+//   distanceMiles: for a circle, distance from the launch - unchanged meaning,
+//                  so records written by earlier versions still read correctly
+//   outsideMiles : how far past the line, 0 when inside. Defined for every
+//                  shape, which distanceMiles cannot be.
+function evaluateBoundary(lat, lng, boundary){
+  const b = boundary || courseBoundary();
+  if(!boundaryIsUsable(b)) return { withinBounds: null, outsideMiles: 0 };
+  if(b.kind === 'circle'){
+    const distanceMiles = milesBetween(lat, lng, b.center.lat, b.center.lng);
+    return {
+      withinBounds: distanceMiles <= b.radiusMiles,
+      distanceMiles,
+      outsideMiles: Math.max(0, distanceMiles - b.radiusMiles)
+    };
+  }
+  const inside = pointInPolygon(lat, lng, b.points);
+  const edge = distanceToPolygonEdgeMiles(lat, lng, b.points);
+  return { withinBounds: inside, edgeMiles: edge, outsideMiles: inside ? 0 : edge };
+}
+
+// ---- map ----
+// Leaflet is loaded from a CDN and is allowed to be missing: no signal at the
+// ramp, a blocked CDN, a cached page opened offline. Every caller checks.
+function leafletReady(){ return typeof L !== 'undefined' && !!L && typeof L.map === 'function'; }
+
+const BOUNDARY_STYLE = { color:'#24404D', weight:2, fillColor:'#5C6B4F', fillOpacity:0.12 };
+// interactive:false so a tap INSIDE the shape still reaches the map. Without it
+// the polygon swallows the click and you cannot add a point in your own course.
+const DRAFT_STYLE    = { color:'#C98A2C', weight:2, dashArray:'5,4', fillColor:'#C98A2C',
+                         fillOpacity:0.10, interactive:false };
+const METRES_PER_MILE = 1609.344;
+
+// A round, finger-sized handle. A divIcon rather than Leaflet's default pin so
+// there is no marker image to fetch and it matches the rest of the app.
+function handleIcon(label, extraClass){
+  return L.divIcon({
+    className: 'lw-handle-wrap',
+    html: '<div class="lw-handle '+(extraClass||'')+'">'+(label||'')+'</div>',
+    iconSize: [26,26], iconAnchor: [13,13]
+  });
+}
+// Walk `miles` from a point along a compass bearing (radians, 0 = north).
+function offsetLatLng(centre, miles, bearingRad){
+  const dLat = (miles * Math.cos(bearingRad)) / MILES_PER_DEG_LAT;
+  const dLng = (miles * Math.sin(bearingRad)) /
+               (MILES_PER_DEG_LAT * Math.cos(centre.lat * Math.PI/180));
+  return { lat: centre.lat + dLat, lng: centre.lng + dLng };
+}
+function bearingFrom(centre, point){
+  const north = (point.lat - centre.lat) * MILES_PER_DEG_LAT;
+  const east  = (point.lng - centre.lng) * MILES_PER_DEG_LAT * Math.cos(centre.lat * Math.PI/180);
+  return Math.atan2(east, north);
+}
+
+function boundaryCenter(b){
+  if(b && b.kind === 'circle' && b.center) return b.center;
+  if(b && b.kind === 'polygon' && b.points && b.points.length){
+    const n = b.points.length;
+    return { lat: b.points.reduce((s,p)=>s+p.lat,0)/n, lng: b.points.reduce((s,p)=>s+p.lng,0)/n };
+  }
+  // Nothing set yet - fall back to whatever the event was shipped with, so the
+  // director starts looking at roughly the right water.
+  const dflt = (activeEvent().course || {});
+  if(dflt.center) return dflt.center;
+  if(dflt.points && dflt.points.length) return dflt.points[0];
+  return { lat: 46.38917, lng: -111.57556 };
+}
+
+// One live map per container id. Leaflet throws if you initialise the same
+// element twice, and these containers are re-rendered constantly.
+const mapRegistry = new Map();
+function ensureMap(elId, center){
+  const el = document.getElementById(elId);
+  if(!el) return null;
+  if(!leafletReady()){
+    if(!el.dataset.fallback){
+      el.dataset.fallback = '1';
+      el.innerHTML = '<div class="lw-map-fallback">The map needs a connection and could not load.<br>' +
+        'The distances below are worked out on your phone and are correct either way.</div>';
+    }
+    return null;
+  }
+  let entry = mapRegistry.get(elId);
+  if(entry && entry.el === el && el.isConnected) return entry;
+  if(entry){ try{ entry.map.remove(); }catch(e){} }
+  delete el.dataset.fallback;
+  el.innerHTML = '';
+  const map = L.map(el, { zoomControl:true });
+  // The subdomain form ({s}.tile...) is deprecated; this is the current URL.
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+  map.setView([center.lat, center.lng], 12);
+  entry = { el, map, boundary: L.layerGroup().addTo(map), pins: L.layerGroup().addTo(map) };
+  mapRegistry.set(elId, entry);
+  return entry;
+}
+
+// A map built inside a hidden screen has no size yet. Every render path calls
+// this once the screen is on show.
+function refreshMapSize(entry){
+  if(!entry) return;
+  setTimeout(()=>{ try{ entry.map.invalidateSize(); }catch(e){} }, 60);
+}
+
+// Crossing a breakpoint is a resize, and Leaflet does not watch its own
+// container - it caches the pixel size it was handed at build time and goes on
+// painting tiles for that. So the column widening at 768 left the map drawn at
+// the phone's width with grey down the side of it, and the same on any rotate.
+// invalidateSize() is the only thing that re-reads the box.
+let mapResizeTimer = null;
+window.addEventListener('resize', ()=>{
+  // Debounced, because dragging a desktop window fires this continuously and
+  // every call is a re-read plus a tile request for whatever just appeared.
+  clearTimeout(mapResizeTimer);
+  mapResizeTimer = setTimeout(()=>{
+    mapRegistry.forEach(entry=>{
+      // offsetParent is null for anything inside a screen that is display:none,
+      // and invalidating a map with no box just caches another wrong size.
+      if(!entry || !entry.el || !entry.el.isConnected || !entry.el.offsetParent) return;
+      try{ entry.map.invalidateSize(); }catch(e){}
+    });
+  }, 180);
+});
+
+function boundaryShape(b, style){
+  if(!boundaryIsUsable(b)) return null;
+  if(b.kind === 'circle'){
+    return L.circle([b.center.lat, b.center.lng],
+      Object.assign({ radius: b.radiusMiles * METRES_PER_MILE }, style));
+  }
+  return L.polygon(b.points.map(p=>[p.lat, p.lng]), style);
+}
+
+function drawBoundary(entry, b, style){
+  if(!entry) return null;
+  entry.boundary.clearLayers();
+  const shape = boundaryShape(b, style || BOUNDARY_STYLE);
+  if(shape) shape.addTo(entry.boundary);
+  return shape;
+}
+
+// Frame the course, with a little air around it.
+function fitToBoundary(entry, b){
+  if(!entry) return;
+  const shape = boundaryShape(b, BOUNDARY_STYLE);
+  if(!shape){ entry.map.setView([boundaryCenter(b).lat, boundaryCenter(b).lng], 12); return; }
+  try{ entry.map.fitBounds(shape.getBounds(), { padding:[24,24], maxZoom:15 }); }
+  catch(e){ entry.map.setView([boundaryCenter(b).lat, boundaryCenter(b).lng], 12); }
+}
+
+// A single position fix. Rejects rather than hanging - on the water a fix can
+// simply never arrive, and the caller needs to be able to say so.
+function currentPosition(timeoutMs){
+  return new Promise((resolve, reject)=>{
+    if(!navigator.geolocation){ reject(new Error('This device cannot report a location.')); return; }
+    let settled = false;
+    const timer = setTimeout(()=>{
+      if(!settled){ settled = true; reject(new Error('Could not get a fix in time. Try again in the open.')); }
+    }, timeoutMs || 12000);
+    navigator.geolocation.getCurrentPosition(
+      (pos)=>{
+        if(settled) return;
+        settled = true; clearTimeout(timer);
+        resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude,
+                  accuracyMiles: (pos.coords.accuracy || 0) / METRES_PER_MILE });
+      },
+      (err)=>{
+        if(settled) return;
+        settled = true; clearTimeout(timer);
+        reject(new Error(err && err.code === 1
+          ? 'Location permission is off for this page.'
+          : 'Could not get a location fix.'));
+      },
+      { enableHighAccuracy: true, timeout: (timeoutMs || 12000) - 500, maximumAge: 5000 }
+    );
+  });
+}
+
+function getCatchLocation(){
+  return new Promise((resolve)=>{
+    if(!navigator.geolocation){ resolve(null); return; }
+    const timer = setTimeout(()=>resolve(null), 6000);
+    navigator.geolocation.getCurrentPosition(
+      (pos)=>{
+        clearTimeout(timer);
+        const lat = pos.coords.latitude, lng = pos.coords.longitude;
+        resolve(Object.assign({ lat, lng }, evaluateBoundary(lat, lng)));
+      },
+      ()=>{ clearTimeout(timer); resolve(null); },
+      { enableHighAccuracy: true, timeout: 5500 }
+    );
+  });
+}
+
+// How long a photo may sit between being shot and being filed before it is
+// worth a second look. Twenty minutes covers paddling back into signal and the
+// outbox draining; a photo filed hours after it was taken is a different
+// question, and one only the director can answer.
+const CAPTURE_LAG_TOLERANCE_MS = 20 * 60 * 1000;
+
+function lagText(ms){
+  const mins = Math.round(Math.abs(ms) / 60000);
+  if(mins < 90) return mins + ' min';
+  const hours = Math.abs(ms) / 3600000;
+  return (hours < 10 ? hours.toFixed(1) : String(Math.round(hours))) + ' hr';
+}
+
+// What the stamp is worth, as a short list the director can read at a glance.
+// Split out from the HTML so the judgements can be tested; nothing here rejects
+// anything, exactly like every other first-pass signal.
+function captureBadges(c){
+  const cap = c && c.capture;
+  if(!cap){
+    // Logged before the app stamped photos at all. The photo is still evidence;
+    // it just carries no time of its own, and saying so beats saying nothing.
+    return [{ tone:'plain', text:'No photo stamp' }];
+  }
+  const out = [cap.source === PHOTO_SOURCE_UPLOAD
+    ? { tone:'warn', text:'Uploaded file' }
+    : { tone:'ok', text:'In-app camera' }];
+
+  if(cap.clockOffsetMs === null || cap.clockOffsetMs === undefined){
+    out.push({ tone:'plain', text:'Clock unverified' });
+  } else if(Math.abs(cap.clockOffsetMs) > CLOCK_SKEW_TOLERANCE_MS){
+    out.push({ tone:'bad', text:'Clock ' + skewText(cap.clockOffsetMs) });
+  }
+
+  const lag = Number(c.timestamp) - Number(cap.at);
+  if(isFinite(lag)){
+    // A photo stamped AFTER the record that holds it cannot have happened. It
+    // means the clock moved between the two, which is worth more attention
+    // than a long lag.
+    if(lag < -60000) out.push({ tone:'bad', text:'Stamped after it was filed' });
+    else if(lag > CAPTURE_LAG_TOLERANCE_MS){
+      out.push({ tone:'warn', text:'Filed ' + lagText(lag) + ' after capture' });
+    }
+  }
+  return out;
+}
+
+const CAPTURE_TONES = {
+  ok:    'background:#DCE7DA;color:#3B5A34;',
+  warn:  'background:#F3E4C4;color:var(--gold-deep);',
+  bad:   'background:#F1D6D0;color:var(--danger);',
+  plain: 'background:#E4E1D8;color:#6B6963;'
+};
+function captureBadgeHtml(c){
+  return captureBadges(c).map(b=>
+    '<span class="badge" style="' + CAPTURE_TONES[b.tone] + '">' + escapeHtml(b.text) + '</span>'
+  ).join('');
+}
+
+// Only appears when the catch was filed from a device other than the angler's
+// own. Silent in the ordinary case, which is every catch an angler submits for
+// themselves - a badge on every card would be noise, and noise is what a
+// director stops reading.
+function filedByBadgeHtml(c){
+  const f = c && c.filedBy;
+  if(!f) return '';
+  return '<span class="badge" style="background:#F1E3C6;color:#7A5B14;">Filed by ' +
+    escapeHtml(f.name || 'another device') + (f.director ? ' (director)' : '') + '</span>';
+}
+
+function boundaryBadgeHtml(c){
+  const loc = c.location;
+  if(!loc){
+    return '<span class="badge" style="background:#E4E1D8;color:#6B6963;">Location unavailable</span>';
+  }
+  // No boundary was set when this was logged - the position is on record, there
+  // was simply nothing to judge it against.
+  if(loc.withinBounds === null || loc.withinBounds === undefined){
+    return '<span class="badge" style="background:#E4E1D8;color:#6B6963;">Location recorded &middot; no boundary set</span>';
+  }
+  // distanceMiles is only meaningful for a circle (distance from the launch).
+  // Records from a polygon course, and any record at all written before
+  // outsideMiles existed, fall back to the plain verdict.
+  const fromLaunch = typeof loc.distanceMiles === 'number'
+    ? ' &middot; '+loc.distanceMiles.toFixed(1)+' mi from launch' : '';
+  if(loc.withinBounds){
+    return '<span class="badge" style="background:#DDE6D5;color:#3D6A50;">In bounds'+fromLaunch+'</span>';
+  }
+  const out = typeof loc.outsideMiles === 'number' && loc.outsideMiles > 0
+    ? ' &middot; '+loc.outsideMiles.toFixed(1)+' mi outside the line'
+    : fromLaunch;
+  return '<span class="badge" style="background:#F1D6D0;color:#A3372A;">Outside course boundary'+out+'</span>';
+}
+
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+function pad3(n){ return String(n).padStart(3,'0'); }
+
+// ---- competitor handles ----
+// Ported from handle-generator.html. Every angler gets one at registration and
+// it is the name they razz each other under in the chat. Real names stay on
+// everything official - standings, payouts, the director's roster - because
+// that is money and placings; the handle is for the banter.
+const HANDLE_TITLES = ['Captain','Sir','Doc','Lord','Deputy','The Right Honorable','Reverend','Professor',
+  'Colonel','General','Chief','The Notorious','Commodore','Warden','Judge','Ambassador','Marshal','Baron',
+  'The Honorable','Detective','Sergeant','Governor'];
+const HANDLE_ADJECTIVES = ['Sneaky','Grumpy','Wobbly','Feral','Rogue','Salty','Lucky','Reckless','Soggy',
+  'Rowdy','Chaotic','Stubborn','Slippery','Mighty','Legendary','Wandering','Cranky','Jolly','Sly',
+  'Sedimental','Fossilized','Petrified','Igneous','Molten','Weathered','Unbothered','Overqualified',
+  'Suspiciously Calm','Feisty','Ornery','Restless','Waterlogged','Windburnt','Overcaffeinated',
+  'Unlicensed','Self-Appointed','Undeterred','Bewildered','Vengeful','Nocturnal','Barnacled','Crusty',
+  'Formerly Respectable','Mildly Feral','Certified','Unsupervised'];
+const HANDLE_GEO = ['Granite','Boulder','Shale','Basalt','Quartz','Obsidian','Bedrock','Canyon','Ridge',
+  'Fossil','Pyrite','Slate','Gravel','Cobble','Talus','Moraine','Feldspar','Schist','Limestone','Sediment',
+  'Cliffside','Riverstone','Mica','Sandstone','Dolomite','Gneiss','Magma','Silt','Chert','Alluvium','Bluff',
+  'Outcrop','Scree','Tundra','Permafrost','Butte','Mesa','Glacier','Tectonic','Sedimentary'];
+const HANDLE_FISH = ['Walleye','Bass','Pike','Catfish','Perch','Sturgeon','Trout','Muskie','Crappie','Carp',
+  'Gar','Herring','Salmon','Bluegill','Sucker','Chub','Minnow','Grayling','Kokanee','Ling','Sunfish',
+  'Northern','Burbot','Whitefish','Shiner','Darter','Bullhead','Smallmouth','Largemouth','Cisco','Goldeye',
+  'Sauger','Redhorse'];
+const HANDLE_SUFFIXES = ['McFin','Esq.','Jr.','the Third','of the Ponds','of Canyon Ferry','the Relentless',
+  'the Unbothered','the Elder','the Persistent','the Undefeated (Probably)','the Overpacked','of the Silos',
+  'the Sunburnt','the Overprepared','the Chronically Early','the Reigning Champion (Self-Declared)',
+  'the Well-Anchored','the Suspiciously Confident','the Locally Feared','of Third Place','the Bait-Rich',
+  'the Underfunded','the Overinsured'];
+const HANDLE_BAIT = ['Spinnerbait','Crankbait','Jerkbait','Chatterbait','Wacky Rig','Drop Shot','Jig','Spoon',
+  'Swimbait','Topwater','Bobber','Nightcrawler','Leech','Rooster Tail','Rapala','Powerbait','Treble Hook',
+  'Gulp Minnow','Rubber Worm','Buzzbait'];
+const HANDLE_WATERS = ['Canyon Ferry','Yellowstone','Missouri River','Bitterroot','Clark Fork',
+  'Flathead Lake','Hauser Lake','Holter Lake','Madison River','Gallatin River','Big Hole River','Fort Peck',
+  'Georgetown Lake','Hebgen Lake','Noxon Reservoir','Smith River','Blackfoot River','Rock Creek',
+  'Beaverhead','Tongue River','Ruby River'];
+const HANDLE_FASTFOOD = ['Whopper','Big Mac','McNugget','Baconator','Frosty','Crunchwrap','Gordita',
+  'Chalupa','Doritos Locos','Waffle Fry','McFlurry','Drive-Thru','Value Meal','Extra Crispy','Biggie Size',
+  'Dollar Menu','Curly Fry','Footlong','Spicy Chicken Sandwich','Junior Bacon'];
+
+function handlePick(arr){ return arr[Math.floor(Math.random() * arr.length)]; }
+
+function generateHandle(){
+  const pattern = Math.floor(Math.random() * 8);
+  if(pattern === 0) return [handlePick(HANDLE_ADJECTIVES), handlePick(HANDLE_GEO), handlePick(HANDLE_FISH)].join(' ');
+  if(pattern === 1) return [handlePick(HANDLE_FISH), handlePick(HANDLE_SUFFIXES)].join(' ');
+  if(pattern === 2) return [handlePick(HANDLE_TITLES), handlePick(HANDLE_ADJECTIVES), handlePick(HANDLE_FISH)].join(' ');
+  if(pattern === 3) return [handlePick(HANDLE_GEO), handlePick(HANDLE_FISH), handlePick(HANDLE_SUFFIXES)].join(' ');
+  if(pattern === 4) return [handlePick(HANDLE_BAIT), handlePick(HANDLE_FISH)].join(' ');
+  if(pattern === 5) return [handlePick(HANDLE_WATERS), handlePick(HANDLE_FISH)].join(' ');
+  if(pattern === 6) return [handlePick(HANDLE_FASTFOOD), handlePick(HANDLE_FISH)].join(' ');
+  const flavor = handlePick([HANDLE_BAIT, HANDLE_WATERS, HANDLE_FASTFOOD, HANDLE_GEO]);
+  return [handlePick(HANDLE_TITLES), handlePick(flavor), handlePick(HANDLE_FISH), handlePick(HANDLE_SUFFIXES)].join(' ');
+}
+
+// Two anglers sharing a handle would make the chat unreadable, and the pool is
+// big but not infinite. Reroll off a collision, and if the rolls keep landing
+// on taken names, number it rather than loop forever.
+function uniqueHandle(anglers){
+  const taken = new Set((anglers || []).map(a=> String(a.handle || '').toLowerCase()));
+  for(let i = 0; i < 40; i++){
+    const h = generateHandle();
+    if(!taken.has(h.toLowerCase())) return h;
+  }
+  const base = generateHandle();
+  for(let n = 2; n < 500; n++){
+    const h = base + ' ' + n;
+    if(!taken.has(h.toLowerCase())) return h;
+  }
+  return base + ' ' + uid().slice(-4);
+}
+
+// ---- confirmed entries ----
+// Registering is not entering. The entry fee is, and it is collected outside
+// this app, so an entry stays PENDING until the director confirms the money
+// landed. A pending entry does not score, does not join the Big Fish pot and
+// does not count toward a pool.
+//
+// It is also the only real answer to one person taking two entries under two
+// names: a browser can be swapped, a name can be invented, a PayPal receipt
+// cannot.
+//
+// Absence means confirmed, deliberately. Every angler who registered before
+// this existed carries no flag, and reading a missing flag as "pending" would
+// empty the standings of a tournament already under way.
+// Whether the entry fee has been matched against this entry. NOT whether the
+// angler may compete - that was the old meaning and it was the wrong one.
+//
+// WHY IT CHANGED. This flag started out doing two jobs: tracking fees, and
+// blocking the duplicate-registration problem. The second job is now done three
+// other ways - the roster gate, the name and phone checks, and the unique
+// indexes in the database - so all that was left was money. But it was still
+// gating the standings, which meant an entry the director had not yet ticked
+// off dropped out of the leaderboard mid-event, and the first anyone heard was
+// an angler asking why their fish was missing. Nothing was ever lost (catches
+// score the moment the tick lands) but a wrong board at a boat ramp costs more
+// than an unreconciled line in a list.
+//
+// So: fees are money, disqualification is eligibility, and they are separate
+// things. `disqualified` already says "this person does not score", explicitly
+// and on purpose, which is where that decision belongs.
+//
+// The STORED field is still `pending`, and absence still means paid - renaming
+// it would orphan every record already written. Only the meaning and the
+// wording changed.
+function feePaid(a){ return !(a && a.pending); }
+
+// Digits only, last ten. Two people are the same person here if their numbers
+// match once punctuation and a country code are off - 406-555-0100,
+// (406) 555 0100 and +1 4065550100 are one angler.
+//
+// Last ten rather than anything cleverer because every entrant is dialling a
+// North American number. An international field would need more than this.
+function normPhone(v){
+  return String(v == null ? '' : v).replace(/\D/g, '').slice(-10);
+}
+
+// ---- board codes ----
+// Every angler carries three identifiers, and they do different jobs:
+//
+//   tournamentId  MKWO-001    the entry on the roster. Sequential, so it says
+//                             what order people signed up in. Labelled "User
+//                             ID" in the app.
+//   anglerCode    4 digits    this person, and only this person. Written on
+//                             the bump board, so the photo carries proof of
+//                             who shot it. Labelled "Tournament ID".
+//   teamCode      4 digits    shared by a team's two anglers. Team entries
+//                             only; a solo angler has no team code.
+//
+// A team member therefore writes two numbers on their board - the team's and
+// their own - which is what separates two people fishing one entry. Without
+// the personal code a partner could shoot both anglers' fish.
+//
+// Letters and numbers, four characters: 23^4 is 279,841 combinations against
+// 9,000 for four digits, so the pool cannot realistically run thin across
+// seasons and two anglers are far less likely to be issued anything similar.
+//
+// The alphabet is the point. These are written on a wet board with a marker
+// and read back off a photo, often at a glance, so no two characters in it may
+// look alike. Where a pair is confusable one of the two is dropped, which is
+// why 6 survives (G is gone) while 0 does not (O would still be there):
+//   dropped: 0 1 2 5 8   B G I L O S U V Z
+// 22 characters, so no single misread can turn one valid code into another,
+// and 22^4 is still 234,256 combinations.
+const CODE_ALPHABET = '34679ACDEFHJKMNPQRTWXY';
+const CODE_LENGTH = 4;
+
+// Personal and team codes share ONE pool, so a number written on a board is
+// never ambiguous about which kind it is.
+function codesInUse(anglers){
+  const taken = new Set();
+  for(const a of (anglers || [])){
+    if(a && a.anglerCode) taken.add(String(a.anglerCode));
+    if(a && a.teamCode)   taken.add(String(a.teamCode));
+  }
+  return taken;
+}
+
+// `taken` is mutated, so successive calls in one registration cannot collide
+// with each other before anything has been saved.
+//
+// Codes issued before this was alphanumeric were four digits. They stay valid,
+// and they stay in the pool - which is what keeps them safe. The alphabet does
+// NOT rule them out on its own: 3, 4, 6, 7 and 9 are all in it, so "3467" is a
+// code this can still draw. Uniqueness comes from `taken`, never from the
+// shape of the string.
+function makeCode(taken){
+  const n = CODE_ALPHABET.length;
+  for(let i = 0; i < 4000; i++){
+    let c = '';
+    for(let j = 0; j < CODE_LENGTH; j++){
+      c += CODE_ALPHABET.charAt(Math.floor(Math.random() * n));
+    }
+    if(!taken.has(c)){ taken.add(c); return c; }
+  }
+  // 279,841 codes gone, which will not happen - but rolling forever if it did
+  // would hang the registration rather than fail it. Walk the space instead.
+  const total = Math.pow(n, CODE_LENGTH);
+  for(let k = 0; k < total; k++){
+    let c = '', rest = k;
+    for(let j = 0; j < CODE_LENGTH; j++){
+      c = CODE_ALPHABET.charAt(rest % n) + c;
+      rest = Math.floor(rest / n);
+    }
+    if(!taken.has(c)){ taken.add(c); return c; }
+  }
+  return null;
+}
+
+// Codes are checked against EVERY event, not just the live one. They cost
+// nothing to keep unique across seasons, and it means a code found on a board
+// in a photo can never belong to two different anglers.
+function takenCodes(){
+  return codesInUse(allRows('anglers'));
+}
+
+// Shown wherever an angler needs to read their own codes off a screen and copy
+// them onto a board. Anglers registered before codes existed have none until
+// the director assigns them, and are told that rather than shown a blank.
+function codeBoxHtml(a){
+  if(!a) return '';
+  const chip = (label, value, cls) =>
+    '<div class="codechip'+(cls ? ' '+cls : '')+'"><span class="k">'+escapeHtml(label)+'</span>'+
+    '<span class="v">'+escapeHtml(value || '—')+'</span></div>';
+  let html = '<div class="codebox">';
+  if(a.teamCode) html += chip('Team code', a.teamCode, 'team');
+  html += chip('Tournament ID', a.anglerCode);
+  html += '</div>';
+  return html;
+}
+
+// Shown on the angler's own registration card. They need to know their entry
+// is not live yet, and they need to know it is not a mistake they made - the
+// director simply has not ticked it off against the fee.
+// Shown on the angler's own registration card. Deliberately mild: their entry
+// is live and their fish score, so this is a note about the director's
+// bookkeeping, not a warning about their standing. Saying more than that would
+// worry people who have already paid and are just waiting to be ticked off.
+function pendingNoticeHtml(a){
+  if(feePaid(a)) return '';
+  return '<div class="pending-notice">'+
+    '<strong>Entry fee not matched up yet</strong>'+
+    'You are on the roster and your catches score normally — this is only the '+
+    'director ticking payments off against entries.<br><br>'+
+    'If you have already paid, there is nothing to do. If you are not sure, '+
+    'check with the director before the rules meeting.'+
+  '</div>';
+}
+
+function codeNoteHtml(a){
+  if(!a) return '';
+  if(!a.anglerCode){
+    return '<p class="hint" style="margin:8px 0 0;">No board code has been issued yet &mdash; ask the director before you fish.</p>';
+  }
+  return a.teamCode
+    ? '<p class="hint" style="margin:8px 0 0;">Write <strong>both</strong> numbers on your bump board. The team code is shared with your partner; the Tournament ID is yours alone, and is what tells your fish apart from theirs.</p>'
+    : '<p class="hint" style="margin:8px 0 0;">Write this number on your bump board so it is readable in every catch photo.</p>';
+}
+
+// The ONLY identity the field is shown: the handle. Anyone who registered
+// before handles existed falls back to their entry ID, never their real name -
+// real names and phone numbers are the director's business alone.
+//
+// Client-side only, and worth being clear about: real names still travel in
+// the angler records the app downloads, so this hides them from the screen,
+// not from anyone determined to read the API. Splitting contact details into a
+// table only the director can read is the fix for that.
+function displayHandle(angler){
+  if(!angler) return 'Unknown angler';
+  return angler.handle || angler.tournamentId || 'Angler';
+}
+
+// ---- shared tournament store ----
+// One store, every device. An angler's phone and the director's tablet read and
+// write the SAME records, so a catch submitted on the water lands in the
+// director's pending list by itself.
+//
+// Three backends, tried in this order:
+//   1. Supabase - fill in the two constants below. This is the one to use for a
+//      real event: anyone with the link can take part, no sign-in, and photos
+//      go into object storage as ordinary image URLs. See supabase-setup.sql
+//      next to this file for the tables, policies and bucket to create.
+//   2. The Claude viewer's shared store - automatic when this page is opened as
+//      a published Artifact. Zero setup, but everyone taking part has to be a
+//      signed-in member of your Anthropic organization, so it suits you and
+//      your crew rather than a public field.
+//   3. This device only - no server configured. The app still works, but
+//      nothing leaves the phone, and the banner says so.
+//
+// Whichever is active, these hold:
+//   - One record per THING (never one record holding a whole array). Writes are
+//     last-writer-wins, so two anglers submitting at the same moment have to
+//     touch two different records or one of them is lost.
+//   - Photos are stored apart from the catch. Leaderboards, standings and
+//     payouts never move an image byte.
+//   - A write that cannot go out is parked in an outbox and retried. Losing
+//     signal on the reservoir must never lose a catch.
+
+// Paste these from your Supabase project: Settings -> API. The anon key is meant
+// to ship in the page - it is public by design, and the table policies decide
+// what it may do. Never paste the SERVICE ROLE key here.
+const SUPABASE_URL = 'https://ecwcjtneypbbqciwgbjw.supabase.co';        // e.g. 'https://abcdefghijkl.supabase.co'
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVjd2NqdG5leXBiYnFjaXdnYmp3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzODQ2ODUsImV4cCI6MjEwMzk2MDY4NX0.Z3WZjdFBRZR2wk2L92xp4iN0kCedcW-XQbNOzEonmVI';   // the long 'anon' / 'public' key
+const SUPABASE_BUCKET = 'catch-photos';
+const SUPABASE_POLL_MS = 5000;  // how often devices pick up each other's writes
+// Failing reads back off to a minute rather than retrying every 5s into a
+// server or a signal that is not there.
+const SYNC_BACKOFF_MAX_MS = 60000;
+// Rows per read. Supabase caps this server-side too ("Max rows"); fetchAll()
+// pages on whatever actually comes back, so this only has to be sane.
+const SYNC_PAGE = 1000;
+// A stop so a misbehaving server can never spin the loop forever.
+const SYNC_MAX_PAGES = 200;
+
+const STORAGE_PREFIX = 'mkwo:';
+
+// The ladder every photo is encoded down. The ACTIVE BACKEND sets the byte
+// budget, so the same ladder gives a Supabase event a genuinely readable
+// 1400px board photo while the Artifact store - whose records cap at 256 KiB -
+// lands a few rungs lower. Only a frame that will not compress goes past the
+// bottom of the list.
+const PHOTO_STEPS = [
+  { dim: 1400, q: 0.72 }, { dim: 1100, q: 0.68 }, { dim: 900, q: 0.62 },
+  { dim: 820,  q: 0.56 }, { dim: 760,  q: 0.50 }, { dim: 680, q: 0.44 },
+  { dim: 600,  q: 0.38 }, { dim: 520,  q: 0.32 }
+];
+const PHOTO_BUDGET_DEFAULT = 140000;
+function photoBudget(){ return store && store.photoBudget ? store.photoBudget : PHOTO_BUDGET_DEFAULT; }
+
+function localGet(key){
+  try{ return window.localStorage.getItem(STORAGE_PREFIX + key); }
+  catch(e){ return null; }
+}
+function localSet(key, value){
+  try{ window.localStorage.setItem(STORAGE_PREFIX + key, value); return true; }
+  catch(e){ console.error(e); return false; }
+}
+function localDel(key){
+  try{ window.localStorage.removeItem(STORAGE_PREFIX + key); }catch(e){}
+}
+function deepClone(v){
+  try{ return JSON.parse(JSON.stringify(v)); }catch(e){ return v; }
+}
+
+const SHARED_COLLECTIONS = ['anglers','catches','donations','messages','signals','bets'];
+let store = null;                 // the active backend, or null for device-only
+let syncState = 'connecting';     // connecting | live | offline | local
+let syncDetail = '';
+let storeFull = false;
+const liveCache = { anglers:null, catches:null, donations:null, messages:null, signals:null, bets:null, config:null };
+// Ids as they were when the caller last LOADED. Deleting is scoped to these, so
+// a catch another angler files between one device's load and its save is never
+// mistaken for "the user removed this".
+const loadedIds = { anglers:null, catches:null, donations:null, messages:null, signals:null, bets:null };
+
+// ---- which event is live ----
+// Held in the shared config record rather than on the phone, so every device
+// agrees. An angler must never be able to register into a different event than
+// the one the director is scoring.
+//
+// The localStorage copy is only a cold-start hint: it paints the right event on
+// a phone opening the app before the first sync lands, and is overwritten by
+// the shared value the moment it arrives.
+function activeEventId(){
+  const fromConfig = liveCache.config && liveCache.config.activeEventId;
+  if(fromConfig && eventById(fromConfig)) return fromConfig;
+  const remembered = localGet('activeEventId');
+  if(remembered && eventById(remembered)) return remembered;
+  return DEFAULT_EVENT_ID;
+}
+function activeEvent(){ return eventById(activeEventId()) || EVENTS[0]; }
+
+// Which event a stored record belongs to. Records written before this app knew
+// about events carry no eventId, and they are all from the first event - so the
+// backfill is this line, not a migration. Rows get a real stamp as they are
+// next written (see saveCollection), and untouched ones keep reading correctly
+// forever.
+function rowEventId(row){ return (row && row.eventId) || LEGACY_EVENT_ID; }
+function isActiveEventRow(row){ return rowEventId(row) === activeEventId(); }
+const photoCache = new Map();
+let storeRefreshTimer = null;
+
+// ---- identity ----
+// Data still goes out over plain fetch. The Supabase SDK is used for ONE thing:
+// holding a session and refreshing its token. That is worth a dependency we are
+// already loading, because hand-rolling refresh, persistence and expiry is
+// exactly the kind of code that fails at 6am on a boat ramp.
+//
+// WHY A SESSION AT ALL: the anon key ships in this page, so the database cannot
+// currently tell one angler from another and every row is writable by anyone.
+// An anonymous sign-in gives each device a real, durable auth.uid() with no
+// sign-up for the angler to do, which is what row-level policies need to say
+// "your own catch, not anyone else's".
+//
+// THIS STEP CHANGES NO BEHAVIOUR. Until anonymous sign-in is switched on in the
+// Supabase dashboard, signInAnonymously() fails and every request falls back to
+// the anon key exactly as before. Turning it on is what makes it live.
+let sbClient = null;
+let authSession = null;
+let authMode = 'anon-key';   // anon-key | anonymous | signed-in | director
+
+function authModeLabel(){
+  if(authMode === 'director') return 'signed in as director';
+  if(authMode === 'signed-in') return 'signed in, not a director';
+  if(authMode === 'anonymous') return 'device identity';
+  return 'shared key';
+}
+
+// The token every request goes out with. Falls back to the anon key, which is
+// what keeps this step a no-op before the dashboard switch is flipped.
+function bearerToken(){
+  return (authSession && authSession.access_token) || SUPABASE_ANON_KEY;
+}
+
+function noteAuthSession(session){
+  authSession = session || null;
+  const user = session && session.user;
+  const meta = (user && user.app_metadata) || {};
+  // Director status comes from app_metadata, which only the server can set.
+  // user_metadata would be worthless here - a client can write its own, so
+  // anyone could simply declare themselves the director.
+  const isDirector = meta.director === true || meta.director === 'true';
+  // is_anonymous is the SDK's own flag; older builds omit it, in which case a
+  // session with no email is an anonymous one.
+  const isAnon = user && (user.is_anonymous === true ||
+                          (user.is_anonymous === undefined && !user.email));
+  authMode = !user ? 'anon-key'
+    : (isDirector ? 'director' : (isAnon ? 'anonymous' : 'signed-in'));
+  try{ updateSyncUi(); }catch(e){}
+  try{ applyDirectorState(); }catch(e){}
+}
+
+// Signing in as a director opens the panel on its own - no passcode needed.
+// This only ever grants; revoking happens on an explicit sign-out.
+function applyDirectorState(){
+  const lock = document.getElementById('admin-lock-card');
+  const panel = document.getElementById('admin-panel');
+  if(!lock || !panel) return;
+  if(authMode === 'director' && !adminUnlocked){
+    adminUnlocked = true;
+    lock.style.display = 'none';
+    panel.style.display = 'block';
+    showAdminTool(activeAdminTool);
+    renderAdmin();
+  }
+  renderAdminAuthBanner();
+}
+
+// Says plainly which of the two ways in was used, because they are about to
+// stop being equivalent: once ownership policies are enforced, the passcode
+// opens the panel but the server refuses the writes.
+function renderAdminAuthBanner(){
+  const el = document.getElementById('admin-auth-banner');
+  if(!el) return;
+  if(!adminUnlocked){ el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  if(authMode === 'director'){
+    el.className = 'syncbanner';
+    el.textContent = 'Signed in as director. Changes you make here are accepted by the server.';
+    return;
+  }
+  el.className = 'syncbanner level-warn';
+  el.textContent = authMode === 'signed-in'
+    ? 'Signed in, but this account is not marked as a director. Director changes will be refused once ownership policies are switched on.'
+    : 'Opened with the passcode, not signed in. You can look around, but director changes will be refused once ownership policies are switched on. Sign in above to make changes stick.';
+}
+
+async function signInDirector(){
+  const errEl = document.getElementById('admin-signin-err');
+  const btn = document.getElementById('admin-signin');
+  errEl.style.display = 'none';
+  const email = (document.getElementById('admin-email').value || '').trim();
+  const password = document.getElementById('admin-password').value || '';
+  if(!email || !password){
+    errEl.textContent = 'Enter the director email and password.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if(!sbClient){
+    errEl.textContent = 'Sign-in needs a connection to the tournament server, and there is none right now.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const was = btn.textContent;
+  btn.textContent = 'Signing in…'; btn.disabled = true;
+  try{
+    const res = await sbClient.auth.signInWithPassword({ email, password });
+    if(res && res.error){
+      errEl.textContent = res.error.message || 'That sign-in did not work.';
+      errEl.style.display = 'block';
+      return;
+    }
+    document.getElementById('admin-password').value = '';
+    noteAuthSession(res.data && res.data.session);
+    if(authMode !== 'director'){
+      // Signed in fine, but the account has no director flag. Say exactly that
+      // rather than letting them wonder why nothing saves.
+      errEl.textContent = 'Signed in, but this account is not marked as a director. '+
+        'Set {"director": true} on its app_metadata in Supabase, then sign in again.';
+      errEl.style.display = 'block';
+    }
+  }catch(e){
+    errEl.textContent = (e && e.message) || 'That sign-in did not work.';
+    errEl.style.display = 'block';
+  }finally{
+    btn.textContent = was; btn.disabled = false;
+  }
+}
+
+async function signOutDirector(){
+  try{ if(sbClient) await sbClient.auth.signOut(); }catch(e){ console.error(e); }
+  adminUnlocked = false;
+  authSession = null;
+  authMode = 'anon-key';
+  const lock = document.getElementById('admin-lock-card');
+  const panel = document.getElementById('admin-panel');
+  if(lock) lock.style.display = 'block';
+  if(panel) panel.style.display = 'none';
+  // Straight back to a device identity, so ordinary angler use keeps working.
+  await initAuth();
+  updateSyncUi();
+}
+
+// ---- the device identity, and why a missing one is fatal now ----
+// Every write policy in the database is granted to the `authenticated` role. A
+// device that never got an anonymous session is on the shared anon key, role
+// `anon`, and matches none of them - so it can read the whole tournament and
+// save nothing.
+//
+// This used to be a soft fallback, commented as "the app works either way".
+// That stopped being true the moment ownership was enforced, and the way it
+// stopped is worth writing down, because it cost an angler a fish:
+//
+//   Registration went through, because the anglers table had been left open.
+//   The catch row went in, because catches was open too. The PHOTO was refused,
+//   because the storage policy asks for an owner - and the submit handler,
+//   correctly, took the catch row back out rather than file a catch with no
+//   evidence. The angler was then told to check a signal that was fine, and the
+//   database held no trace that any of it had happened.
+//
+// An asymmetric permission set will always find a seam like that. So the rule
+// here is now the simple one: no identity, no write, said out loud and up
+// front, before an angler has a fish on a board.
+let identityError = '';
+let identityTimer = null;
+let identityTries = 0;
+// Set once the first attempt has finished either way, so a cold start does not
+// flash "not signed in" across its own first second.
+let identityTried = false;
+const IDENTITY_MAX_DELAY_MS = 30000;
+
+// Only a Supabase-backed copy has row policies to satisfy. The device-only and
+// artifact backends write somewhere that has never heard of auth.uid().
+function identityRequired(){ return !!(SUPABASE_URL && SUPABASE_ANON_KEY); }
+function hasIdentity(){ return authMode !== 'anon-key'; }
+function identityMissing(){ return identityRequired() && !hasIdentity(); }
+function identitySettledMissing(){ return identityTried && identityMissing(); }
+
+// One sentence, in the angler's own terms, wherever a write is refused for want
+// of an identity. "Signing in" is the honest word even though nobody typed a
+// password: what is missing is this device's place in the tournament, and the
+// angler needs to know it is not their fish, their form or their phone.
+function identityBlockedText(what){
+  return 'This device has not finished signing in to the tournament server, so '
+    + what + ' cannot be saved yet. Stay where you have signal for a few seconds '
+    + 'and try again — it keeps retrying on its own. If it will not clear, '
+    + 'see the director.';
+}
+
+// The SDK is a blocking <script> in the head, so ordinarily it is here long
+// before any of this runs. Ordinarily.
+//
+// It is same-origin now and in the offline shell, which removes the ways this
+// used to fail - a blocked CDN, a filtering DNS, a captive portal at the ramp.
+// It does not remove all of them: a phone that has never opened the app before
+// and has no signal has no cache to fall back on either. So the retry stays,
+// and it is cheap.
+//
+// Re-injecting a COPY OF THE SHIPPED TAG rather than a fresh one written out
+// here is deliberate: the src cannot drift from the tag that is actually
+// reviewed and deployed.
+function loadSupabaseSdk(){
+  if(typeof supabase !== 'undefined' && supabase && typeof supabase.createClient === 'function'){
+    return Promise.resolve(true);
+  }
+  const tag = document.getElementById('supabase-sdk');
+  if(!tag || !tag.src) return Promise.resolve(false);
+  return new Promise(resolve=>{
+    const el = document.createElement('script');
+    el.src = tag.src;
+    if(tag.integrity) el.integrity = tag.integrity;
+    el.crossOrigin = 'anonymous';
+    el.referrerPolicy = 'no-referrer';
+    el.onload = ()=> resolve(typeof supabase !== 'undefined' && !!supabase &&
+                             typeof supabase.createClient === 'function');
+    el.onerror = ()=> resolve(false);
+    document.head.appendChild(el);
+  });
+}
+
+// Idempotent, and safe to call from anywhere: on boot, on regaining signal, and
+// again from any screen that is about to write. Returns whether this device can
+// now be authorised.
+async function ensureIdentity(){
+  if(!identityRequired()) return true;
+  if(hasIdentity()){ identityError = ''; return true; }
+  try{
+    if(!sbClient){
+      if(!await loadSupabaseSdk()){
+        identityError = 'the sign-in library could not be loaded';
+        return false;
+      }
+      sbClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: false,
+          storageKey: STORAGE_PREFIX + 'auth'
+        }
+      });
+      // Fires on refresh as well as sign-in, so the token we send is never stale.
+      sbClient.auth.onAuthStateChange((_evt, session)=> noteAuthSession(session));
+    }
+
+    const existing = await sbClient.auth.getSession();
+    if(existing && existing.data && existing.data.session){
+      noteAuthSession(existing.data.session);
+      identityError = '';
+      return true;
+    }
+    const fresh = await sbClient.auth.signInAnonymously();
+    if(fresh && fresh.error){
+      identityError = fresh.error.message || 'anonymous sign-in was refused';
+      console.warn('Anonymous sign-in unavailable: ' + identityError);
+      return false;
+    }
+    if(fresh && fresh.data && fresh.data.session){
+      noteAuthSession(fresh.data.session);
+      identityError = '';
+      return true;
+    }
+    identityError = 'anonymous sign-in returned no session';
+    return false;
+  }catch(e){
+    console.warn('Could not establish a device identity.', e);
+    identityError = (e && e.message) || 'the sign-in request failed';
+    return false;
+  }
+}
+
+// Retry, where this used to give up after a single attempt. Both of the things
+// that stop a sign-in - a blocked CDN and a refused request - are usually
+// transient, and an angler who opened the app in a dead spot at the ramp has
+// signal again a minute later. Backs off to every 30s and then keeps going,
+// because the alternative is a phone that quietly cannot file a fish all day.
+function noteIdentityAttempt(ok){
+  identityTried = true;
+  try{ updateSyncUi(); }catch(e){}
+  try{ updateRegisterReadiness(); }catch(e){}
+  if(ok){ identityTries = 0; drainOutbox(); }
+  else scheduleIdentityRetry();
+  return ok;
+}
+
+function scheduleIdentityRetry(){
+  if(identityTimer || !identityMissing()) return;
+  const delay = Math.min(2000 * Math.pow(2, identityTries), IDENTITY_MAX_DELAY_MS);
+  identityTries++;
+  identityTimer = setTimeout(async ()=>{
+    identityTimer = null;
+    noteIdentityAttempt(await ensureIdentity());
+  }, delay);
+}
+
+// Getting signal back, or looking at the page again, is worth an attempt NOW
+// rather than at the end of whatever backoff we had already reached.
+function retryIdentityNow(){
+  if(!identityMissing()) return;
+  if(identityTimer){ clearTimeout(identityTimer); identityTimer = null; }
+  identityTries = 0;
+  ensureIdentity().then(noteIdentityAttempt);
+}
+
+// What a screen calls immediately before it writes. One more attempt costs a
+// moment; letting the write go out unauthorised costs the angler the catch.
+async function identityReadyForWrite(){
+  if(!identityRequired()) return true;
+  if(hasIdentity()) return true;
+  return noteIdentityAttempt(await ensureIdentity());
+}
+
+if(typeof window !== 'undefined' && window.addEventListener){
+  window.addEventListener('online', retryIdentityNow);
+}
+if(typeof document !== 'undefined' && document.addEventListener){
+  document.addEventListener('visibilitychange', ()=>{
+    if(!document.hidden) retryIdentityNow();
+  });
+}
+
+async function initAuth(){
+  if(!identityRequired()) return;
+  noteIdentityAttempt(await ensureIdentity());
+}
+// ---- backend: Supabase ----
+// Plain fetch against PostgREST and the storage API - no SDK for data, so this
+// works from any static host and as a local file. Devices pick up each other's
+// writes by polling; for a tournament, five seconds is indistinguishable from
+// realtime and costs far less complexity than a websocket.
+function supabaseBackend(){
+  const base = SUPABASE_URL.replace(/\/+$/, '');
+  const TABLES = { anglers:'anglers', catches:'catches', donations:'donations',
+                   messages:'messages', signals:'signals', bets:'bets', config:'config' };
+  // Built per request, not once: the session token is refreshed in the
+  // background, and a header object captured at startup would go stale and
+  // start 401ing an hour into the event.
+  const authHeaders = ()=> ({
+    'apikey': SUPABASE_ANON_KEY,
+    'Authorization': 'Bearer ' + bearerToken()
+  });
+
+  async function rest(path, init){
+    const opts = Object.assign({}, init);
+    opts.headers = Object.assign({}, authHeaders(), (init && init.headers) || {});
+    const res = await fetch(base + path, opts);
+    // Every response carries one, ok or not, so the device clock gets checked
+    // against the server's on every request the app already makes.
+    noteResponseClock(res);
+    if(!res.ok){
+      let detail = '';
+      try{ detail = (await res.text()).slice(0, 200); }catch(e){}
+      const err = new Error('Supabase ' + res.status + ' ' + detail);
+      err.status = res.status;
+      throw err;
+    }
+    return res;
+  }
+
+  function publicPhotoUrl(catchId){
+    return base + '/storage/v1/object/public/' + SUPABASE_BUCKET + '/' +
+           encodeURIComponent(catchId) + '.jpg';
+  }
+
+  // Read one whole table, in pages.
+  //
+  // PostgREST caps how many rows it will return in a single response -
+  // Supabase exposes it as "Max rows" - and it does so SILENTLY: a truncated
+  // table comes back as an ordinary 200 with no hint that anything is
+  // missing. The catches table grows with every event held, so a season or
+  // two in, fish would simply stop appearing on the leaderboard with nothing
+  // anywhere to say why.
+  //
+  // The ORDER matters as much as the paging. Without it Postgres may return
+  // rows however it likes, and that order changes when a row is updated - so
+  // paging over an unordered set can miss rows and repeat others in the same
+  // pass. Ordering by id makes the pages line up.
+  async function fetchAll(table){
+    const q = '/rest/v1/' + table + '?select=id,data&order=id.asc&limit=' + SYNC_PAGE;
+    const out = [];
+    // Ask for the row count with the first page: it comes back in the same
+    // round trip, so we learn how far to page without a wasted request.
+    const first = await rest(q + '&offset=0', {
+      method: 'GET', headers: { 'Prefer': 'count=exact' }
+    });
+    const take = (rows)=>{
+      if(!Array.isArray(rows)) return 0;
+      for(const r of rows) out.push(Object.assign({}, r.data, { id: r.id }));
+      return rows.length;
+    };
+    let got = take(await first.json());
+    // "0-999/4523" - the figure after the slash is the real total. A '*'
+    // there means the server would not count, and we page until it runs dry.
+    const total = Number(((first.headers && first.headers.get
+      && first.headers.get('content-range')) || '').split('/')[1]);
+    for(let page = 1; page < SYNC_MAX_PAGES; page++){
+      if(isFinite(total) ? out.length >= total : got === 0) break;
+      if(got === 0) break;
+      const res = await rest(q + '&offset=' + out.length, { method: 'GET' });
+      // Step by what actually came back, never by what was asked for: if the
+      // server caps a page below our limit, advancing by the limit would skip
+      // every row in the gap.
+      got = take(await res.json());
+    }
+    return out;
+  }
+
+  return {
+    label: 'tournament server',
+    // Object storage, not a JSON record - so the budget is about what a phone
+    // can upload on a weak signal, not about a record size cap.
+    photoBudget: 600000,
+
+    async connect(){
+      // Cheap round-trip that fails loudly if the URL, key or tables are wrong.
+      await rest('/rest/v1/config?select=id&limit=1', { method: 'GET' });
+    },
+
+    async applyOp(op){
+      if(op.kind === 'photo'){
+        const blob = dataUrlToBlob(op.body && op.body.data);
+        if(!blob){ const e = new Error('Unreadable photo data'); e.status = 400; throw e; }
+        await rest('/storage/v1/object/' + SUPABASE_BUCKET + '/' +
+                   encodeURIComponent(op.id) + '.jpg', {
+          method: 'POST',
+          headers: { 'Content-Type': 'image/jpeg', 'x-upsert': 'true' },
+          body: blob
+        });
+        return;
+      }
+      const table = TABLES[op.coll];
+      if(!table){ const e = new Error('Unknown collection ' + op.coll); e.status = 400; throw e; }
+      if(op.kind === 'delete'){
+        await rest('/rest/v1/' + table + '?id=eq.' + encodeURIComponent(op.id), { method: 'DELETE' });
+        return;
+      }
+      await rest('/rest/v1/' + table, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates,return=minimal'
+        },
+        body: JSON.stringify({ id: op.id, data: op.body })
+      });
+    },
+
+    start(onRows){
+      // ONE tick at a time. setInterval does not wait for an async callback, so
+      // on a weak link ticks used to overlap and pile up - and the extra
+      // concurrent fetches made the weak link weaker. That is a spiral, and it
+      // sets in exactly where this app has to work: out on the water with one
+      // bar showing.
+      let inFlight = false;
+      let failures = 0;
+      let timer = null;
+
+      // 5s while it is working. When it is not, back off 10s, 20s, 40s, up to a
+      // minute, rather than hammering a server that is not answering.
+      function nextDelay(){
+        return failures === 0 ? SUPABASE_POLL_MS
+          : Math.min(SUPABASE_POLL_MS * Math.pow(2, failures), SYNC_BACKOFF_MAX_MS);
+      }
+      function schedule(){
+        if(timer) clearTimeout(timer);
+        timer = setTimeout(tick, nextDelay());
+      }
+      function runNow(){
+        if(timer){ clearTimeout(timer); timer = null; }
+        tick();
+      }
+
+      const tick = async ()=>{
+        if(inFlight) return;
+        // A phone in a pocket does not need the leaderboard redrawn every five
+        // seconds. This picks straight back up when the screen comes on.
+        if(typeof document !== 'undefined' && document.hidden){ schedule(); return; }
+        inFlight = true;
+        try{
+          for(const coll of Object.keys(TABLES)){
+            onRows(coll, await fetchAll(TABLES[coll]));
+          }
+          failures = 0;
+          if(syncState !== 'live') setSyncState('live', '');
+          drainOutbox();
+        }catch(e){
+          console.error(e);
+          failures++;
+          setSyncState('offline', 'Cannot reach the tournament server right now.');
+        }finally{
+          inFlight = false;
+          schedule();
+        }
+      };
+
+      // Looking at the page again, or getting signal back, is worth a read now
+      // rather than at the end of whatever backoff we had reached.
+      if(typeof document !== 'undefined' && document.addEventListener){
+        document.addEventListener('visibilitychange', ()=>{
+          if(!document.hidden){ failures = 0; runNow(); }
+        });
+      }
+      if(typeof window !== 'undefined' && window.addEventListener){
+        window.addEventListener('online', ()=>{ failures = 0; runNow(); });
+      }
+      tick();
+    },
+
+    // Exposed so the paging can be driven from the tests. Silent truncation is
+    // the failure this guards against, and it cannot be seen from outside -
+    // a short read looks exactly like a small table.
+    fetchAll,
+
+    // Deterministic from the catch id, so a queued upload still gets the right
+    // address written onto the catch immediately.
+    photoUrlFor(catchId){ return publicPhotoUrl(catchId); },
+    async getPhoto(catchId){ return publicPhotoUrl(catchId); },
+    async deletePhoto(catchId){
+      try{
+        await rest('/storage/v1/object/' + SUPABASE_BUCKET + '/' +
+                   encodeURIComponent(catchId) + '.jpg', { method: 'DELETE' });
+      }catch(e){ console.error(e); }
+    }
+  };
+}
+
+// ---- backend: the Claude viewer's shared store ----
+function artifactDbBackend(db){
+  return {
+    label: 'shared store',
+    photoBudget: 140000,   // records cap at 256 KiB
+    async connect(){},
+
+    async applyOp(op){
+      if(op.kind === 'photo'){
+        return await db.doc('photos/' + op.id).set({ data: (op.body||{}).data, at: Date.now() });
+      }
+      const ref = db.doc(op.coll + '/' + op.id);
+      if(op.kind === 'delete') return await ref.delete();
+      return await ref.set(op.body || {});
+    },
+
+    start(onRows){
+      SHARED_COLLECTIONS.forEach(coll=>{
+        db.collection(coll).onSnapshot(snap=>{
+          // data() is frozen and reused between deliveries, but this app mutates
+          // rows in place (checkins, dq flags), so each row is cloned out.
+          onRows(coll, snap.docs.map(d=>{
+            const row = deepClone(d.data() || {});
+            row.id = d.id;
+            return row;
+          }));
+        }, handleStoreError);
+      });
+      db.doc('config/tournament').onSnapshot(snap=>{
+        const body = snap.exists ? deepClone(snap.data() || {}) : {};
+        body.id = 'tournament';
+        onRows('config', snap.exists ? [body] : []);
+      }, handleStoreError);
+    },
+
+    photoUrlFor(){ return ''; },   // keyed by catch id, no address to store
+    async getPhoto(catchId){
+      const snap = await db.doc('photos/' + catchId).get();
+      return snap.exists ? ((snap.data() || {}).data || '') : '';
+    },
+    async deletePhoto(catchId){ await db.doc('photos/' + catchId).delete(); }
+  };
+}
+
+async function initStore(){
+  try{
+    if(SUPABASE_URL && SUPABASE_ANON_KEY){
+      // Before the first request, so the very first read already carries the
+      // session token rather than the shared key. It never throws and never
+      // blocks for long - a failure just leaves us on the shared key.
+      await initAuth();
+      const backend = supabaseBackend();
+      store = backend;
+      try{
+        await backend.connect();
+        setSyncState('live', '');
+      }catch(e){
+        console.error(e);
+        // Configured but unreachable. Keep the backend so writes queue and
+        // retry instead of silently dropping to device-only.
+        setSyncState('offline', 'Cannot reach the tournament server right now.');
+      }
+      backend.start(onRows);
+      drainOutbox();
+      return;
+    }
+    if(typeof claude !== 'undefined' && claude && typeof claude.use === 'function'){
+      const db = await claude.use('db');
+      if(db){
+        store = artifactDbBackend(db);
+        setSyncState('live', '');
+        store.start(onRows);
+        drainOutbox();
+        return;
+      }
+    }
+    setSyncState('local', 'No tournament server is set up for this copy.');
+  }catch(e){
+    console.error(e);
+    setSyncState('local', (e && e.message) || 'Could not reach a tournament store.');
+  }
+}
+
+// Has the roster actually arrived from the server yet?
+//
+// This is what let one person register twice from two browsers. initStore()
+// is deliberately not awaited - the UI lights up before the sync lands - so on
+// a browser with no local mirror the register form was usable while
+// liveCache.anglers was still []. The duplicate check then compared the new
+// name against an empty roster and found nothing, every time.
+let rosterLoaded = false;
+// 'local' means there is no server at all, so the local mirror IS the roster
+// and waiting for a sync that will never come would block registration forever.
+function rosterIsLoaded(){ return rosterLoaded || syncState === 'local'; }
+
+function onRows(coll, rows){
+  if(coll === 'anglers'){
+    rosterLoaded = true;
+    try{ updateRegisterReadiness(); }catch(e){}
+  }
+  if(coll === 'config'){
+    liveCache.config = rows[0] || {};
+    // Carries the live event as well as the budgets, so this is also how a
+    // phone finds out the director has switched events.
+    mirrorConfigLocally();
+  } else {
+    liveCache[coll] = rows;
+    // Metadata only - photos are stored apart, which is the whole point. This
+    // mirror is what paints the screen before the first sync and whenever the
+    // connection drops.
+    localSet(coll, JSON.stringify(rows));
+  }
+  onStoreChanged();
+}
+
+function handleStoreError(err){
+  console.error(err);
+  if(err && err.code === 'quota_exceeded') storeFull = true;
+  setSyncState('offline', (err && err.message) || 'Lost the shared store.');
+}
+
+function setSyncState(state, detail){
+  syncState = state;
+  syncDetail = detail || '';
+  updateSyncUi();
+}
+
+// Re-render whatever is on screen when someone else's write lands, but never
+// while a field is focused - that would wipe a half-typed length or DQ reason.
+function onStoreChanged(){
+  updateSyncUi();
+  if(storeRefreshTimer) clearTimeout(storeRefreshTimer);
+  storeRefreshTimer = setTimeout(()=>{
+    storeRefreshTimer = null;
+    const ae = document.activeElement;
+    if(ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) return;
+    try{ refreshActiveScreen(); }catch(e){ console.error(e); }
+  }, 250);
+}
+
+// ---- outbox ----
+function readOutbox(){
+  try{ return JSON.parse(localGet('outbox') || '[]'); }catch(e){ return []; }
+}
+function writeOutbox(list){ return localSet('outbox', JSON.stringify(list)); }
+function outboxCount(){ return readOutbox().length; }
+function opKey(op){ return op.kind + ':' + op.coll + '/' + op.id; }
+
+function queueOutbox(ops){
+  const q = readOutbox();
+  ops.forEach(op=>{
+    // One pending write per record; a newer edit supersedes an older one.
+    const at = q.findIndex(x=>opKey(x) === opKey(op));
+    if(at === -1) q.push(op); else q[at] = op;
+  });
+  const saved = writeOutbox(q);
+  updateSyncUi();
+  return saved;
+}
+
+let draining = false;
+async function drainOutbox(){
+  if(draining || !store) return;
+  const q = readOutbox();
+  if(q.length === 0) return;
+  draining = true;
+  const left = [];
+  for(const op of q){
+    try{ await store.applyOp(op); }
+    catch(e){
+      console.error(e);
+      if(!permanentError(e)) left.push(op);   // a permanent failure will never drain
+    }
+  }
+  writeOutbox(left);
+  draining = false;
+  // A clean drain means we are talking to the server again. The polling backend
+  // would work this out on its next tick, but the snapshot one has no tick, so
+  // without this it would sit on "offline" forever after one blip.
+  if(left.length === 0 && syncState === 'offline') setSyncState('live', '');
+  updateSyncUi();
+}
+
+// A write worth retrying vs one that never will be. Covers both backends: db
+// error codes, and HTTP status for the REST one.
+function permanentError(e){
+  if(e && (e.code === 'invalid_argument' || e.code === 'quota_exceeded')) return true;
+  if(e && typeof e.status === 'number'){
+    return e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429;
+  }
+  return false;
+}
+
+// Runs a batch, parking whatever fails. Returns true when every op either landed
+// or was safely parked for retry. `lastWriteQueued` tells the caller it is
+// pending rather than committed.
+let lastWriteQueued = false;
+// The last write error, kept so a caller can tell WHY a save failed. Without
+// it every rejection reads as "could not save", including the one rejection
+// that has a specific and actionable cause.
+let lastWriteError = null;
+
+// Why the last write failed, in the angler’s terms.
+//
+// A 401 or a 403 is NOT a signal problem, and it is the one case where the old
+// blanket "check your signal and try again" sent people to the one place the
+// answer was not: their bars were full, and the server had refused their
+// identity. Everything else keeps the wording it already had.
+function writeFailureText(what){
+  if(storeFull){
+    return 'The tournament database is full. Show this to the director before submitting anything else.';
+  }
+  const status = lastWriteError && lastWriteError.status;
+  if(status === 401 || status === 403){
+    return identityMissing()
+      ? identityBlockedText('a ' + what)
+      : 'The tournament server refused this ' + what + '. Nothing was submitted \u2014 see the director.';
+  }
+  return 'The ' + what + ' could not be saved. Nothing was submitted \u2014 check your signal and try again.';
+}
+
+// Postgres unique-violation, from supabase-one-entry-per-person.sql. The REST
+// layer hands back the response body, so match on the SQLSTATE and on the
+// index names rather than on prose that could change.
+function duplicateEntryError(e){
+  const m = (e && e.message) || '';
+  if(!/23505/.test(m)) return null;
+  if(/anglers_one_entry_per_person/.test(m)) return 'person';
+  if(/anglers_unique_angler_code/.test(m)) return 'code';
+  return 'other';
+}
+
+async function runOps(ops){
+  lastWriteQueued = false;
+  lastWriteError = null;
+  if(!store) return queueOutbox(ops);
+  const failed = [];
+  for(const op of ops){
+    try{ await store.applyOp(op); }
+    catch(e){
+      console.error(e);
+      lastWriteError = e;
+      if(e && e.code === 'quota_exceeded') storeFull = true;
+      if(permanentError(e)){
+        updateSyncUi();
+        return false;   // retrying cannot succeed - tell the caller
+      }
+      failed.push(op);
+    }
+  }
+  if(failed.length){
+    const parked = queueOutbox(failed);
+    lastWriteQueued = parked;
+    if(syncState === 'live') setSyncState('offline', 'Cannot reach the tournament server right now.');
+    return parked;   // false only when we could not even park it locally
+  }
+  storeFull = false;
+  updateSyncUi();
+  return true;
+}
+
+// ---- collection adapters ----
+// The rest of the app still thinks in arrays (load -> modify -> save), so these
+// keep that shape and translate it into per-record writes underneath.
+// THE tournament filter. Every screen in the app - leaderboard, GPS check, Big
+// Fish, payouts, contestants, livewell - reads its data through here, so
+// scoping happens once instead of in each of them, and a screen added later
+// gets it for free.
+//
+// loadedIds is deliberately set from the FILTERED ids: saveCollection works out
+// deletions by subtracting what came back from what went out, and seeding it
+// with the whole table would make every other event's records look like rows
+// the user had just deleted.
+// Every row in a collection, every event. Deliberately does NOT touch
+// loadedIds - only a scoped load may do that, or a later save would read the
+// other events' records as rows the user had deleted.
+function allRows(name){
+  let rows = liveCache[name];
+  if(!rows){
+    try{ rows = JSON.parse(localGet(name) || '[]'); }catch(e){ rows = []; }
+    if(!Array.isArray(rows)) rows = [];
+  }
+  return rows;
+}
+
+function cachedRows(name){
+  const mine = allRows(name).filter(isActiveEventRow);
+  loadedIds[name] = new Set(mine.map(r=>r.id));
+  return deepClone(mine);
+}
+
+// Every record written carries the event that was live when it was written.
+// Stamping here rather than at each creation site means registration, catch
+// submission and donations all inherit it with no code of their own - and an
+// older record being edited keeps the event it was born in.
+function stampEvent(row){
+  if(row && !row.eventId) row.eventId = activeEventId();
+  return row;
+}
+
+function rowBody(row){
+  const body = Object.assign({}, row);
+  delete body.id;
+  delete body.photo;   // photos are stored apart, never inline
+  return body;
+}
+
+// The caller only ever saw the live event's rows, so what it hands back has to
+// be folded into the full cache rather than replacing it - otherwise saving one
+// catch would wipe every other event's records out of the local mirror.
+function mergeIntoCache(name, rows){
+  const others = (liveCache[name] || []).filter(r=> !isActiveEventRow(r));
+  const mine = deepClone(rows).map(r=>{ const b = rowBody(r); b.id = r.id; return b; });
+  return others.concat(mine);
+}
+
+async function saveCollection(name, list){
+  const rows = Array.isArray(list) ? list : [];
+  rows.forEach(stampEvent);
+  const ids = new Set(rows.map(r=>r.id));
+  // Scoped to the live event by cachedRows(), so another event's records can
+  // never appear here as something to delete.
+  const prior = loadedIds[name] || new Set();
+  const removed = [];
+  prior.forEach(id=>{ if(!ids.has(id)) removed.push(id); });
+
+  if(!store){
+    const merged = mergeIntoCache(name, rows);
+    const ok = localSet(name, JSON.stringify(merged));
+    if(name === 'catches') removed.forEach(id=> deletePhoto(id));
+    liveCache[name] = merged;
+    loadedIds[name] = ids;
+    return ok;
+  }
+
+  const prevRows = liveCache[name] || [];
+  const prevSig = new Map(prevRows.map(r=>[r.id, JSON.stringify(rowBody(r))]));
+  const ops = [];
+  rows.forEach(row=>{
+    const sig = JSON.stringify(rowBody(row));
+    if(prevSig.get(row.id) === sig) return;   // untouched, skip the write
+    ops.push({ kind:'set', coll:name, id:row.id, body:rowBody(row) });
+  });
+  removed.forEach(id=> ops.push({ kind:'delete', coll:name, id:id }));
+  // A withdrawn or deleted catch takes its photo with it, wherever it lives.
+  if(name === 'catches') removed.forEach(id=> deletePhoto(id));
+
+  if(ops.length === 0) return true;
+  const result = await runOps(ops);
+
+  // Only believe our own write once it has landed or been parked for retry.
+  //
+  // runOps returns false only when the write can never succeed - a permanent
+  // rejection, or an outbox that could not even hold it. Caching the rows
+  // anyway would leave this device showing an angler or a catch that the
+  // server refused and nobody else will ever see, and the caller has just told
+  // the user it failed. A queued write still returns true, so going offline
+  // mid-event still shows your own work immediately.
+  if(!result) return false;
+
+  // Show our own write immediately instead of waiting to be told about it.
+  // The snapshot backend echoes a write back within milliseconds, but the
+  // polling one can take a whole interval - long enough that registering and
+  // then submitting a catch would find an empty angler list. The next sync
+  // reconciles this against whatever else the field has been doing.
+  liveCache[name] = mergeIntoCache(name, rows);
+  loadedIds[name] = ids;
+  localSet(name, JSON.stringify(liveCache[name]));
+  onStoreChanged();
+
+  return result;
+}
+
+async function loadAnglers(){ return cachedRows('anglers'); }
+async function saveAnglers(list){ return await saveCollection('anglers', list); }
+async function loadCatches(){ return cachedRows('catches'); }
+// Every catch ever logged, across all events. ONLY the duplicate-photo check
+// uses this: a photo reused from an earlier tournament is precisely what that
+// check exists to catch, and scoping it to the live event would blind it to the
+// strongest case there is. Everything that scores, ranks or pays uses
+// loadCatches() instead.
+async function loadCatchesAllEvents(){ return deepClone(allRows('catches')); }
+// Same again for the roster, and for the same narrow reason: the trophy case
+// shows YOUR history across every tournament, and an entry id only means
+// something inside one event. Nothing that scores, ranks or pays reads either
+// of these - they use loadAnglers()/loadCatches(), which stay on the live event.
+async function loadAnglersAllEvents(){ return deepClone(allRows('anglers')); }
+async function loadBetsAllEvents(){ return deepClone(allRows('bets')); }
+async function saveCatches(list){ return await saveCollection('catches', list); }
+async function loadDonations(){ return cachedRows('donations'); }
+async function loadMessages(){ return cachedRows('messages'); }
+async function saveMessages(list){ return await saveCollection('messages', list); }
+// One row per angler, keyed by their id, so this table stays the size of the
+// field instead of growing with every fix taken.
+async function loadSignals(){ return cachedRows('signals'); }
+async function saveSignals(list){ return await saveCollection('signals', list); }
+async function loadBets(){ return cachedRows('bets'); }
+async function saveBets(list){ return await saveCollection('bets', list); }
+async function saveDonations(list){ return await saveCollection('donations', list); }
+
+// ---- config ----
+// One shared record, holding which event is live and a budget per event. Both
+// backends already subscribe to exactly this one document, so keeping it single
+// is what lets the event switcher reach every phone with no new plumbing.
+//
+// Writes go through saveConfig() because the underlying op REPLACES the record:
+// writing just the field that changed would silently drop the other one.
+function configBody(){
+  const body = Object.assign({}, liveCache.config || {});
+  delete body.id;
+  return body;
+}
+function mirrorConfigLocally(){
+  const cfg = liveCache.config || {};
+  if(cfg.activeEventId) localSet('activeEventId', cfg.activeEventId);
+  const map = awardsBudgetMap();
+  Object.keys(map).forEach(id=> localSet('awardsBudget:' + id, String(map[id] || 0)));
+}
+async function saveConfig(patch){
+  if(!liveCache.config) liveCache.config = {};
+  Object.assign(liveCache.config, patch);
+  // Once budgets are held per event, the old single number is stale - drop it
+  // so it can never be read back over the real value.
+  if(liveCache.config.awardsBudgets) delete liveCache.config.awardsBudget;
+  mirrorConfigLocally();
+  if(!store) return true;
+  return await runOps([{ kind:'set', coll:'config', id:'tournament', body: configBody() }]);
+}
+
+async function setActiveEvent(id){
+  if(!eventById(id)) return false;
+  localSet('activeEventId', id);
+  return await saveConfig({ activeEventId: id });
+}
+
+// Budgets keyed by event. Builds from before this app knew about events stored
+// a single number for the only event there was, so it reads as that event's.
+function awardsBudgetMap(){
+  const cfg = liveCache.config || {};
+  const map = Object.assign({}, cfg.awardsBudgets || {});
+  if(map[LEGACY_EVENT_ID] === undefined && cfg.awardsBudget !== undefined && cfg.awardsBudget !== null){
+    map[LEGACY_EVENT_ID] = Number(cfg.awardsBudget) || 0;
+  }
+  return map;
+}
+// ---- per-event settings the director edits ----
+// The EVENTS entry supplies the starting values; anything the director saves
+// for that event in the shared config wins. Same shape as the budgets above,
+// so it reaches every phone through the one config record.
+function eventSettings(id){
+  const evt = eventById(id || activeEventId()) || EVENTS[0];
+  const all = (liveCache.config && liveCache.config.eventSettings) || {};
+  const saved = all[evt.id] || {};
+  return {
+    targetSpecies: saved.targetSpecies || evt.targetSpecies || 'Fish',
+    recordInches: Number(saved.recordInches != null ? saved.recordInches : evt.recordInches) || 0,
+    course: saved.course || evt.course || { kind:'none' }
+  };
+}
+async function saveEventSettings(patch){
+  const all = Object.assign({}, (liveCache.config && liveCache.config.eventSettings) || {});
+  const id = activeEventId();
+  all[id] = Object.assign({}, all[id] || {}, patch);
+  return await saveConfig({ eventSettings: all });
+}
+// The one species that scores in this event. Everything else an angler logs is
+// filed as OTHER_SPECIES and never ranked or paid.
+// ---- which species this event scores ----
+// An event used to score exactly one. It can now score any number, because a
+// water that holds walleye also holds pike and a director may reasonably want
+// both on the board.
+//
+// STORED as `speciesList`: [{ name, recordInches }]. Two reasons it is a list
+// of objects rather than a list of names:
+//
+//   - the plausibility ceiling is per species, and has to be. One ceiling
+//     across walleye and pike is either so low it flags every big pike or so
+//     high it never flags an impossible walleye. Both are worse than nothing,
+//     because a check that cries wolf stops being read.
+//   - a species can be renamed without losing its ceiling.
+//
+// Every event that existed before this has `targetSpecies` and `recordInches`
+// as plain values, and nothing migrates them - speciesList() builds the list
+// from them on the way past. There is nothing to run and no event to edit.
+function speciesList(settings){
+  const s = settings || eventSettings();
+  const list = Array.isArray(s.speciesList) ? s.speciesList : [];
+  const clean = list
+    .map(x=> ({
+      name: String((x && x.name) || '').trim(),
+      recordInches: Number((x && x.recordInches) || 0) || 0
+    }))
+    .filter(x=> x.name && x.name.toLowerCase() !== OTHER_SPECIES.toLowerCase());
+  if(clean.length) return clean;
+  // The pre-list shape. An event with neither reads as scoring nothing, which
+  // is correct rather than defaulting to a species nobody chose.
+  const one = String(s.targetSpecies || '').trim();
+  return one ? [{ name: one, recordInches: Number(s.recordInches || 0) || 0 }] : [];
+}
+
+// Just the names, which is what scoring asks for.
+function scoringSpecies(settings){
+  return speciesList(settings).map(x=> x.name);
+}
+
+// The PRIMARY species - the first on the list. Used only where one name is
+// genuinely wanted: the default selection on the submit screen, and the
+// walleye-shaped outline on the camera guide. Never for deciding what scores.
+function targetSpecies(){
+  const list = scoringSpecies();
+  return list.length ? list[0] : '';
+}
+
+// The plausibility ceiling for one species, or the primary's when asked without
+// one. 0 means no ceiling was set, and every caller already treats that as
+// "do not check".
+function recordInches(species){
+  const list = speciesList();
+  if(species === undefined) return list.length ? list[0].recordInches : 0;
+  for(let i = 0; i < list.length; i++){
+    if(list[i].name === species) return list[i].recordInches;
+  }
+  return 0;
+}
+
+// "walleye", "walleye or pike", "walleye, pike or lake trout". Every screen
+// that used to name the one species in a sentence now reads naturally with
+// several, rather than saying "scoring species" at anglers.
+function speciesPhrase(settings){
+  const names = scoringSpecies(settings).map(n=> n.toLowerCase());
+  if(names.length === 0) return 'scoring fish';
+  if(names.length === 1) return names[0];
+  return names.slice(0, -1).join(', ') + ' or ' + names[names.length - 1];
+}
+function courseBoundary(){ return eventSettings().course; }
+const OTHER_SPECIES = 'Other';
+// Catches carry the species NAME as typed at submit time, so a catch logged
+// before the director renamed the target species still reads correctly. Scoring
+// asks this question instead of comparing to a hardcoded 'Walleye'.
+// The target defaults to the LIVE event's, which is what every screen showing
+// the current tournament wants. The trophy case passes one explicitly, because
+// a past event may have been fished for a different species and scoring it
+// against this year's would silently empty its standings.
+// `target` may be omitted (use the live event's list), a single name, or a
+// list of names. All three shapes are load-bearing:
+//
+//   omitted  every live screen - standings, Big Fish, livewell, the report
+//   a string a frozen result from before an event could score more than one,
+//            and a trophy row for such an event. Those records must keep
+//            scoring exactly as they did.
+//   a list   a frozen result taken since.
+//
+// Making this one function polymorphic is what let multiple species reach
+// thirteen call sites without touching any of them.
+function isScoringSpecies(name, target){
+  // OTHER_SPECIES is the sentinel an angler picks to say "this is not one of
+  // the scoring species". A function called isScoringSpecies answering true for
+  // it would be wrong on its face, so it is refused here and not only filtered
+  // out of the stored list. speciesList() already keeps it off that list, which
+  // makes this unreachable today - and unreachable is not the same as safe when
+  // the target can also arrive from a frozen record written by an older build.
+  if(name === OTHER_SPECIES) return false;
+  const list = target === undefined ? scoringSpecies()
+             : (Array.isArray(target) ? target : [target]);
+  return list.indexOf(name) !== -1;
+}
+
+async function loadAwardsBudget(){
+  if(liveCache.config) return Number(awardsBudgetMap()[activeEventId()]) || 0;
+  const raw = localGet('awardsBudget:' + activeEventId());
+  return raw ? (parseFloat(raw) || 0) : 0;
+}
+async function saveAwardsBudget(amount){
+  const map = awardsBudgetMap();
+  map[activeEventId()] = Number(amount) || 0;
+  return await saveConfig({ awardsBudgets: map });
+}
+
+// ---- photos ----
+// Stored apart from the catch record: the leaderboard, standings and payout
+// screens never move an image byte, and one oversized shot can never take the
+// whole catch list down with it.
+
+// Last line of defence on size. capturePhoto() and resizeImage() already encode
+// to budget, but this is the door every photo goes through, so the guarantee
+// belongs here too - an oversized frame is re-encoded rather than rejected.
+function fitPhoto(dataUrl){
+  return new Promise(resolve=>{
+    if(!dataUrl || dataUrl.length <= photoBudget()){ resolve(dataUrl); return; }
+    const img = new Image();
+    img.onload = ()=>{
+      try{ resolve(encodeToBudget(img, img.width, img.height)); }
+      catch(e){ console.error(e); resolve(dataUrl); }
+    };
+    img.onerror = ()=> resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+// Resolves the address to record on the catch ('' when the backend keys photos
+// by catch id), or null if the photo could not be stored at all.
+async function savePhoto(catchId, dataUrl){
+  if(!dataUrl) return '';
+  const fitted = await fitPhoto(dataUrl);
+  photoCache.set(catchId, fitted);
+  if(!store) return localPhotoSet(catchId, fitted) ? '' : null;
+  const ok = await runOps([{ kind:'photo', coll:'photos', id:catchId, body:{ data: fitted } }]);
+  if(!ok) return null;
+  return store.photoUrlFor ? store.photoUrlFor(catchId) : '';
+}
+
+function catchById(id){
+  const rows = liveCache.catches || [];
+  for(let i=0;i<rows.length;i++){ if(rows[i].id === id) return rows[i]; }
+  return null;
+}
+
+// Synchronous on purpose: the camera overlay repaints from updateGuide(), and
+// awaiting a load there would let the guide render a frame behind the picker.
+function anglerById(id){
+  const rows = liveCache.anglers || [];
+  for(let i=0;i<rows.length;i++){ if(rows[i].id === id) return rows[i]; }
+  return null;
+}
+
+// Returns something usable directly as an <img> src: a data: URL from this
+// device, or an https: URL from object storage.
+async function loadPhoto(catchId){
+  if(!catchId) return '';
+  if(photoCache.has(catchId)) return photoCache.get(catchId);
+
+  // Still waiting to upload? The bytes are in the outbox.
+  const pending = readOutbox().find(op=>op.kind === 'photo' && op.id === catchId);
+  if(pending && pending.body && pending.body.data){
+    photoCache.set(catchId, pending.body.data);
+    return pending.body.data;
+  }
+  const local = localGet('photo:' + catchId);
+  if(local){ photoCache.set(catchId, local); return local; }
+
+  const row = catchById(catchId);
+  if(row && row.photoUrl){ photoCache.set(catchId, row.photoUrl); return row.photoUrl; }
+
+  if(store && store.getPhoto){
+    try{
+      const src = await store.getPhoto(catchId);
+      if(src){ photoCache.set(catchId, src); return src; }
+    }catch(e){ console.error(e); }
+  }
+  return '';
+}
+
+function deletePhoto(catchId){
+  photoCache.delete(catchId);
+  localDel('photo:' + catchId);
+  const q = readOutbox().filter(op=>!(op.kind === 'photo' && op.id === catchId));
+  writeOutbox(q);
+  if(store && store.deletePhoto){
+    Promise.resolve(store.deletePhoto(catchId)).catch(e=>console.error(e));
+  }
+}
+
+// Device-only mode. When the device is full, drop photos for catches the
+// director has already ruled on (oldest first) before giving up - a reviewed
+// catch's photo has done its job, an unreviewed one's has not.
+function localPhotoSet(catchId, dataUrl){
+  if(localSet('photo:' + catchId, dataUrl)) return true;
+  let rows = [];
+  try{ rows = JSON.parse(localGet('catches') || '[]'); }catch(e){ rows = []; }
+  const spent = rows
+    .filter(c=>c.id !== catchId && c.status && c.status !== 'pending')
+    .sort((a,b)=>(a.timestamp||0)-(b.timestamp||0));
+  for(const c of spent){
+    if(localGet('photo:' + c.id) === null) continue;
+    localDel('photo:' + c.id);
+    photoCache.delete(c.id);
+    if(localSet('photo:' + catchId, dataUrl)) return true;
+  }
+  return false;
+}
+
+// Renders a slot now and fills it in when the photo arrives, so a list of
+// catches paints immediately instead of waiting on every image.
+// ---- rendering untrusted catch fields ----
+// Every record in the store is writable by anyone holding the page's anon key,
+// so a catch's own fields are UNTRUSTED even though the app only ever writes
+// sane values through a <select> and a number box. These render in the
+// DIRECTOR's browser while reviewing, which is the session that matters most,
+// so length and status go through here rather than straight into innerHTML.
+const CATCH_STATUSES = ['pending','approved','rejected'];
+// Only ever emits one of a known set, so it is safe in a class attribute.
+function statusClass(status){
+  return CATCH_STATUSES.indexOf(status) === -1 ? 'pending' : status;
+}
+function statusHtml(status){
+  return '<span class="status '+statusClass(status)+'">'+escapeHtml(status)+'</span>';
+}
+// A length that is not a number renders as a dash instead of as markup.
+function lengthHtml(length){
+  const n = Number(length);
+  return isFinite(n) ? escapeHtml(n.toFixed(2)) + '&quot;' : '&mdash;';
+}
+
+// ---- has the stored photo changed since it was submitted? ----
+// The app offers an angler exactly two edits on a pending catch: the length,
+// and withdrawing it altogether. It has never offered to replace the photo.
+//
+// So this is not checking for something the app can do. It is checking that the
+// hash recorded on the catch record still describes the pixels sitting in
+// storage, because those are two different places and nothing but this joins
+// them. A swapped photo leaves the length, the timestamp, the GPS fix, the
+// burned-in stamp and the first-pass measurements all describing a picture that
+// is no longer there - and every one of them would still read as fine.
+//
+// Byte-identical bytes hash identically: the stored file is the exact base64 of
+// the string that was hashed (see dataUrlToBlob), and fitPhoto is a no-op on a
+// photo that already came through encodeToBudget, which every catch photo does.
+// So the tolerance below is for a decoder that rounds a pixel differently, not
+// for a different picture. A real swap is nowhere near it.
+const PHOTO_TAMPER_TOLERANCE = 2;
+
+function photoIntegrity(c, freshHash){
+  const recorded = c && c.precheck && c.precheck.hash;
+  // Nothing recorded means nothing to compare - a catch filed before the
+  // first-pass checks existed. Absence is not evidence either way, so it must
+  // not read as a failure.
+  if(!recorded || !freshHash) return { checked:false, match:true, distance:0 };
+  const distance = hammingHex(recorded, freshHash);
+  return { checked:true, match: distance <= PHOTO_TAMPER_TOLERANCE, distance:distance };
+}
+
+// What the director is told. Only ever on a mismatch: a line on every card
+// saying "this photo is fine" is a line that stops being read.
+function photoTamperHtml(v){
+  if(!v || !v.checked || v.match) return '';
+  return '<div class="tamper-note">Photo does not match what was submitted &mdash; ' +
+    v.distance + '/64 bits differ from the hash recorded when this catch was filed. ' +
+    'The app cannot replace a catch photo, so this was not done through it.</div>';
+}
+
+function photoSlotHtml(c){
+  return '<div class="photoslot" data-photo-for="'+escapeHtml(c.id)+'"><div class="noimg">&hellip;</div></div>';
+}
+// data-photo-for is the contract, not the class: the review lists hang it on a
+// bare 64px box, the gallery on a whole tile that also carries a caption and a
+// marker. Where a slot names a .photo-target, the photo is painted into that
+// and everything else the tile is carrying survives.
+// `opts.verify` re-hashes each photo as it decodes and says so when it no
+// longer matches the record. Director lists only - the gallery and an angler's
+// own list would be reporting a problem to the one person who cannot act on it.
+// It costs nothing extra: the decode has already happened to draw the picture.
+function hydratePhotos(root, opts){
+  const scope = root || document;
+  const verify = !!(opts && opts.verify);
+  scope.querySelectorAll('[data-photo-for]').forEach(host=>{
+    if(host.dataset.photoDone) return;
+    host.dataset.photoDone = '1';
+    const id = host.dataset.photoFor;
+    const slot = host.querySelector('.photo-target') || host;
+    loadPhoto(id).then(url=>{
+      if(!slot.isConnected) return;
+      if(url){
+        const img = document.createElement('img');
+        img.alt = 'Catch photo on the bump board';
+        // An object-storage URL can 404 while an upload is still queued.
+        img.onerror = ()=>{ slot.innerHTML = '<span class="noimg">no photo</span>'; };
+        if(verify) img.onload = ()=> flagPhotoMismatch(host, id, img);
+        img.src = url;
+        slot.textContent = '';
+        slot.appendChild(img);
+      } else {
+        slot.innerHTML = '<span class="noimg">no photo</span>';
+      }
+    }).catch(e=>{
+      console.error(e);
+      slot.innerHTML = '<span class="noimg">no photo</span>';
+    });
+  });
+}
+
+// Split out so the hashing sits behind one try/catch: a cross-origin photo
+// taints the canvas and getImageData throws, and a check that cannot run must
+// never be reported as a check that failed.
+function flagPhotoMismatch(host, catchId, img){
+  try{
+    if(host.dataset && host.dataset.tamperDone) return;
+    const v = photoIntegrity(catchById(catchId), dHashOf(img));
+    const html = photoTamperHtml(v);
+    if(!html || !host.isConnected) return;
+
+    // WHERE this goes is not cosmetic. A .catchcard is a FLEX ROW - [photo]
+    // then [info] - and appending to the card made the warning a THIRD flex
+    // item. With no basis of its own it shrank to min-content width, which for
+    // a sentence means the longest word, and then wrapped one word per line
+    // and stretched the row to thousands of pixels tall. On a phone that is not
+    // a warning, it is a pink stripe down the screen with the app smeared
+    // beside it.
+    //
+    // It belongs in the info COLUMN, which is flex:1 min-width:0 and lays its
+    // children out as ordinary blocks.
+    const card = host.closest ? host.closest('.catchcard') : null;
+    const target = (card && card.querySelector('.info')) || null;
+    if(!target) return;
+    const note = document.createElement('div');
+    note.innerHTML = html;
+    target.appendChild(note.firstChild);
+    if(host.dataset) host.dataset.tamperDone = '1';
+  }catch(e){ console.error(e); }
+}
+
+// ---- sync indicator ----
+function syncSummary(){
+  const queued = outboxCount();
+  if(storeFull){
+    return { level:'bad', text:'The tournament database is full. Tell the director before submitting anything else.' };
+  }
+  // Ahead of the queue count on purpose. Writes that cannot be authorised will
+  // never drain, so "3 changes waiting to sync" would be a lie told hopefully.
+  if(identitySettledMissing()){
+    return { level:'bad', text:'This device has not finished signing in to the tournament server, '+
+      'so nothing can be saved yet. Keep the app open where you have signal.'+
+      (identityError ? ' (' + identityError + ')' : '') };
+  }
+  if(queued > 0){
+    return { level:'warn', text:queued+' change'+(queued===1?'':'s')+' waiting to sync. Keep the app open once you have signal.' };
+  }
+  if(syncState === 'live') return { level:'ok', text:'Synced with the '+(store ? store.label : 'tournament store')+'.' };
+  if(syncState === 'connecting') return { level:'warn', text:'Connecting to the tournament store…' };
+  if(syncState === 'offline'){
+    return { level:'warn', text:'Offline. Entries are held on this device and will sync when you have signal.' };
+  }
+  return { level:'warn', text:'Working on this device only — the director will not see these entries. '+syncDetail };
+}
+
+function updateSyncUi(){
+  const s = syncSummary();
+  const signal = document.getElementById('sync-signal');
+  if(signal){
+    signal.classList.remove('sync-ok','sync-warn','sync-bad');
+    signal.classList.add('sync-'+s.level);
+    signal.setAttribute('aria-label', s.text);
+    signal.setAttribute('title', s.text);
+  }
+  const banner = document.getElementById('sync-banner');
+  if(banner){
+    if(s.level === 'ok'){
+      banner.hidden = true;
+    } else {
+      banner.hidden = false;
+      banner.className = 'syncbanner level-'+s.level;
+      banner.textContent = s.text;
+    }
+  }
+  const line = document.getElementById('admin-sync-line');
+  if(line){
+    // Scoped to the live event, so this never disagrees with the roster and
+    // standings on the same screen. Other events are broken out under Event.
+    const counts = ['anglers','catches','donations'].map(n=>
+      (liveCache[n] ? liveCache[n].filter(isActiveEventRow).length : 0));
+    // The auth mode is here so the director can confirm at a glance which
+    // identity the app is using - the only way to tell whether enabling
+    // anonymous sign-in actually took effect.
+    line.textContent = s.text + ' · ' + counts[0] + ' anglers, ' + counts[1] +
+      ' catches, ' + counts[2] + ' donations on record. Auth: ' + authModeLabel() + '.';
+  }
+}
+
+let memoryStore = {};
+// "Whose phone is this" - deliberately device-local, this is not shared
+// tournament data. Kept per event: being registered for one tournament is not
+// being registered for the next, and switching back finds the angler again
+// instead of making them register a second time.
+function myAnglerKey(){ return 'myAnglerId:' + activeEventId(); }
+function getMyAnglerId(){
+  const key = myAnglerKey();
+  if(memoryStore[key] === undefined){
+    let v = localGet(key);
+    // Builds from before this app knew about events kept one unsuffixed key,
+    // for the only event there was.
+    if(!v && activeEventId() === LEGACY_EVENT_ID) v = localGet('myAnglerId');
+    memoryStore[key] = v || null;
+  }
+  return memoryStore[key];
+}
+function setMyAnglerId(id){
+  const key = myAnglerKey();
+  memoryStore[key] = id;
+  localSet(key, id);
+  return id;
+}
+// Reads through the same per-event key, so this is just a warm-up. Called
+// before the first sync, it caches under whichever event is the cold-start
+// guess; the shared config arriving switches the key, not the value.
+async function loadMyAnglerId(){ getMyAnglerId(); }
+
+// ---- bringing an entry onto another device ----
+// The installed home-screen app and the mobile browser are separate storage
+// containers with separate anonymous sign-ins, so the same person is two
+// different users as far as the database is concerned. Their entry is invisible
+// in one and uneditable from the other, and registering again is the wrong fix.
+//
+// claim_entry() (supabase-step3-shared-devices.sql) adds this device to an
+// existing entry after checking two things the angler knows and neither of
+// which is published: the board code, and the phone they registered with.
+async function claimEntry(code, phone){
+  const wantCode = String(code || '').trim().toUpperCase();
+  const wantPhone = normPhone(phone);
+  if(!wantCode || wantPhone.length < 10) return null;
+
+  // Device-only build: no server to ask, so match against what is here and be
+  // honest in the caller that this carries nothing between devices.
+  if(!SUPABASE_URL || !SUPABASE_ANON_KEY){
+    const local = allRows('anglers').find(a=>
+      String(a.anglerCode || '').toUpperCase() === wantCode &&
+      a.phone && normPhone(a.phone) === wantPhone);
+    return local ? local.id : null;
+  }
+
+  const res = await fetch(SUPABASE_URL.replace(/\/+$/, '') + '/rest/v1/rpc/claim_entry', {
+    method: 'POST',
+    headers: {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': 'Bearer ' + bearerToken(),
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ p_code: wantCode, p_phone: wantPhone })
+  });
+  if(!res.ok){
+    let detail = '';
+    try{ detail = (await res.text()).slice(0, 200); }catch(e){}
+    const err = new Error('claim_entry ' + res.status + ' ' + detail);
+    err.status = res.status;
+    throw err;
+  }
+  // A scalar-returning RPC gives back the value itself, or null for no match.
+  const id = await res.json();
+  return (typeof id === 'string' && id) ? id : null;
+}
+
+// The function only exists after step 3 has been run, and a device still on the
+// shared key has the wrong role to call it. Both are worth saying out loud
+// rather than reporting as "no entry found", which sends the angler off
+// re-checking a code that was right all along.
+function claimErrorText(e){
+  if(e && e.status === 404){
+    return 'This tournament server has not been set up for shared devices yet. Ask the director.';
+  }
+  if(e && (e.status === 401 || e.status === 403)){
+    return authMode === 'anon-key'
+      ? 'This device has not finished signing in. Wait a few seconds and try again.'
+      : 'This device is not allowed to claim an entry. Ask the director.';
+  }
+  return 'Could not reach the tournament server. Check your signal and try again.';
+}
+
+// Escapes quotes as well as angle brackets. Several of these strings are
+// interpolated into HTML ATTRIBUTES (value="...") further down, where a bare
+// double quote would close the attribute early and turn the rest of the value
+// into markup. textContent/innerHTML alone does not escape quotes.
+function escapeHtml(s){
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function initials(name){
+  const parts = (name||'').trim().split(/\s+/);
+  if(parts.length===0 || !parts[0]) return '?';
+  return (parts[0][0] + (parts[1]?parts[1][0]:'')).toUpperCase();
+}
+
+// ---- the server's clock ----
+// A timestamp burned into a photo is worth exactly as much as the clock that
+// produced it, and a phone's clock is a setting. So the app measures how far
+// this device is from the tournament server: every Supabase response carries a
+// Date header, which makes the offset free - no extra round trip, no API - and
+// it is what lets a stamp say "this came off a clock that was 40 minutes out"
+// instead of stating a wrong time with confidence.
+//
+// Nothing is ever rejected over this. It is a note for the director, like every
+// other signal in the first pass.
+let serverClockOffset = null;   // server time minus device time, in ms
+let serverClockSeenAt = 0;
+
+// Two minutes. The Date header has whole-second resolution, the response spent
+// time in flight, and phones drift a little between NTP syncs - none of that is
+// someone moving their clock to fake a catch.
+const CLOCK_SKEW_TOLERANCE_MS = 2 * 60 * 1000;
+
+// Wrapped rather than read inline, and it may never throw: a clock reading is
+// a nice-to-have, and a registration must not fail because a response came
+// back without a readable header. Reaching into res.headers.get() unguarded
+// took down every Supabase call the first time it was written.
+function noteResponseClock(res){
+  try{
+    if(res && res.headers && typeof res.headers.get === 'function'){
+      return noteServerClock(res.headers.get('date'));
+    }
+  }catch(e){ /* the clock stays unverified, which is an honest answer */ }
+  return false;
+}
+
+function noteServerClock(dateHeader, receivedAt){
+  const at = Date.parse(dateHeader || '');
+  if(!at) return false;                       // absent or unparseable: learn nothing
+  const now = receivedAt === undefined ? Date.now() : receivedAt;
+  serverClockOffset = at - now;
+  serverClockSeenAt = now;
+  return true;
+}
+// null means "no idea" - a device-only event, or one that has not reached the
+// server yet. That is a third answer, and the stamp says so rather than
+// implying the clock has been checked and passed.
+function clockSkewMs(){ return serverClockOffset; }
+function clockIsTrusted(){
+  return serverClockOffset === null ? null : Math.abs(serverClockOffset) <= CLOCK_SKEW_TOLERANCE_MS;
+}
+// Rounded to whole minutes: "43 min" is the useful part, and a stamp claiming
+// 43 min 12 s of skew would imply a precision the Date header does not have.
+function skewText(ms){
+  if(ms === null || ms === undefined) return '';
+  const mins = Math.round(Math.abs(ms) / 60000);
+  if(mins === 0) return 'under a minute';
+  const unit = mins === 1 ? 'min' : 'min';
+  return mins + ' ' + unit + (ms > 0 ? ' behind' : ' ahead');
+}
+
+// ---- the stamp ----
+// Burned into the pixels rather than kept beside them: a JSON field can be
+// edited by whoever holds the record, and an EXIF tag is stripped by every
+// messaging app a photo passes through on its way to a dispute.
+//
+// PHOTO_SOURCE_CAMERA is worth more as evidence than an uploaded file, and the
+// stamp says which it was. A file picked off the roll could have been shot any
+// time, so its time is the time it was SUBMITTED and the stamp does not pretend
+// otherwise.
+const PHOTO_SOURCE_CAMERA = 'camera';
+const PHOTO_SOURCE_UPLOAD = 'upload';
+
+function stampClockText(at){
+  const evt = activeEvent();
+  try{
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: evt.timeZone,
+      year:'numeric', month:'2-digit', day:'2-digit',
+      hour:'2-digit', minute:'2-digit', hourCycle:'h23', timeZoneName:'short'
+    }).format(new Date(at));
+  }catch(e){
+    // An event carrying a time zone this browser does not know must not stop a
+    // catch being logged. UTC is wrong-but-labelled, which is readable.
+    return new Date(at).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+  }
+}
+
+// The lines that get drawn, top to bottom. Split out from the drawing so the
+// wording can be tested without a canvas.
+function photoStampLines(source, at, skewMs){
+  const evt = activeEvent();
+  const when = stampClockText(at);
+  const dayIndex = (evt.dates || []).indexOf(eventTimeParts(new Date(at)).dateKey);
+  const day = dayIndex === -1 ? '' : ' · Day ' + (dayIndex + 1);
+  const lines = [(evt.prefix || 'EVENT') + day + ' · ' + when];
+  lines.push(source === PHOTO_SOURCE_CAMERA
+    ? 'In-app camera'
+    : 'Uploaded file · time of submission');
+  // Only when there is something to say. A stamp that carried "clock OK" on
+  // every photo would train the eye to skip the line that matters.
+  if(skewMs === null || skewMs === undefined){
+    lines.push('Device clock unverified');
+  } else if(Math.abs(skewMs) > CLOCK_SKEW_TOLERANCE_MS){
+    lines.push('Device clock ' + skewText(skewMs) + ' vs server');
+  }
+  return lines;
+}
+
+function photoStamp(source, at){
+  const when = at === undefined ? Date.now() : at;
+  return {
+    at: when,
+    source: source,
+    clockOffsetMs: clockSkewMs(),
+    lines: photoStampLines(source, when, clockSkewMs())
+  };
+}
+
+// Bottom-left, sized off the canvas so it reads the same on a 1400px board shot
+// and on the 400px rung a weak signal settles for. Drawn INSIDE the encode loop
+// - see encodeToBudget - because every rung redraws the canvas from scratch.
+// Monospace on purpose: a proportional face makes a timestamp harder to read
+// at a glance, and the stamp is meant to be read off a photo on a phone.
+function fontFace(){ return 'px ui-monospace, "SF Mono", Menlo, Consolas, monospace'; }
+
+function drawPhotoStamp(ctx, width, height, lines){
+  if(!ctx || !lines || lines.length === 0) return;
+  ctx.save();
+  const widest = ()=>{
+    let w = 0;
+    for(let i = 0; i < lines.length; i++) w = Math.max(w, ctx.measureText(lines[i]).width);
+    return w;
+  };
+  // 2.6% of the short edge, floored so the smallest rung stays legible.
+  let size = Math.max(10, Math.round(Math.min(width, height) * 0.026));
+  ctx.font = '600 ' + size + fontFace();
+  // Shrink to fit rather than let a line run off the edge. A narrow or portrait
+  // frame - and the 240px floor of the encode ladder - can leave the longest
+  // line wider than the photo, and a stamp clipped mid-timestamp is worse than
+  // a small one. Floored at 7px: past that it stops being readable at all, and
+  // a clipped stamp is then the lesser problem.
+  const room = width - Math.round(size * 0.55) * 2;
+  const over = widest();
+  if(over > room && over > 0){
+    size = Math.max(7, Math.floor(size * (room / over)));
+    ctx.font = '600 ' + size + fontFace();
+  }
+  const pad = Math.round(size * 0.55);
+  const lead = Math.round(size * 1.32);
+  const boxH = lead * lines.length + pad * 2 - (lead - size);
+  ctx.textBaseline = 'top';
+  const boxW = Math.min(width, widest() + pad * 2);
+  const top = height - boxH;
+  // A band rather than a shadow: the stamp has to survive a photo of a photo,
+  // and a drop shadow over a bright bump board does not.
+  ctx.fillStyle = 'rgba(0,0,0,0.62)';
+  ctx.fillRect(0, top, boxW, boxH);
+  ctx.fillStyle = '#FFFFFF';
+  for(let i = 0; i < lines.length; i++){
+    ctx.fillText(lines[i], pad, top + pad + lead * i);
+  }
+  ctx.restore();
+}
+
+// Encodes to the LARGEST rung of PHOTO_STEPS that fits the active backend's
+// byte budget, so a photo can never be too big for whatever has to hold it.
+// Takes an <img> or a live <video> frame. On a Supabase event the top rung
+// applies and the director gets a 1400px board photo; on the Artifact store,
+// whose records cap at 256 KiB, it settles a few rungs lower.
+function encodeToBudget(source, naturalW, naturalH, stamp){
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const budget = photoBudget();
+  const attempts = PHOTO_STEPS.slice();
+  // The fixed ladder handles any real board photo in a step or two. This tail
+  // guarantees the budget even for a frame that will not compress (dense noise,
+  // heavy texture, a shot of a screen) so a catch can never be rejected for
+  // being unstorable.
+  let dim = PHOTO_STEPS[PHOTO_STEPS.length-1].dim;
+  while(dim > 240){
+    dim = Math.round(dim * 0.8);
+    attempts.push({ dim: dim, q: 0.3 });
+  }
+  let out = '';
+  for(let i=0;i<attempts.length;i++){
+    const step = attempts[i];
+    let w = naturalW, h = naturalH;
+    if(w > h && w > step.dim){ h = h*(step.dim/w); w = step.dim; }
+    else if(h > step.dim){ w = w*(step.dim/h); h = step.dim; }
+    canvas.width = Math.max(1, Math.round(w));
+    canvas.height = Math.max(1, Math.round(h));
+    ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+    // After the image, before the encode, and inside the loop: each rung starts
+    // from a blank canvas, so a stamp drawn once outside would survive only if
+    // the first rung happened to fit.
+    if(stamp) drawPhotoStamp(ctx, canvas.width, canvas.height, stamp.lines);
+    out = canvas.toDataURL('image/jpeg', step.q);
+    if(out.length <= budget) return out;
+  }
+  return out;   // floor of the ladder - still stored, still readable
+}
+
+// Resolves { dataUrl, srcWidth, srcHeight } - the source dimensions are the
+// ORIGINAL photo's, captured before downscaling, so the resolution check in the
+// first-pass review judges what the angler actually shot, not our stored copy.
+function resizeImage(file, stamp){
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onload = e=>{
+      const img = new Image();
+      img.onload = ()=>{
+        resolve({
+          dataUrl: encodeToBudget(img, img.width, img.height, stamp),
+          srcWidth: img.width, srcHeight: img.height
+        });
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// ---- photo analysis (runs entirely in the browser, no network, no API key) ----
+// These are deterministic image measurements, not AI. They are the signals that
+// are genuinely reliable to compute locally; the judgement calls that need a
+// vision model (species, is the nose actually on the pin) go to the Fish-I pass.
+
+// `win` is [x, y, w, h] in fractions of the source; omitted means the whole
+// frame, which is what every caller but the hash wants.
+function greyscaleFrom(img, w, h, win){
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  const r = win || [0, 0, 1, 1];
+  ctx.drawImage(img,
+    img.width * r[0], img.height * r[1], img.width * r[2], img.height * r[3],
+    0, 0, w, h);
+  const data = ctx.getImageData(0, 0, w, h).data;
+  const grey = new Float64Array(w*h);
+  for(let i=0;i<w*h;i++){
+    grey[i] = 0.299*data[i*4] + 0.587*data[i*4+1] + 0.114*data[i*4+2];
+  }
+  return grey;
+}
+
+// Difference hash: 9x8 greyscale, compare each pixel to its right neighbour.
+// Two photos of the same fish in the same pose hash within a few bits of each
+// other even after resaving, which is what makes duplicate detection work.
+function dHashOf(img, win){
+  const w = 9, h = 8;
+  const grey = greyscaleFrom(img, w, h, win);
+  let bits = '';
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w-1;x++){
+      bits += grey[y*w+x] > grey[y*w+x+1] ? '1' : '0';
+    }
+  }
+  let hex = '';
+  for(let i=0;i<bits.length;i+=4) hex += parseInt(bits.slice(i,i+4),2).toString(16);
+  return hex;
+}
+
+// One hash per window. [0] is the full frame, so anything reading only .hash -
+// a stored record from before this existed, the director's own eye - still gets
+// exactly the number it always got.
+function photoHashes(img){
+  return PRECHECK_HASH_WINDOWS.map(win=> dHashOf(img, win));
+}
+
+// The windows a stored precheck can be compared through. Catches filed before
+// windowing existed carry one hash and are compared through that alone: they
+// can still be matched BY a cropped photo, but a crop of them cannot be
+// recognised, because the windows that would have caught it were never taken.
+function photoHashList(p){
+  if(!p) return [];
+  if(Array.isArray(p.hashes) && p.hashes.length) return p.hashes;
+  return p.hash ? [p.hash] : [];
+}
+
+// The closest pair of windows the two photos have, and whether that pair was a
+// crop rather than two whole frames.
+//
+// One side of every comparison is a WHOLE photo. If B is a crop of A then B's
+// full frame matches one of A's windows, so the cross product adds nothing this
+// does not already reach - and comparing two narrow windows against each other
+// only adds ways for two low-detail patches to collide by accident.
+function photoHashDistance(a, b){
+  const A = photoHashList(a), B = photoHashList(b);
+  if(!A.length || !B.length) return { distance: 64, cropped: false };
+  let best = 64, cropped = false;
+  for(let j = 0; j < B.length; j++){
+    const d = hammingHex(A[0], B[j]);
+    if(d < best){ best = d; cropped = j !== 0; }
+  }
+  for(let i = 1; i < A.length; i++){
+    const d = hammingHex(A[i], B[0]);
+    if(d < best){ best = d; cropped = true; }
+  }
+  return { distance: best, cropped: cropped };
+}
+
+function hammingHex(a, b){
+  if(!a || !b || a.length !== b.length) return 64;
+  let d = 0;
+  for(let i=0;i<a.length;i++){
+    let x = parseInt(a[i],16) ^ parseInt(b[i],16);
+    while(x){ d += x & 1; x >>= 1; }
+  }
+  return d;
+}
+
+function exposureAndSharpness(img){
+  const w = 64, h = 64;
+  const g = greyscaleFrom(img, w, h);
+  let sum = 0;
+  for(let i=0;i<g.length;i++) sum += g[i];
+  const brightness = sum / g.length;
+
+  // Variance of the Laplacian - the standard cheap focus measure.
+  const lap = [];
+  for(let y=1;y<h-1;y++){
+    for(let x=1;x<w-1;x++){
+      lap.push(-4*g[y*w+x] + g[(y-1)*w+x] + g[(y+1)*w+x] + g[y*w+x-1] + g[y*w+x+1]);
+    }
+  }
+  const mean = lap.reduce((s,v)=>s+v, 0) / lap.length;
+  const variance = lap.reduce((s,v)=>s+(v-mean)*(v-mean), 0) / lap.length;
+  return { brightness, sharpness: variance };
+}
+
+function analyzePhoto(dataUrl, srcWidth, srcHeight){
+  return new Promise((resolve)=>{
+    if(!dataUrl){ resolve(null); return; }
+    const img = new Image();
+    img.onload = ()=>{
+      try{
+        const ex = exposureAndSharpness(img);
+        const hashes = photoHashes(img);
+        resolve({
+          // hashes[0] IS hash - kept as its own field so nothing that reads
+          // the old shape has to know windows happened.
+          hash: hashes[0],
+          hashes: hashes,
+          brightness: Math.round(ex.brightness*10)/10,
+          sharpness: Math.round(ex.sharpness*10)/10,
+          srcWidth: srcWidth || img.width,
+          srcHeight: srcHeight || img.height,
+          analyzedAt: Date.now()
+        });
+      }catch(e){ console.error(e); resolve(null); }
+    };
+    img.onerror = ()=> resolve(null);
+    img.src = dataUrl;
+  });
+}
+
+// ---- first-pass verdict ----
+// Combines the local photo measurements, the GPS already stored with the catch,
+// and cross-checks against the rest of the field. Nothing here rejects a catch -
+// it produces flags for the director, who still makes every call.
+// allCatches is the LIVE EVENT's field - that is what "well above the rest of
+// the field" has to mean. dupCorpus is every catch across every event, because
+// a photo reused from a previous tournament is the strongest fraud signal here.
+// It defaults to allCatches so a caller that has no cross-event list still
+// behaves sensibly rather than silently checking nothing.
+function evaluateFirstPass(c, allCatches, dupCorpus){
+  const checks = [];
+  const p = c.precheck;
+  const dupPool = dupCorpus || allCatches;
+
+  if(!p){
+    checks.push({ level:'info', label:'Photo not analyzed',
+      detail:'Submitted before automatic checks were enabled.' });
+  } else {
+    const shortEdge = Math.min(p.srcWidth||0, p.srcHeight||0);
+    if(shortEdge && shortEdge < PRECHECK_MIN_SOURCE_EDGE){
+      checks.push({ level:'review', label:'Low-resolution photo',
+        detail: p.srcWidth+'x'+p.srcHeight+' - board graduations may not be readable.' });
+    }
+    if(p.sharpness < PRECHECK_BLUR_THRESHOLD){
+      checks.push({ level:'review', label:'Photo looks soft or out of focus',
+        detail:'Focus measure '+p.sharpness.toFixed(0)+' (below '+PRECHECK_BLUR_THRESHOLD+'). Consider asking for a re-shoot.' });
+    }
+    if(p.brightness < PRECHECK_DARK_THRESHOLD){
+      checks.push({ level:'review', label:'Photo is very dark',
+        detail:'Mean brightness '+p.brightness.toFixed(0)+'/255.' });
+    } else if(p.brightness > PRECHECK_BRIGHT_THRESHOLD){
+      checks.push({ level:'review', label:'Photo is blown out',
+        detail:'Mean brightness '+p.brightness.toFixed(0)+'/255 - detail may be lost to glare.' });
+    }
+  }
+
+  // Duplicate photo detection - the strongest fraud signal available locally,
+  // and the one check that deliberately looks across every event.
+  if(p && (p.hash || (p.hashes && p.hashes.length))){
+    const near = dupPool
+      .filter(o=> o.id!==c.id && o.precheck && (o.precheck.hash || o.precheck.hashes))
+      .map(o=>{
+        const m = photoHashDistance(p, o.precheck);
+        return { other:o, distance:m.distance, cropped:m.cropped };
+      })
+      // A crop clears a tighter bar than a whole-frame match, because it is
+      // less picture and so weaker evidence.
+      .filter(x=> x.distance <= (x.cropped ? PRECHECK_DUP_CROP_MAX_DISTANCE
+                                           : PRECHECK_DUP_MAX_DISTANCE))
+      .sort((a,b)=> a.distance-b.distance);
+    if(near.length){
+      const hit = near[0];
+      const hitEventId = rowEventId(hit.other);
+      const crossEvent = hitEventId !== rowEventId(c);
+      const hitEvent = eventById(hitEventId);
+      // Across events the same person is a NEW angler record with a new id, so
+      // an id match cannot be the test - fall back to the name.
+      const sameAngler = hit.other.anglerId === c.anglerId ||
+                         (crossEvent && hit.other.anglerName === c.anglerName);
+      // A match from another year is meaningless without the year on it.
+      const when = new Date(hit.other.timestamp).toLocaleString([], crossEvent
+        ? {year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}
+        : {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+      // Worth saying out loud. "Near-identical" invites the answer "but they
+      // are different photos, look" - and at a glance they are, because one has
+      // been cropped in. Naming it is what makes the flag hold up.
+      const how = hit.cropped
+        ? 'One is a CROP of the other (' + hit.distance + '/64 bits differ once the ' +
+          'crop is matched up)'
+        : 'Near-identical photo (' + hit.distance + '/64 bits differ)';
+
+      let label, detail;
+      if(crossEvent){
+        const which = hitEvent ? eventDateRangeText(hitEvent) : hitEventId;
+        label = (sameAngler
+          ? 'Photo reused from this angler\'s earlier event entry'
+          : 'Photo reused from an earlier event') + (hit.cropped ? ', cropped' : '');
+        detail = how + ' to '+
+          hit.other.anglerName+'\'s '+hit.other.length+'" '+hit.other.species+
+          ' from '+which+', submitted '+when+'.';
+      } else {
+        label = (sameAngler
+          ? 'Possible duplicate of this angler\'s own entry'
+          : 'Possible duplicate of '+hit.other.anglerName+'\'s entry') +
+          (hit.cropped ? ', cropped' : '');
+        detail = how + ' to a '+
+          hit.other.length+'" '+hit.other.species+' submitted '+when+'.';
+      }
+      checks.push({ level:'flag', label, detail });
+    }
+  }
+
+  // Length plausibility.
+  // The ceiling for the species THIS fish was filed as, not the event's first
+  // one - with walleye and pike on the same board, a shared ceiling would flag
+  // every decent pike and never flag an impossible walleye.
+  const ceiling = recordInches(c.species);
+  if(isScoringSpecies(c.species) && ceiling > 0 && c.length > ceiling){
+    checks.push({ level:'flag', label:'Length exceeds the world record',
+      detail: c.length+'" is longer than the '+ceiling+'" ceiling set for '+
+        String(c.species).toLowerCase()+' in this event. Re-read the board before approving.' });
+  } else {
+    const field = allCatches
+      .filter(o=> o.id!==c.id && o.species===c.species && o.status==='approved')
+      .map(o=> o.length)
+      .sort((a,b)=> a-b);
+    if(field.length >= 5){
+      const median = field[Math.floor(field.length/2)];
+      if(c.length > median * 1.5){
+        checks.push({ level:'review', label:'Well above the rest of the field',
+          detail: c.length+'" vs a '+median.toFixed(1)+'" median across '+field.length+' approved '+c.species.toLowerCase()+'. Not wrong, just worth a second look.' });
+      }
+    }
+  }
+
+  // Submission timing against the published tournament window.
+  const t = eventTimeParts(new Date(c.timestamp));
+  if(eventDates().indexOf(t.dateKey) === -1){
+    // Informational only. Off-event-day submissions are normal during testing
+    // and practice, so this notes the date without pushing the card to review.
+    // The fishing-hours check below stays a real flag - that one matters.
+    checks.push({ level:'info', label:'Not an event day',
+      detail:'Logged '+t.dateKey+'; the tournament runs '+eventDates().join(' and ')+'.' });
+  } else if(t.seconds < 7*3600 || t.seconds > LINES_OUT_SECONDS){
+    checks.push({ level:'flag', label:'Submitted outside fishing hours',
+      detail:'Logged at '+formatCountdown(t.seconds).slice(0,5)+'; lines are 0700 to 1400.' });
+  }
+
+  // GPS - already captured at submit time.
+  if(!c.location){
+    checks.push({ level:'review', label:'No GPS on this submission',
+      detail:'Location was unavailable or denied when the catch was logged.' });
+  } else if(c.location.withinBounds === false){
+    const out = typeof c.location.outsideMiles === 'number' && c.location.outsideMiles > 0
+      ? c.location.outsideMiles.toFixed(1)+' mi past the course boundary.'
+      : 'Logged outside the course boundary.';
+    checks.push({ level:'flag', label:'Outside the course boundary', detail: out });
+  }
+
+  const level = checks.some(x=>x.level==='flag') ? 'flag'
+    : checks.some(x=>x.level==='review') ? 'review' : 'clear';
+  return { level, checks };
+}
+
+// ---- Fish-I vision pass ----
+// Two ways to run it. Opened inside the Claude viewer the page asks Claude
+// directly, so there is nothing to install and no API key anywhere. Hosted
+// anywhere else - Vercel, in our case - there is no Claude in the page to ask,
+// and it goes through the server endpoint instead (see api/fish-i.js).
+let fishISampler = null;      // resolved Claude sampler, or null in this view
+let fishIImagesOk = false;    // whether this view reports photo support
+let fishIEndpointOk = false;  // whether the server endpoint answered "ready"
+let fishIStatus = 'starting'; // why it is or isn't ready - shown to the director
+let fishIAuthDetail = '';     // the server's own words when it refuses the caller
+
+// Fish-I is the director's tool and the endpoint now insists on it, so every
+// call carries the session. bearerToken() falls back to the public anon key
+// when there is no session; the server refuses that explicitly rather than
+// treating a key as a sign-in.
+function fishIAuthHeaders(){
+  return { 'Authorization': 'Bearer ' + bearerToken() };
+}
+
+// Blank unless self-hosting elsewhere, in which case the endpoint is a sibling
+// of the page. Read through window so a test harness without a location - and
+// a page opened straight off the disk - both fall through to "no endpoint"
+// rather than throwing on the way past.
+function aiReviewEndpoint(){
+  if(AI_REVIEW_ENDPOINT) return AI_REVIEW_ENDPOINT;
+  try{
+    const proto = window.location && window.location.protocol;
+    return (proto === 'http:' || proto === 'https:') ? '/api/fish-i' : '';
+  }catch(e){ return ''; }
+}
+
+function fishIRefresh(){
+  try{ if(adminUnlocked) renderAdmin(); }catch(e){}
+}
+
+// The endpoint answers GET with whether it holds an API key. Asking up front
+// means the director is told WHY it is unavailable, instead of finding out by
+// pressing the button and waiting for a failure.
+async function probeFishIEndpoint(){
+  const url = aiReviewEndpoint();
+  if(!url){ fishIStatus = 'no-runtime'; return; }
+  try{
+    const res = await fetch(url, { method:'GET', headers: fishIAuthHeaders() });
+    if(!res.ok){ fishIStatus = 'endpoint-http:' + res.status; return; }
+    const info = await res.json();
+    if(info && info.ready){
+      fishIEndpointOk = true;
+      fishIStatus = 'ready-endpoint';
+    } else {
+      // The endpoint distinguishes its own failures - no key, a rejected key,
+      // a retired model - and each one sends the director somewhere different.
+      // Collapsing them into "unavailable" is what makes a five-minute fix
+      // take an afternoon.
+      const known = { 'no-api-key':'endpoint-no-key', 'bad-key':'endpoint-bad-key',
+                      'bad-model':'endpoint-bad-model', 'no-auth-config':'endpoint-no-auth-config',
+                      'not-director':'endpoint-not-director' };
+      fishIStatus = (info && known[info.reason]) || 'endpoint-not-ready';
+      // The server explains a refusal better than a status name can - it knows
+      // whether the session is missing, expired, or simply not a director's.
+      fishIAuthDetail = (info && info.detail) || '';
+    }
+  }catch(e){
+    fishIStatus = 'endpoint-unreachable';
+  }
+}
+
+async function initFishI(){
+  fishIStatus = 'starting';
+  fishIEndpointOk = false;
+  try{
+    if(typeof claude === 'undefined' || !claude || typeof claude.use !== 'function'){
+      await probeFishIEndpoint();
+      fishIRefresh();
+      return;
+    }
+    const s = await claude.use('sample');
+    if(!s){
+      // The viewer is here but would not hand over sampling. The server
+      // endpoint is still worth a try before giving up on the feature.
+      await probeFishIEndpoint();
+      if(!fishIEndpointOk) fishIStatus = 'use-returned-null';
+      fishIRefresh();
+      return;
+    }
+    fishISampler = s;
+    // limits() is only a hint. If it fails or omits images we still offer the
+    // button - an attempted call returns a real error code, which beats
+    // hiding the feature on a guess.
+    try{
+      const limits = await s.limits();
+      fishIImagesOk = !!(limits && limits.images);
+      fishIStatus = fishIImagesOk ? 'ready' : 'ready-no-image-limit';
+    }catch(e){
+      fishIImagesOk = false;
+      fishIStatus = 'ready-limits-failed:' + ((e && e.code) || (e && e.message) || 'unknown');
+    }
+    fishIRefresh();
+  }catch(e){
+    fishIStatus = 'init-error:' + ((e && e.message) || String(e));
+    fishIRefresh();
+  }
+}
+
+// Fish-I is a DIRECTOR tool. Nothing an angler sees mentions it.
+//
+// This used to run on load, which meant every phone that opened the app asked
+// the server whether Fish-I was ready - and answering that question used to
+// cost real Gemini requests (see the header of api/fish-i.js). A field of
+// thirty refreshing at the ramp could spend the day's free allowance before the
+// first catch was reviewed, and the answer went nowhere: it painted a status
+// line on a panel none of them can open.
+//
+// So it starts on first use instead. Both ways into the panel - the passcode
+// and a director sign-in - end at renderAdmin(), which is the only screen that
+// reads the status.
+let fishIStarted = false;
+function ensureFishI(){
+  if(fishIStarted) return;
+  fishIStarted = true;
+  // Deliberately not awaited. The panel paints with the status it has and
+  // repaints itself when this resolves, via fishIRefresh().
+  initFishI();
+}
+
+function fishIStatusText(){
+  switch(fishIStatus){
+    case 'starting':            return 'still starting up \u2014 give it a few seconds, then retry.';
+    case 'no-runtime':          return 'this copy of the page is open straight off the disk, so there is no server to ask. Open it at its real web address.';
+    case 'use-returned-null':   return 'the Claude viewer did not grant the sampling capability to this view.';
+    case 'ready':               return 'ready.';
+    case 'ready-endpoint':      return 'ready \u2014 running through this site\u2019s own server.';
+    case 'ready-no-image-limit':return 'ready, though this view did not report photo support.';
+    case 'endpoint-no-key':     return 'the server has no Gemini API key. Add GEMINI_API_KEY in Vercel \u2192 Settings \u2192 Environment Variables, then redeploy.';
+    case 'endpoint-bad-key':    return 'the server\u2019s Gemini API key was rejected. Check GEMINI_API_KEY in Vercel, then redeploy.';
+    case 'endpoint-bad-model':  return 'this API key has no vision model available to it. Check the key in Google AI Studio, or pin one with FISHI_MODEL in Vercel.';
+    case 'endpoint-not-ready':  return 'the server reports Fish-I as unavailable.';
+    case 'endpoint-unreachable':return 'the server did not answer. It may still be deploying \u2014 wait a moment, then retry.';
+    default:
+      if(fishIStatus === 'endpoint-no-auth-config'){
+        return 'the server cannot check who is asking, so it is refusing every ' +
+          'request. Set SUPABASE_URL and SUPABASE_ANON_KEY in Vercel and redeploy. ' +
+          'Neither is a secret - the anon key already ships in this page.';
+      }
+      if(fishIStatus === 'endpoint-not-director'){
+        // The passcode opens this panel without creating a session, which is
+        // exactly the case that lands here. Say so, or it reads as a bug.
+        return fishIAuthDetail || 'Fish-I is for the director. Sign in as the director ' +
+          '- the passcode opens this panel but does not create a session, and there ' +
+          'is nothing for the server to check.';
+      }
+      if(fishIStatus.indexOf('endpoint-http:') === 0){
+        // 404 is the one worth naming: it means the deploy went out without
+        // api/fish-i.js, not that anything is misconfigured.
+        return fishIStatus === 'endpoint-http:404'
+          ? 'this deployment does not include api/fish-i.js.'
+          : 'the server answered ' + fishIStatus.slice(14) + '.';
+      }
+      return fishIStatus;
+  }
+}
+
+// A stored photo is a data: URL on this device and an https: URL once it is in
+// object storage; Fish-I needs bytes either way.
+async function srcToBlob(src){
+  if(!src) return null;
+  if(src.indexOf('data:') === 0) return dataUrlToBlob(src);
+  const res = await fetch(src);
+  if(!res.ok) throw new Error('Could not fetch the catch photo (' + res.status + ')');
+  return await res.blob();
+}
+
+function dataUrlToBlob(dataUrl){
+  const m = /^data:([^;]+);base64,(.*)$/.exec(dataUrl || '');
+  if(!m) return null;
+  const bin = atob(m[2]);
+  const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: m[1] });
+}
+
+function fishIVisionAvailable(){
+  return !!fishISampler || fishIEndpointOk;
+}
+
+// Built per call: the target species and the water are both event settings now,
+// so the prompt has to name whatever this tournament is actually scoring.
+function fishiPrompt(){
+  const target = speciesPhrase();
+  const where = activeEvent().courseLabelLong || 'the tournament water';
+  return (
+  'You are reviewing a catch photo for a catch-photo-release kayak ' + target.toLowerCase() +
+  ' tournament on ' + where + '. You are a FIRST PASS for a human tournament ' +
+  'director. You never decide whether a catch counts; you surface what the director ' +
+  'should look at.\n\n' +
+  'Judge only these:\n' +
+  '1. Species. Say which species you see, and say plainly when the photo does not let ' +
+  'you tell it apart from species it closely resembles. Only ' + target.toLowerCase() +
+  ' score in this event.\n' +
+  '2. Whether the photo works as evidence: is a bump board with a readable scale in ' +
+  'frame, is the fish flat along it rather than curled or lifted, is the nose against ' +
+  'the zero stop, is the tail and the scale beneath it fully visible, and is a hand ' +
+  'covering the nose, the tail or the markings.\n' +
+  '3. Integrity concerns: signs of editing, a photo of a screen, or a reused or staged image.\n\n' +
+  'HARD RULE: do NOT estimate, infer or state the length of the fish, and do not say ' +
+  'whether the claimed length looks right. Perspective and lens distortion make that ' +
+  'unreliable and the director reads the board. If framing prevents a fair reading, ' +
+  'put that in concerns instead.\n\n' +
+  'Be conservative. Raise a concern only if a reasonable director would want a second ' +
+  'look; an ordinary well-shot photo returns an empty concerns array.\n\n' +
+  'Reply with only a JSON object of this shape:\n' +
+  '{"species":"' + (targetSpecies() || 'walleye').toLowerCase() + '","speciesConfidence":0.9,"matchesClaim":true,"boardVisible":true,' +
+  '"fishFlat":true,"noseAtStop":true,"tailInFrame":true,"handBlocking":false,' +
+  '"concerns":["short specific concern"],"notes":"one short sentence"}'
+  );
+}
+
+async function requestAiVisionReview(c, photoDataUrl){
+  // Preferred path: ask Claude straight from the page.
+  if(fishISampler){
+    const blob = await srcToBlob(photoDataUrl);
+    if(!blob) throw new Error('No photo is stored with this catch.');
+    // "Other" is a not-scored bucket, not a species, so asking whether the
+    // fish "matches Other" is meaningless unless we say what it means.
+    // Ask about the species the ANGLER filed it as, not the event's first one.
+    // With walleye and pike both scoring, "does this look like a walleye" is
+    // the wrong question about a fish entered as a pike.
+    const claimed = String(c.species || '');
+    const phrase = speciesPhrase();
+    const claimLine = isScoringSpecies(c.species)
+      ? 'The angler entered this as a ' + claimed.toUpperCase() + ' (a scoring species in ' +
+        'this event), ' + c.length + ' inches. Set matchesClaim true only if this really ' +
+        'looks like a ' + claimed.toLowerCase() + '.'
+      : 'The angler entered this as OTHER, meaning they are declaring it is NOT ' + phrase + ' ' +
+        'and it will not be scored. Name the species you actually see. Set matchesClaim ' +
+        'true if the fish is indeed none of those, and false if it does look like ' +
+        phrase + ' that was filed as Other.';
+    const prompt = fishiPrompt() + '\n\n' + claimLine;
+    return await fishISampler.json(prompt, { images: blob, modelTier: 'complex' });
+  }
+
+  // Server endpoint - the path every hosted copy takes.
+  //
+  // Note what is NOT sent: the prompt. The server builds it from the event's
+  // species and water, which are passed as plain values below. An endpoint
+  // that accepted a prompt from the page would be an open Claude proxy the
+  // moment somebody read the source, and the source ships to every phone.
+  const endpoint = aiReviewEndpoint();
+  if(endpoint){
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, fishIAuthHeaders()),
+      body: JSON.stringify({
+        catchId: c.id, photo: photoDataUrl,
+        claimedSpecies: c.species, claimedLength: c.length,
+        // The whole list, so the server's copy of the prompt names the same
+        // species this page would have.
+        targetSpecies: scoringSpecies().join(', '),
+        water: activeEvent().courseLabelLong || 'the tournament water',
+        scoring: isScoringSpecies(c.species)
+      })
+    });
+    // The endpoint explains its own failures - a missing API key reads very
+    // differently from a rate limit - so use its words when it gives any.
+    let payload = null;
+    try{ payload = await res.json(); }catch(e){}
+    if(!res.ok){
+      throw new Error((payload && payload.error) || ('Review service returned ' + res.status));
+    }
+    if(payload && payload.error) throw new Error(payload.error);
+    return payload;
+  }
+
+  throw new Error('Fish-I vision is not available in this view.');
+}
+
+// Branch on the error CODE, never the message.
+function fishIErrorCopy(e){
+  switch(e && e.code){
+    case 'not_granted':        return 'Claude access was declined. Reload the page and allow it to run Fish-I vision.';
+    case 'rate_limited':       return 'Too many checks at once. Wait a moment, then try again.';
+    case 'images_unavailable': return 'This view cannot send photos to Claude.';
+    case 'image_rejected':     return 'Claude could not read this photo. Try a re-shoot.';
+    case 'invalid_json':       return 'Fish-I gave an unreadable answer. Try again.';
+    case 'refused':            return 'Claude declined to review this image. Review it manually.';
+    case 'cancelled':          return 'Check cancelled.';
+    case 'prompt_too_large':   return 'That photo is too large to send.';
+    default:                   return (e && e.message) ? e.message : 'Fish-I vision check failed.';
+  }
+}
+
+// ---- navigation ----
+const screens = ['home','register','checkin','submit','manage','livewell','gallery','trophy','leaderboard','bigfish','gps','payouts','chat','admin'];
+let currentScreen = 'home';
+
+// Split out of goto() so a write from another device can repaint what is
+// already on screen without navigating anywhere.
+function renderScreen(name){
+  renderEventCopy();
+  // The badge lives in the tab bar, so it has to stay current on every
+  // screen - not only while the chat is open.
+  if(name !== 'chat') refreshChatBadge();
+  if(name==='home'){
+    renderHome();
+    updateEventCountdown();
+  }
+  if(name==='register') renderRegisterScreen();
+  if(name==='leaderboard') renderLeaderboard();
+  if(name==='submit') renderSubmitScreen();
+  if(name==='manage') renderManageScreen();
+  if(name==='checkin') renderCheckin();
+  if(name==='livewell') renderLivewell();
+  if(name==='gallery') renderGallery();
+  if(name==='trophy') renderTrophyCase();
+  if(name==='bigfish'){ renderBigFish(); renderBets(); }
+  if(name==='gps') renderPublicGps();
+  if(name==='payouts') renderPayoutCalculator();
+  if(name==='chat') renderChat();
+  if(name==='admin') renderAdmin();
+}
+function refreshActiveScreen(){ renderScreen(currentScreen); }
+
+// ---- the browser's own Back button ----
+// This is one page pretending to be twelve, and without the code below the
+// browser does not know that: Back from three screens deep leaves the app
+// altogether - out to whatever was open before the tournament, or, installed to
+// a home screen, to a dead stop. Plenty of people navigate that way and never
+// touch the Home link.
+//
+// So every screen change writes a history entry and Back walks them.
+//
+// The hash carries the screen rather than a path, because the app is served as
+// a single static file: a real path would 404 on a hard refresh unless the host
+// rewrote it, and that is a deploy setting waiting to be forgotten.
+function screenHash(name){ return '#' + name; }
+
+// Which screen a URL is asking for, or null if it names nothing we have. Fed
+// straight off the address bar, so it has to treat anything unrecognised as
+// "no opinion" rather than trusting it.
+function screenFromHash(hash){
+  const name = String(hash == null ? '' : hash).replace(/^#\/?/, '');
+  return screens.indexOf(name) !== -1 ? name : null;
+}
+
+// A file:// page, an old browser, or a sandbox can all leave this missing or
+// throw on use. Navigation has to keep working without it.
+function historyApi(){
+  try{
+    const h = typeof window !== 'undefined' && window.history;
+    return (h && typeof h.pushState === 'function' && typeof h.replaceState === 'function')
+      ? h : null;
+  }catch(e){ return null; }
+}
+
+function pushScreenState(name, replace){
+  const h = historyApi();
+  if(!h) return false;
+  try{
+    const state = { screen: name };
+    if(replace) h.replaceState(state, '', screenHash(name));
+    else h.pushState(state, '', screenHash(name));
+    return true;
+  }catch(e){
+    // Some browsers refuse pushState on file://. Not being able to record the
+    // move is not a reason to refuse to make it.
+    return false;
+  }
+}
+
+function goto(name, opts){
+  const o = opts || {};
+  const moved = currentScreen !== name;
+  currentScreen = name;
+  screens.forEach(s=>{
+    document.getElementById('screen-'+s).classList.toggle('active', s===name);
+  });
+  document.querySelectorAll('nav.tabbar button').forEach(b=>b.classList.toggle('active', b.dataset.screen===name));
+  document.getElementById('app').dataset.theme = name;
+  if(name!=='submit') stopCamera();
+  updateSyncUi();
+  // A move the USER made goes into the history. One made BY the history does
+  // not, or Back would push the entry it just came out of and get stuck.
+  // Re-tapping the tab you are already on is not a move either, or the stack
+  // fills with copies of one screen and Back appears to do nothing.
+  if(!o.fromHistory && (moved || o.replace)) pushScreenState(name, o.replace);
+  renderScreen(name);
+}
+
+// Back, and forward. Registered from the init block, once the whole script has
+// been evaluated.
+function handlePopState(e){
+  // With the photo panel open, Back closes the panel - which is what every
+  // phone gallery does, and what the panel's own history entry was pushed for.
+  if(lightboxCatchId){ hideLightbox(); return; }
+  const st = e && e.state;
+  const fromState = st && st.screen && screens.indexOf(st.screen) !== -1 ? st.screen : null;
+  const loc = typeof window !== 'undefined' && window.location;
+  // The state object is the reliable half; the hash is the fallback for an
+  // entry this app did not write, such as one restored by a session reload.
+  const name = fromState || screenFromHash(loc && loc.hash) || 'home';
+  goto(name, { fromHistory: true });
+}
+
+// Opening straight onto a screen: a link, a bookmark, or a reload of whatever
+// was on screen. Anything unrecognised falls to home rather than a blank app.
+function initHistory(){
+  const loc = typeof window !== 'undefined' && window.location;
+  const deep = screenFromHash(loc && loc.hash);
+  if(deep && deep !== currentScreen){
+    // replace, not push: the first entry should not have an emptier one behind
+    // it that Back would drop into.
+    goto(deep, { replace: true });
+  } else {
+    // Give the opening entry a state object so Back FROM the second screen has
+    // something to land on. The URL is left exactly as the visitor typed it.
+    const h = historyApi();
+    if(h){ try{ h.replaceState({ screen: currentScreen }, ''); }catch(e){} }
+  }
+  if(typeof window !== 'undefined' && window.addEventListener){
+    window.addEventListener('popstate', handlePopState);
+  }
+}
+document.addEventListener('click', (e)=>{
+  const el = e.target.closest('[data-goto]');
+  if(el){ goto(el.dataset.goto); }
+});
+// The back links are <a> elements with no href, so the browser gives them no
+// keyboard behaviour of their own. tabindex in the markup makes them focusable;
+// this makes Enter/Space actually navigate.
+document.addEventListener('keydown', (e)=>{
+  if(e.key !== 'Enter' && e.key !== ' ') return;
+  const el = e.target.closest && e.target.closest('a.backlink[data-goto]');
+  if(el){ e.preventDefault(); goto(el.dataset.goto); }
+});
+document.querySelectorAll('nav.tabbar button').forEach(btn=>{
+  btn.addEventListener('click', ()=> goto(btn.dataset.screen));
+});
+
+// ---- home ----
+// ---- event copy ----
+// Name, dates, course and the registration deadline are all properties of the
+// live event, so switching events repaints them rather than leaving last year's
+// dates sitting on the home screen.
+function setText(id, value){ const el = document.getElementById(id); if(el) el.textContent = value; }
+function setHtml(id, value){ const el = document.getElementById(id); if(el) el.innerHTML = value; }
+
+function renderEventCopy(){
+  const evt = activeEvent();
+  const range = eventDateRangeText();
+  const closeText = registrationCloseText();
+  // presenter/courseLabel carry entities (&amp;, &middot;), so they go in as HTML.
+  setHtml('home-event-presenter', evt.presenter);
+  setHtml('home-event-title', evt.nameHtml || escapeHtml(evt.name));
+  setHtml('home-event-course', evt.courseLabel);
+  setText('home-event-date', range);
+  setHtml('reg-event-presenter', evt.presenter);
+  setText('reg-event-title', evt.name);
+  setHtml('reg-event-meta', range + ' &middot; ' + evt.courseLabelLong + ' &middot; Catch &middot; Photo &middot; Release');
+  setText('reg-closed-notice', 'Registration closed on ' + closeText +
+    '. Contact the tournament director if you still need to enter.');
+  setText('reg-close-note', 'Registration closes ' + closeText +
+    '. This confirms your spot on the roster — entry fees and side pot buy-ins are collected separately by PayPal, per the info in your confirmation email.');
+
+  const sp = speciesPhrase();
+  setText('livewell-note', 'Every approved catch is released on the water, so your livewell is a running ' +
+    'tally rather than fish in a tank. Your longest approved ' + sp + ' is what currently counts toward standings.');
+  setText('bigfish-note', 'Optional $10/angler side pot. Longest approved ' + sp +
+    ' across both divisions wins, winner take all.');
+
+  document.title = 'LiveWire — ' + evt.name;
+}
+
+// ---- disqualification notice ----
+// There is no push, so "notify" means: the next time they open the app, they
+// cannot miss it. It sits above their profile, is not dismissible, and carries
+// the reason the director gave - being dropped from the standings without
+// being told why is the version of this that starts arguments at the ramp.
+function renderDqNotice(me){
+  const el = document.getElementById('home-dq-notice');
+  if(!el) return;
+  if(!me || !me.disqualified){ el.innerHTML = ''; return; }
+  const when = me.dqAt
+    ? new Date(me.dqAt).toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' })
+    : '';
+  el.innerHTML =
+    '<div class="dq-notice">' +
+      '<div class="dq-notice-title">You have been disqualified</div>' +
+      (me.dqReason
+        ? '<div class="dq-notice-reason">&ldquo;' + escapeHtml(me.dqReason) + '&rdquo;</div>'
+        : '<div class="dq-notice-reason">No reason was recorded.</div>') +
+      '<div class="dq-notice-note">' +
+        'You are out of the standings, the Big Fish pot and any payout placing' +
+        (when ? ' as of ' + escapeHtml(when) : '') + '. ' +
+        'Your entry fee stays in the pool and your catches stay on record. ' +
+        'Speak to the tournament director if you think this is wrong &mdash; they can reinstate you.' +
+      '</div>' +
+    '</div>';
+}
+
+// ---- the colour bar on each home tile ----
+// Two tiles had a coloured bar and the rest had a near-black one nobody could
+// see. Rather than hand-pick eight, each tile derives its own from its name.
+//
+// Every colour here is already somewhere else in this stylesheet - the gold,
+// the red, the olive, the "Live" badge green, the steel - so the home screen
+// cannot drift away from the rest of the site.
+//
+// DETERMINISTIC, not random-per-load. It looks scattered, which is the point,
+// but a tile keeps its colour: people navigate by colour long before they read
+// the label, and a Side Bets tile that is olive on Saturday and red on Sunday
+// is a bug as far as the eye is concerned. The upside of deriving it from the
+// name is that a tile added later gets one for free and nobody has to choose.
+const TILE_ACCENTS = ['#C98A2C', '#A3372A', '#5C6B4F', '#3D6A50', '#3D5A66', '#D5A33A'];
+
+// 31 rather than any other multiplier for one reason: with the eight tile names
+// this app actually has, it is the one that puts no two identical colours side
+// by side in a two-column grid. Change the tiles and it is worth re-checking.
+function tileAccent(name){
+  const key = String(name == null ? '' : name);
+  if(!key) return TILE_ACCENTS[0];
+  let h = 0;
+  for(let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) % 100000;
+  return TILE_ACCENTS[h % TILE_ACCENTS.length];
+}
+
+// Painted onto the element as a custom property so the bar itself stays in CSS,
+// where its size and position belong.
+function paintTileAccents(root){
+  const scope = root || document;
+  scope.querySelectorAll('.home-tile[data-goto], .home-info-tile[data-goto]').forEach(el=>{
+    el.style.setProperty('--tile-accent', tileAccent(el.dataset.goto));
+  });
+}
+
+async function renderHome(){
+  paintTileAccents();
+  const anglers = await loadAnglers();
+  const myId = getMyAnglerId();
+  const me = anglers.find(a=>a.id===myId);
+  const el = document.getElementById('home-profile');
+  const registerBtn = document.getElementById('home-register-btn');
+  const closed = isRegistrationClosed();
+
+  document.getElementById('home-reg-text').textContent = closed ? 'Registration closed' : 'Registration open';
+  document.getElementById('home-reg-badge').classList.toggle('closed', closed);
+
+  renderDqNotice(me);
+
+  if(me){
+    const teamLabel = me.division==='team' ? ('Team with '+escapeHtml(me.partner)) : 'Solo division';
+    // The handle is what everyone else sees them as, so it belongs on their own
+    // card - otherwise the chat is full of a name they never chose to look at.
+    // Both codes belong here too - this card is the fastest thing to reach on
+    // the water when someone cannot remember what to write on the board.
+    // Low-key on purpose. It is a bookkeeping note, not a problem with their
+    // entry - they are on the board either way.
+    const statusLine = feePaid(me) ? '' : '<br>Entry fee not matched up yet';
+    const codeLine = me.anglerCode
+      ? '<br>' + (me.teamCode ? 'Team ' + escapeHtml(me.teamCode) + ' &middot; ' : '') +
+        'Tournament ID ' + escapeHtml(me.anglerCode)
+      : '';
+    const sub = escapeHtml(displayHandle(me)) + '<br>' + teamLabel +
+      ' &middot; ' + escapeHtml(me.tournamentId) + codeLine + statusLine;
+    const dqTag = me.disqualified
+      ? '<span class="home-profile-dq">Disqualified</span>' : '';
+    el.innerHTML = '<div class="home-profilecard'+(me.disqualified ? ' dq' : '')+'"><div class="home-avatar">'+escapeHtml(initials(me.name))+'</div><div class="home-profile-copy"><span class="home-profile-label">Angler profile'+dqTag+'</span><span class="home-profile-name">'+escapeHtml(me.name)+'</span><span class="home-profile-sub">'+sub+'</span></div></div>';
+    registerBtn.textContent = 'Registration details';
+  } else {
+    el.innerHTML = '<div class="home-profilecard"><div class="home-avatar">+</div><div class="home-profile-copy"><span class="home-profile-label">Angler profile</span><span class="home-profile-name">Not registered yet</span><span class="home-profile-sub">'+(closed ? 'Registration is closed for this event' : 'Register above to receive your tournament ID')+'</span></div></div>';
+    registerBtn.textContent = closed ? 'View roster' : 'Register now';
+  }
+}
+
+// ---- register screen ----
+// The handle shown on the form before it is committed. Held here rather than
+// read back off the DOM so a background repaint cannot quietly change what the
+// angler thought they were signing up as.
+let pendingHandle = null;
+
+async function refreshPendingHandle(reroll){
+  const el = document.getElementById('reg-handle');
+  if(!el) return;
+  if(reroll || !pendingHandle){
+    pendingHandle = uniqueHandle(await loadAnglers());
+  }
+  el.textContent = pendingHandle;
+}
+bindEl('reg-handle-reroll','click', ()=> refreshPendingHandle(true));
+
+// ---- claim UI ----
+function showClaimForm(open){
+  const form = document.getElementById('claim-form');
+  const btn = document.getElementById('claim-open');
+  if(!form || !btn) return;
+  form.style.display = open ? 'block' : 'none';
+  btn.style.display = open ? 'none' : '';
+  const err = document.getElementById('claim-err');
+  const ok = document.getElementById('claim-ok');
+  if(err) err.style.display = 'none';
+  if(ok) ok.style.display = 'none';
+}
+bindEl('claim-open','click', ()=> showClaimForm(true));
+bindEl('claim-cancel','click', ()=> showClaimForm(false));
+
+bindEl('claim-go','click', async ()=>{
+  const btn = document.getElementById('claim-go');
+  const errEl = document.getElementById('claim-err');
+  const okEl = document.getElementById('claim-ok');
+  const code = document.getElementById('claim-code').value.trim();
+  const phone = document.getElementById('claim-phone').value.trim();
+  const fail = (m)=>{ errEl.textContent = m; errEl.style.display = 'block'; okEl.style.display = 'none'; };
+  errEl.style.display = 'none';
+  okEl.style.display = 'none';
+
+  if(!code) return fail('Enter your Tournament ID — the four characters on your bump board.');
+  if(normPhone(phone).length < 10) return fail('Enter the phone number you registered with, area code included.');
+
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = 'Checking…';
+  try{
+    const id = await claimEntry(code, phone);
+    if(!id){
+      return fail('No entry matches that Tournament ID and phone number. Check both, or see the director.');
+    }
+    setMyAnglerId(id);
+    // The roster may not hold this angler yet on a device that just opened, so
+    // take whatever the next sync brings rather than asserting it is there.
+    okEl.textContent = 'Found it. Bringing your entry over…';
+    okEl.style.display = 'block';
+    await renderRegisterScreen();
+    await renderHome();
+  }catch(e){
+    console.error(e);
+    fail(claimErrorText(e));
+  }finally{
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+});
+
+// Once this device holds an entry, the form is replaced by that entry. It is
+// also what makes "one per device" honest rather than an error message you only
+// see after filling the whole thing in.
+async function renderRegisteredCard(){
+  const anglers = await loadAnglers();
+  const me = anglers.find(a=> a.id === getMyAnglerId());
+  const card = document.getElementById('reg-already');
+  const form = document.getElementById('reg-form-card');
+  if(!card || !form) return;
+  if(!me){
+    card.style.display = 'none';
+    form.style.display = 'block';
+    return;
+  }
+  card.style.display = 'block';
+  form.style.display = 'none';
+
+  const mate = me.teamId ? anglers.find(m=> m.teamId===me.teamId && m.id!==me.id) : null;
+  // This is the angler's own device, so their own real name is theirs to see.
+  const rows = [
+    ['Name', me.name],
+    ['Handle', displayHandle(me)],
+    ['User ID', me.tournamentId],
+    ['Division', me.division === 'team' ? 'Team' : 'Solo'],
+    ['Entry fee', feePaid(me) ? 'Received' : 'Not matched up yet']
+  ];
+  if(mate) rows.push(['Partner', mate.name + ' (' + displayHandle(mate) + ')']);
+  rows.push(['Big Fish pot', me.bigfish ? 'Entered' : 'Not entered']);
+
+  document.getElementById('reg-already-body').innerHTML =
+    pendingNoticeHtml(me) +
+    rows.map(r=>
+      '<div class="lbrow"><div class="who"><div class="name">'+escapeHtml(r[0])+'</div></div>'+
+      '<div class="len" style="font-size:13px;">'+escapeHtml(String(r[1]))+'</div></div>').join('') +
+    codeBoxHtml(me) + codeNoteHtml(me);
+}
+
+async function renderRegisterScreen(){
+  await renderRegisteredCard();
+  refreshPendingHandle(false);
+  renderRoster();   // the roster card is on this screen; keep it current
+  const closed = isRegistrationClosed();
+  document.getElementById('reg-closed-notice').style.display = closed ? 'block' : 'none';
+  ['reg-name','reg-phone','reg-partner','reg-partner-phone','reg-ice-name','reg-ice-phone','reg-bigfish'].forEach(id=>{
+    document.getElementById(id).disabled = closed;
+  });
+  ['#reg-division','#reg-resident','#reg-partner-resident'].forEach(sel=>{
+    document.querySelectorAll(sel+' input[type=radio]').forEach(r=> r.disabled = closed);
+  });
+  updateRegisterReadiness();
+}
+
+// Touches only the button and its note, never an input, so it is safe to call
+// the moment the roster lands even if someone is mid-way through typing their
+// name. The full screen repaint deliberately skips a focused form, which would
+// otherwise leave the button disabled until they clicked away.
+// Kept here rather than read back off the element, because the element's own
+// copy is overwritten the first time this reports a blocked device.
+const REG_ROSTER_NOTE = 'Loading the roster… the button opens as soon as it lands, '+
+  'so a second entry cannot slip past the check.';
+
+function updateRegisterReadiness(){
+  const btn = document.getElementById('reg-submit');
+  const note = document.getElementById('reg-roster-note');
+  if(!btn || !note) return;
+  const closed = isRegistrationClosed();
+  const ready = rosterIsLoaded();
+  // No identity, no write. A form that cannot save is worse than a disabled
+  // button, because the angler walks away from it believing they are entered -
+  // which is exactly how somebody turns up at the ramp and is not on the roster.
+  const blocked = identitySettledMissing();
+  if(blocked){
+    note.textContent = identityBlockedText('a registration');
+    note.style.display = 'block';
+  } else {
+    note.textContent = REG_ROSTER_NOTE;
+    note.style.display = (!ready && !closed) ? 'block' : 'none';
+  }
+  btn.disabled = closed || !ready || blocked;
+}
+
+document.querySelectorAll('#reg-division input[type=radio]').forEach(input=>{
+  input.addEventListener('change', ()=>{
+    const lab = input.closest('label');
+    document.querySelectorAll('#reg-division label').forEach(l=>l.classList.remove('active'));
+    lab.classList.add('active');
+    document.getElementById('reg-partner-field').style.display = lab.dataset.val==='team' ? 'block':'none';
+  });
+});
+
+// The radio itself is hidden by the stylesheet, so `active` on the label is the
+// only thing that says which one is picked - it has to be kept in step here.
+['#reg-resident','#reg-partner-resident'].forEach(sel=>{
+  document.querySelectorAll(sel+' input[type=radio]').forEach(input=>{
+    input.addEventListener('change', ()=>{
+      const lab = input.closest('label');
+      document.querySelectorAll(sel+' label').forEach(l=>l.classList.remove('active'));
+      lab.classList.add('active');
+    });
+  });
+});
+
+// null when the question has not been answered, so the submit handler can
+// refuse rather than write a guess. An entry made through this form always
+// carries a real true or false; residencyCounts() reads a MISSING field as
+// "registered before the app asked", which is a different thing entirely.
+function pickedResidency(sel){
+  const lab = document.querySelector(sel + ' label.active');
+  return lab ? lab.dataset.val === 'yes' : null;
+}
+
+bindEl('reg-submit','click', async ()=>{
+  const name = document.getElementById('reg-name').value.trim();
+  const phone = document.getElementById('reg-phone').value.trim();
+  const division = document.querySelector('#reg-division label.active').dataset.val;
+  const partnerName = document.getElementById('reg-partner').value.trim();
+  const partnerPhone = document.getElementById('reg-partner-phone').value.trim();
+  const iceName = document.getElementById('reg-ice-name').value.trim();
+  const icePhone = document.getElementById('reg-ice-phone').value.trim();
+  const bigfish = document.getElementById('reg-bigfish').checked;
+  const errEl = document.getElementById('reg-err');
+
+  const fail = (msg)=>{ errEl.textContent = msg; errEl.style.display = 'block'; };
+
+  if(isRegistrationClosed()) return fail('Registration is closed for this event.');
+  if(!name) return fail('Enter your name to register.');
+  if(!phone) return fail('Enter a phone number. It is how the director reaches you, and it is what keeps one person to one entry.');
+  // Ten digits after punctuation and a country code. Short enough to catch a
+  // typo, loose enough not to argue about formatting at the ramp.
+  if(normPhone(phone).length < 10){
+    return fail('That does not look like a complete phone number. Include the area code.');
+  }
+  if(!iceName) return fail('Enter an emergency contact. If you are the one in the water, yours is the number that will not answer.');
+  if(normPhone(icePhone).length < 10){
+    return fail('Enter a complete phone number for your emergency contact, area code included.');
+  }
+  // Someone in the same boat is not an emergency contact.
+  if(normPhone(icePhone) === normPhone(phone)){
+    return fail('Your emergency contact needs to be someone else — that is your own number.');
+  }
+  // Asked rather than defaulted, so it has to be answered. The state counts
+  // residents and non-residents separately and nobody can work it out later.
+  const isResident = pickedResidency('#reg-resident');
+  if(isResident === null){
+    return fail('Say whether you are a Montana resident. The state asks for that count, and it changes nothing else about your entry.');
+  }
+  if(division==='team' && !partnerName) return fail("Enter your partner's name for a team entry.");
+  const partnerResident = division==='team' ? pickedResidency('#reg-partner-resident') : null;
+  if(division==='team' && partnerResident === null){
+    return fail('Say whether your partner is a Montana resident. It is asked separately because a team does not have to be from one side of the state line.');
+  }
+  if(division==='team' && partnerPhone && normPhone(partnerPhone).length < 10){
+    return fail("That partner phone number looks incomplete. Include the area code, or leave it blank.");
+  }
+  if(division==='team' && partnerPhone && normPhone(partnerPhone) === normPhone(phone)){
+    return fail('A team needs two different phone numbers — or leave your partner\'s blank.');
+  }
+  errEl.style.display='none';
+
+  // ---- the roster has to be here before it can be checked against ----
+  // Registering against a roster that has not loaded is registering against an
+  // empty one, and every duplicate check below silently passes.
+  if(!rosterIsLoaded()){
+    return fail('Still loading the roster — wait a moment and try again. ' +
+      'Registering before it arrives is how people end up entered twice.');
+  }
+
+  const anglers = await loadAnglers();
+
+  // ---- one entry per device ----
+  // A second registration here would leave the first one stranded: this device
+  // can only hold one angler identity, so the earlier entry would lose its way
+  // to submit catches.
+  const already = anglers.find(a=> a.id === getMyAnglerId());
+  if(already){
+    return fail('This device is already registered as ' + already.tournamentId +
+      ' (' + displayHandle(already) + '). One entry per device — see the director if that is wrong.');
+  }
+
+  // ---- one entry per person ----
+  // Matched on name, which is the only thing we have: phone is optional and
+  // nothing else identifies a person. Deliberately blocks rather than warns,
+  // because a duplicate entry corrupts entry numbering, the pools and the
+  // payouts all at once.
+  const norm = (v)=> String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const clash = anglers.find(a=> norm(a.name) === norm(name));
+  if(clash){
+    return fail(name + ' is already registered as ' + clash.tournamentId +
+      '. If that is not you, add a middle initial or ask the director to enter you.');
+  }
+  if(division === 'team'){
+    if(norm(partnerName) === norm(name)) return fail('A team needs two different people.');
+    const partnerClash = anglers.find(a=> norm(a.name) === norm(partnerName));
+    if(partnerClash){
+      return fail(partnerName + ' is already registered as ' + partnerClash.tournamentId +
+        '. Each angler can only be entered once.');
+    }
+  }
+
+  // ---- one entry per phone number ----
+  // A name can be invented and a browser can be swapped; a phone number is
+  // something a person only has so many of. This is the check that survives
+  // someone registering again under a different name from another browser.
+  const myPhone = normPhone(phone);
+  const phoneClash = anglers.find(a=> a.phone && normPhone(a.phone) === myPhone);
+  if(phoneClash){
+    return fail('That phone number is already on the roster for this event, as ' +
+      phoneClash.tournamentId + '. One entry per person — see the director if that is not you.');
+  }
+  if(division === 'team' && partnerPhone){
+    const pPhone = normPhone(partnerPhone);
+    const partnerPhoneClash = anglers.find(a=> a.phone && normPhone(a.phone) === pPhone);
+    if(partnerPhoneClash){
+      return fail("Your partner's phone number is already on the roster, as " +
+        partnerPhoneClash.tournamentId + '. Each angler can only be entered once.');
+    }
+  }
+  // Number registrations (teams count as one entry), not individual anglers.
+  const entryNumber = anglers.filter(a=>a.role!=='partner').length + 1;
+  // Prefixed per event, so MKWO-001 and MKWO28-001 are different anglers even
+  // though entry numbering restarts from 1 for each event.
+  const tournamentId = activeEvent().prefix + '-' + pad3(entryNumber);
+  const freshCheckins = ()=>({ day1:{in:null,out:null}, day2:{in:null,out:null} });
+
+  // One pool for the whole registration, so the captain's code, the partner's
+  // and the team's cannot collide with each other before any of them is saved.
+  const codePool = takenCodes();
+  const teamCode = division === 'team' ? makeCode(codePool) : '';
+
+  const captainId = uid();
+  const captain = {
+    id: captainId, name, phone, division, partner: division==='team'?partnerName:'', bigfish,
+    tournamentId, role: division==='team' ? 'captain' : 'solo', teamId: null,
+    anglerCode: makeCode(codePool), teamCode,
+    emergencyName: iceName, emergencyPhone: icePhone,
+    // Only ever read by the FWP contest report. See residencyCounts().
+    resident: isResident,
+    // Set until the director matches a payment to this entry. It gates money
+    // and nothing else - see feePaid().
+    pending: true,
+    handle: pendingHandle || uniqueHandle(anglers),
+    registeredAt: Date.now(), checkins: freshCheckins()
+  };
+  anglers.push(captain);
+
+  if(division==='team'){
+    // A team entry gets its own trackable angler record for the partner too,
+    // so they can check in, submit catches, and manage their own entries
+    // independently of the captain who filled out the form.
+    const teamId = uid();
+    captain.teamId = teamId;
+    anglers.push({
+      id: uid(), name: partnerName, phone: partnerPhone, division: 'team', partner: name, bigfish,
+      tournamentId: tournamentId+'P', role: 'partner', teamId,
+      // Confirmed or not, a team moves as one - the captain paid for both.
+      pending: true,
+      // Same team code, different personal code. That difference is the whole
+      // point: it is what tells two anglers fishing one entry apart on a board.
+      anglerCode: makeCode(codePool), teamCode,
+      // The same contact covers both: one boat, one call to shore. A partner
+      // with nobody to ring is exactly the gap this field exists to close.
+      emergencyName: iceName, emergencyPhone: icePhone,
+      // Asked about separately on the form - a team can straddle the state line.
+      resident: partnerResident,
+      // Rolled against the list including the captain just pushed, so
+      // teammates can never land on the same handle as each other.
+      handle: uniqueHandle(anglers),
+      registeredAt: Date.now(), checkins: freshCheckins()
+    });
+  }
+
+  if(!await saveAnglers(anglers)){
+    // The database has the final say on one-entry-per-person, and it is the
+    // only check that is right even when this phone's roster was stale. Say so
+    // plainly rather than blaming the device for a rule working correctly.
+    const dup = duplicateEntryError(lastWriteError);
+    if(dup === 'person'){
+      errEl.textContent = name + ' is already entered in this tournament. ' +
+        'One entry per person — see the director if that is not you, or if you need the existing entry changed.';
+    } else if(dup === 'code'){
+      errEl.textContent = 'That entry collided with a board code already in use. Try again — a new code is drawn each time.';
+    } else {
+      errEl.textContent = 'Registration could not be saved on this device. Check your storage and try again, or register with the tournament director.';
+    }
+    errEl.style.display='block';
+    return;
+  }
+  setMyAnglerId(captainId);
+
+  // Reset the whole form, division included - it used to stay on Team with an
+  // empty partner box, which silently blocked the next entry. The handle is
+  // cleared too, so a second registration on the same device gets its own.
+  pendingHandle = null;
+  refreshPendingHandle(true);
+  document.getElementById('reg-name').value='';
+  document.getElementById('reg-phone').value='';
+  document.getElementById('reg-partner').value='';
+  document.getElementById('reg-partner-phone').value='';
+  document.getElementById('reg-ice-name').value='';
+  document.getElementById('reg-ice-phone').value='';
+  document.getElementById('reg-bigfish').checked=false;
+  const soloLabel = document.querySelector('#reg-division label[data-val="solo"]');
+  if(soloLabel){
+    document.querySelectorAll('#reg-division label').forEach(l=>l.classList.remove('active'));
+    soloLabel.classList.add('active');
+    const soloRadio = soloLabel.querySelector('input[type=radio]');
+    if(soloRadio) soloRadio.checked = true;
+  }
+  // Cleared rather than reset to a default, for the same reason the form has
+  // no default in the first place: a second entry on this device has to ASK
+  // again, not inherit the last person's answer.
+  ['#reg-resident','#reg-partner-resident'].forEach(sel=>{
+    document.querySelectorAll(sel + ' label').forEach(l=>l.classList.remove('active'));
+    document.querySelectorAll(sel + ' input[type=radio]').forEach(r=>{ r.checked = false; });
+  });
+  document.getElementById('reg-partner-field').style.display = 'none';
+
+  await renderRoster();
+  goto('home');
+});
+
+async function renderRoster(){
+  const anglers = await loadAnglers();
+  const el = document.getElementById('reg-roster');
+  const entries = anglers.filter(a=>a.role!=='partner');
+  if(entries.length===0){ el.innerHTML = '<p class="empty">No anglers registered yet.</p>'; return; }
+  el.innerHTML = entries.slice().reverse().map(a=>{
+    // Handles, not names. The roster is public.
+    const mate = a.teamId ? anglers.find(m=> m.teamId===a.teamId && m.id!==a.id) : null;
+    const displayName = a.division==='team'
+      ? escapeHtml(displayHandle(a)) + ' &amp; ' + escapeHtml(mate ? displayHandle(mate) : 'partner')
+      : escapeHtml(displayHandle(a));
+    const sub = (a.division==='team' ? 'Team' : 'Solo') + ' &middot; ' + a.tournamentId;
+    return '<div class="lbrow"><div class="who"><div class="name">'+displayName+'</div><div class="sub">'+sub+(a.bigfish?' &middot; Big Fish pot':'')+'</div></div></div>';
+  }).join('');
+}
+
+// ---- check in/out ----
+// An angler picker rather than just "me", so a team captain can check their
+// partner in - the partner's record lives on the captain's phone. It is NOT a
+// shared tablet that can check the whole field in: populateAnglerSelect scopes
+// the list to this device's own entries, and the handler re-checks.
+async function renderCheckin(){
+  await populateAnglerSelect('checkin-angler', 'checkin-angler-note');
+  await renderCheckinBody();
+}
+bindEl('checkin-angler','change', renderCheckinBody);
+
+async function renderCheckinBody(){
+  const anglerId = document.getElementById('checkin-angler').value;
+  const anglers = await loadAnglers();
+  const me = anglers.find(a=>a.id===anglerId);
+  const el = document.getElementById('checkin-body');
+  if(!me){ el.innerHTML = '<p class="empty">Register an angler first to check in.</p>'; return; }
+
+  el.innerHTML = ['day1','day2'].map((dayKey,i)=>{
+    const rec = me.checkins[dayKey] || {in:null,out:null};
+    const dayDate = eventDates()[i];
+    const label = 'Day ' + (i+1) + (dayDate ? ' &middot; ' + eventDayText(dayDate) : '');
+    let statusText = 'Not checked in';
+    if(rec.in && !rec.out) statusText = 'Checked in at ' + new Date(rec.in).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+    if(rec.in && rec.out) statusText = 'Checked out at ' + new Date(rec.out).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+
+    let btnHtml;
+    if(!rec.in) btnHtml = '<button class="checkbtn in" data-day="'+dayKey+'" data-act="in">Check in</button>';
+    else if(!rec.out) btnHtml = '<button class="checkbtn out" data-day="'+dayKey+'" data-act="out">Check out</button>';
+    else btnHtml = '<button class="checkbtn done" disabled>Complete</button>';
+
+    return '<div class="checkrow"><div><div class="day">'+label+'</div><div class="status-text">'+statusText+'</div></div>'+btnHtml+'</div>';
+  }).join('');
+
+  el.querySelectorAll('[data-act]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      // A check-out that silently does not save is the one failure on this
+      // screen that can leave somebody off the overdue list at dusk. Same gate
+      // as the catch submit, for a sharper reason.
+      if(!await identityReadyForWrite()){
+        setText('checkin-angler-note', identityBlockedText('a check-in'));
+        return;
+      }
+      const anglers = await loadAnglers();
+      // Same re-check as the catch submit. Checking somebody else in or out is
+      // not a scoring change, but it is the record of who launched and who came
+      // back, which is what the overdue list is read off at dusk.
+      const guard = actionGuard(anglerId, anglers, activeEvent().name);
+      if(!guard.ok){ setText('checkin-angler-note', guard.message); return; }
+      const idx = anglers.findIndex(a=>a.id===anglerId);
+      if(idx===-1) return;
+      const dayKey = btn.dataset.day;
+      if(!anglers[idx].checkins) anglers[idx].checkins = { day1:{in:null,out:null}, day2:{in:null,out:null} };
+      if(btn.dataset.act==='in') anglers[idx].checkins[dayKey].in = Date.now();
+      else anglers[idx].checkins[dayKey].out = Date.now();
+      await saveAnglers(anglers);
+      renderCheckinBody();
+    });
+  });
+}
+
+// ---- who is still on the water ----
+// The app has always known who checked in and never checked out. It just never
+// said so, and the roster shows it two lines deep on a row you have to scroll
+// to. At 1500 on a cold reservoir the useful question is not "what is each
+// angler's status" but "who is unaccounted for", and that is a different
+// screen.
+//
+// Returns [] until the final check-in deadline passes, because before then an
+// angler who is still out is simply still fishing.
+function overdueCheckouts(anglers, now){
+  const parts = eventTimeParts(now || new Date());
+  const dayIndex = eventDates().indexOf(parts.dateKey);
+  if(dayIndex === -1) return [];                       // not an event day
+  if(parts.seconds < FINAL_CHECKIN_SECONDS) return []; // not due back yet
+
+  const dayKey = 'day' + (dayIndex + 1);
+  const overdueBy = parts.seconds - FINAL_CHECKIN_SECONDS;
+  return (anglers || []).filter(a=>{
+    const rec = (a.checkins && a.checkins[dayKey]) || {};
+    // Checked in and not back out. Someone who never checked in never launched.
+    return !!rec.in && !rec.out;
+  }).map(a=> ({ angler: a, dayKey: dayKey, overdueSeconds: overdueBy }));
+}
+
+// Longest unaccounted for first - but they all came off the water at the same
+// deadline, so within a day the tiebreak that matters is who was last SEEN.
+// A stale position is worse news than a fresh one.
+function sortOverdue(list, signals){
+  const byId = {};
+  (signals || []).forEach(s=>{ byId[s.id] = s; });
+  return (list || []).slice().sort((x, y)=>{
+    const ax = byId[x.angler.id], ay = byId[y.angler.id];
+    const mx = ax ? signalAgeMinutes(ax) : Infinity;
+    const my = ay ? signalAgeMinutes(ay) : Infinity;
+    if(mx !== my) return my - mx;                    // oldest fix first
+    return String(x.angler.name).localeCompare(String(y.angler.name));
+  });
+}
+
+// ---- submit screen ----
+// The anglers THIS DEVICE is entitled to act for: the registration completed
+// here, plus a teammate created by the same form. A team registers once, on one
+// phone, so the captain's device is the only one holding the partner's record -
+// scoping to "just me" would strand the partner with no way to submit.
+function myAnglerIds(anglers){
+  const mine = getMyAnglerId();
+  if(!mine) return [];
+  const me = anglers.find(a=> a.id === mine);
+  if(!me) return [];
+  const ids = [me.id];
+  if(me.teamId){
+    anglers.forEach(a=>{ if(a.teamId === me.teamId && a.id !== me.id) ids.push(a.id); });
+  }
+  return ids;
+}
+
+// Every angler picker in the app comes through here. It used to list the whole
+// field, which let anyone submit as, check in as, or edit the catches of any
+// other angler - by accident as easily as on purpose.
+//
+// This is a guard against mistakes and idle meddling, NOT a security boundary:
+// the records live behind an anon key that ships in this page, so anything the
+// UI declines can still be done against the API directly. Only row-level
+// policies and a real sign-in can make it a boundary.
+// Every write screen in the app draws its picker through here, so this is the
+// one place that has to say "this device cannot save anything" - submit,
+// check-in, manage and the livewell all inherit it rather than each remembering
+// to. It speaks last because it outranks everything else the note can say:
+// whose entry this is does not matter if nothing can be written at all.
+async function populateAnglerSelect(selectId, noteId){
+  const anglers = await fillAnglerSelect(selectId, noteId);
+  if(noteId && identitySettledMissing()) setText(noteId, identityBlockedText('anything filed here'));
+  return anglers;
+}
+
+async function fillAnglerSelect(selectId, noteId){
+  const anglers = await loadAnglers();
+  const sel = document.getElementById(selectId);
+  if(!sel) return anglers;
+  if(anglers.length===0){
+    sel.innerHTML = '<option value="">Register an angler first</option>';
+    if(noteId) setText(noteId, '');
+    return anglers;
+  }
+
+  const mineIds = myAnglerIds(anglers);
+  // ONLY the director sees the whole field.
+  //
+  // A device with no registration on it used to get the full list too, on the
+  // grounds that a wiped or replaced phone had no way back to its entry and
+  // being locked out mid-event was worse than the exposure. There IS a way back
+  // now - "Sign in to my entry" on the register screen, which takes a
+  // tournament ID and the phone number on the entry - so that fallback had
+  // stopped being a trade-off and become an open door: anyone who opened the
+  // link could read, re-measure and withdraw other people's catches.
+  const list = adminUnlocked ? anglers : anglers.filter(a=> mineIds.indexOf(a.id) !== -1);
+
+  if(list.length === 0){
+    sel.innerHTML = '<option value="">No entry signed in on this device</option>';
+    if(noteId){
+      setText(noteId, 'This device is not signed in to an entry. Open Register and '+
+        'choose “Sign in to my entry” — you will need your tournament ID and '+
+        'the phone number you registered with.');
+    }
+    return anglers;
+  }
+
+  const myId = getMyAnglerId();
+  sel.innerHTML = list.map(a=>
+    '<option value="'+escapeHtml(a.id)+'"'+(a.id===myId?' selected':'')+'>'+
+    escapeHtml(a.name)+' ('+escapeHtml(a.tournamentId)+')</option>').join('');
+
+  if(noteId){
+    setText(noteId, adminUnlocked
+      ? 'Director access is unlocked, so this lists the whole field.' : '');
+  }
+  return anglers;
+}
+
+// Whether this device may act for an entry: its own, its team partner's, or
+// anything at all once director access is unlocked.
+//
+// The pickers are filtered to exactly this set, but a <select> is markup in a
+// page anyone can open the inspector on, so every write checks again here
+// against a fresh roster read. Still not a security boundary - the anon key
+// ships in this page - but it stops the accident and the idle meddling, which
+// is what actually happens at a boat ramp.
+function canActFor(anglerId, anglers){
+  if(adminUnlocked) return true;
+  if(!anglerId) return false;
+  return myAnglerIds(anglers || []).indexOf(anglerId) !== -1;
+}
+
+// Whether this device may file or amend anything against an entry, checked at
+// the MOMENT OF WRITING rather than the moment the picker was painted.
+//
+// The pickers are filtered to the same set, but a <select> holds whatever it
+// held when it was last painted, and it is painted once on the way into the
+// screen. Switch event, get taken off the roster, or open the inspector, and
+// the value sitting in it stops meaning what the list meant.
+//
+// Order matters. MEMBERSHIP is checked before PERMISSION, because canActFor
+// answers true for anything at all once director access is unlocked - including
+// an id that is on no roster in this tournament. That is how a catch used to
+// get filed against an angler who was not registered: the handler looked the id
+// up, did not find it, wrote down "Unknown" and saved it anyway.
+function actionGuard(anglerId, anglers, eventName){
+  if(!anglerId){
+    return { ok:false, code:'no-angler', angler:null,
+      message:'Select the angler this belongs to.' };
+  }
+  const roster = anglers || [];
+  const angler = roster.find(a=> a.id === anglerId) || null;
+  // loadAnglers() is scoped to the live event, so "not on the roster" is also
+  // how a leftover pick from a previous tournament reads.
+  if(!angler){
+    return { ok:false, code:'not-registered', angler:null,
+      message:'That entry is not registered for ' + (eventName || 'this tournament') + '. ' +
+        'Open Register to sign up, or choose \u201cSign in to my entry\u201d if you '+
+        'registered on another device.' };
+  }
+  if(!canActFor(anglerId, roster)){
+    return { ok:false, code:'not-yours', angler:angler,
+      message:'This device is not signed in to ' + angler.name + '\u2019s entry, so it '+
+        'cannot act for them. Open Register and choose \u201cSign in to my entry\u201d.' };
+  }
+  return { ok:true, code:'ok', angler:angler, message:'' };
+}
+
+// The director's picker lists the whole field, and that is deliberate: an
+// angler whose phone died at the ramp has no other way to get a fish filed. But
+// a full list on a screen that is normally about YOUR fish is exactly how a
+// catch ends up under the wrong name by accident - the existing scoping comment
+// says as much, "by accident as easily as on purpose".
+//
+// So the screen says out loud whose catch is about to be filed whenever that is
+// not this device's own entry. Empty in the ordinary case, which is every catch
+// an angler submits for themselves.
+function filingNotice(anglerId, anglers){
+  if(!anglerId) return '';
+  const mine = getMyAnglerId();
+  if(mine && mine === anglerId) return '';
+  const angler = (anglers || []).find(a=> a.id === anglerId);
+  if(!angler) return '';
+  // A team partner is not a warning. The captain's phone holds the partner's
+  // record; filing for them is the normal way a team works.
+  if(myAnglerIds(anglers || []).indexOf(anglerId) !== -1) return '';
+  return 'This catch will be filed as ' + angler.name + '’s, not yours, and the ' +
+    'record will show it was submitted from this device.';
+}
+
+// A director filing a catch for an angler whose phone died at the ramp is a
+// real and legitimate thing to do - it is why the whole field stays in their
+// picker. It just should not be INVISIBLE afterwards. So when the entry being
+// filed against is not the one this device is signed in to, the record says who
+// pressed the button.
+function filedByFor(anglerId, anglers){
+  const mine = getMyAnglerId();
+  if(mine && mine === anglerId) return null;
+  const me = (anglers || []).find(a=> a.id === mine);
+  return {
+    anglerId: mine || null,
+    name: me ? me.name : (adminUnlocked ? 'Director' : 'Unknown device'),
+    director: !!adminUnlocked,
+    at: Date.now()
+  };
+}
+
+// The one place a wrong clock can still be FIXED rather than just recorded. A
+// stamp reading 40 minutes out is a mark against the angler's own catch, and
+// they are the only person who can put it right - so they get told here, before
+// they shoot, rather than finding out in a dispute.
+function renderClockNotice(){
+  const el = document.getElementById('sub-clock-note');
+  if(!el) return;
+  const off = clockSkewMs();
+  // Unverified is not a warning. A device-only event, or a phone that has not
+  // reached the server yet, is the normal state at a boat ramp with no signal.
+  if(off === null || Math.abs(off) <= CLOCK_SKEW_TOLERANCE_MS){
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = 'block';
+  el.textContent = 'This phone’s clock is ' + skewText(off) + ' of the tournament server, ' +
+    'and that time gets printed on your photo. Turn on automatic date and time in your ' +
+    'phone settings before you shoot, or the director will see the gap on your catch.';
+}
+
+async function renderSubmitScreen(){
+  await populateAnglerSelect('sub-angler', 'sub-angler-note');
+  await renderFilingNotice();
+  renderSpeciesOptions();
+  renderClockNotice();
+  updateGuide();
+}
+
+// ---- camera viewfinder ----
+let camStream = null;
+let capturedPhotoData = null;
+let capturedPhotoDims = { width: 0, height: 0 }; // native sensor size, before downscaling
+// What was burned into the pixels, kept so the catch record can carry the same
+// values. If the two ever disagreed, neither would be worth anything.
+let capturedPhotoStamp = null;
+
+// The scoring species plus the not-scored bucket. Rebuilt whenever the submit
+// screen is shown, so a director changing the target species reaches anglers
+// without them reloading anything.
+function renderSpeciesOptions(){
+  const sel = document.getElementById('sub-species');
+  if(!sel) return;
+  // Leaving it focused-and-empty would strand the angler with no species to
+  // pick, so the focus guard only protects a list that already exists.
+  if(sel.options.length && document.activeElement === sel) return;
+  const names = scoringSpecies();
+  const keep = sel.value;
+  sel.innerHTML =
+    names.map(n=> '<option value="'+escapeHtml(n)+'">'+escapeHtml(n)+'</option>').join('')+
+    '<option value="'+OTHER_SPECIES+'">Other (not scored)</option>';
+  // Hold the angler's choice across a repaint, but never leave them pointed at
+  // a species this event no longer scores.
+  if(keep === OTHER_SPECIES || names.indexOf(keep) !== -1) sel.value = keep;
+  else sel.value = names.length ? names[0] : OTHER_SPECIES;
+}
+
+// Which species the angler is filing this catch as. Falls back to the scoring
+// species because the dropdown is built at runtime: startCamera() can reach
+// updateGuide() before the list exists, and an empty value used to read as
+// "not the target species" and hide the board guide entirely.
+function submittedSpecies(){
+  const sel = document.getElementById('sub-species');
+  return (sel && sel.value) || targetSpecies();
+}
+
+function updateGuide(){
+  const species = submittedSpecies();
+  // The board guide is for anything being measured to score. Only the fish
+  // outline inside it is walleye-shaped, so that is the only part that has to
+  // go when the event scores something else.
+  const scoring = species !== OTHER_SPECIES;
+  const fishOutline = species === 'Walleye';
+  document.getElementById('vf-guide-board').style.display = scoring ? 'block' : 'none';
+  document.getElementById('vf-guide-other').style.display = scoring ? 'none' : 'block';
+  const fish = document.getElementById('vf-fish-walleye');
+  if(fish) fish.style.display = fishOutline ? '' : 'none';
+  document.getElementById('vf-hint').textContent = !scoring
+    ? 'Frame the whole fish inside the box'
+    : (fishOutline
+        ? 'Fish flat on the blue outline, nose to the stop \u2014 keep hands out of the red'
+        : 'Fish flat on the board, nose to the stop \u2014 keep hands out of the red');
+  updateGuideCodes();
+}
+bindEl('sub-species','change', updateGuide);
+
+// The codes the SELECTED angler should have on their board - not the device
+// owner's. A captain shooting their partner's fish picks the partner here, and
+// showing the captain's code then would be worse than showing none.
+function updateGuideCodes(){
+  const box = document.getElementById('vf-codes');
+  if(!box) return;
+  const sel = document.getElementById('sub-angler');
+  const a = sel && sel.value ? anglerById(sel.value) : null;
+  if(!a || !a.anglerCode){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.innerHTML =
+    (a.teamCode ? '<span>TEAM <b>'+escapeHtml(a.teamCode)+'</b></span>' : '') +
+    '<span>ID <b>'+escapeHtml(a.anglerCode)+'</b></span>';
+  box.style.display = 'flex';
+}
+bindEl('sub-angler','change', updateGuideCodes);
+bindEl('sub-angler','change', renderFilingNotice);
+
+async function renderFilingNotice(){
+  const el = document.getElementById('sub-filing-note');
+  if(!el) return;
+  const sel = document.getElementById('sub-angler');
+  const text = filingNotice(sel ? sel.value : '', await loadAnglers());
+  el.textContent = text;
+  el.style.display = text ? 'block' : 'none';
+}
+
+async function startCamera(){
+  const errEl = document.getElementById('vf-cam-err');
+  errEl.style.display='none';
+  try{
+    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    document.getElementById('vf-video').srcObject = camStream;
+    document.getElementById('vf-wrap').style.display='block';
+    document.getElementById('vf-controls-idle').style.display='none';
+    document.getElementById('vf-controls-live').style.display='flex';
+    document.getElementById('vf-autotoggle').style.display='flex';
+    document.getElementById('vf-preview').style.display='none';
+    updateGuide();
+    startAutoCapture();
+  }catch(e){
+    errEl.textContent = 'Camera unavailable or permission denied. Use "Or upload a photo" below instead.';
+    errEl.style.display='block';
+  }
+}
+function stopCamera(){
+  stopAutoCapture();
+  if(camStream){ camStream.getTracks().forEach(t=>t.stop()); camStream=null; }
+  const wrap = document.getElementById('vf-wrap');
+  if(wrap) wrap.style.display='none';
+  const idle = document.getElementById('vf-controls-idle');
+  const live = document.getElementById('vf-controls-live');
+  const toggle = document.getElementById('vf-autotoggle');
+  if(idle) idle.style.display='flex';
+  if(live) live.style.display='none';
+  if(toggle) toggle.style.display='none';
+  // Put an already-captured photo's preview back. Reopening the camera hides
+  // it, so cancelling out used to leave the shot silently attached to the form
+  // with nothing on screen saying so.
+  const preview = document.getElementById('vf-preview');
+  if(preview) preview.style.display = capturedPhotoData ? 'block' : 'none';
+}
+
+// ---- auto-capture ----
+// Samples the live frame a few times a second and fires when the shot is
+// STEADY, SHARP and WELL LIT for long enough. Deliberately scoped: this judges
+// photo quality only. It does not decide whether the fish is placed correctly -
+// the overlay guides that, and Fish-I checks it afterwards.
+let autoTimer = null;
+let autoPrevFrame = null;
+let autoGoodStreak = 0;
+let autoCountdown = 0;
+let autoCountdownTimer = null;
+
+function autoEls(){
+  return {
+    pill: document.getElementById('vf-auto'),
+    dot: document.getElementById('vf-auto-dot'),
+    text: document.getElementById('vf-auto-text'),
+    count: document.getElementById('vf-count'),
+    num: document.getElementById('vf-count-num')
+  };
+}
+
+function startAutoCapture(){
+  stopAutoCapture();
+  autoPrevFrame = null;
+  autoGoodStreak = 0;
+  const els = autoEls();
+  els.pill.style.display = 'inline-flex';
+  els.text.textContent = 'Starting…';
+  autoTimer = setInterval(sampleFrame, AUTOCAP_SAMPLE_MS);
+}
+
+function stopAutoCapture(){
+  if(autoTimer){ clearInterval(autoTimer); autoTimer = null; }
+  cancelCountdown();
+  autoPrevFrame = null;
+  autoGoodStreak = 0;
+  const els = autoEls();
+  if(els.pill) els.pill.style.display = 'none';
+  if(els.count) els.count.style.display = 'none';
+}
+
+function cancelCountdown(){
+  if(autoCountdownTimer){ clearInterval(autoCountdownTimer); autoCountdownTimer = null; }
+  autoCountdown = 0;
+  const els = autoEls();
+  if(els.count) els.count.style.display = 'none';
+}
+
+function sampleFrame(){
+  const video = document.getElementById('vf-video');
+  if(!video || !video.videoWidth) return;
+
+  const w = 64, h = 64;
+  const grey = greyscaleFrom(video, w, h);
+
+  // Motion: mean absolute difference against the previous sample.
+  let motion = 0;
+  if(autoPrevFrame){
+    let diff = 0;
+    for(let i=0;i<grey.length;i++) diff += Math.abs(grey[i] - autoPrevFrame[i]);
+    motion = diff / grey.length;
+  } else {
+    motion = 999; // no baseline yet
+  }
+  autoPrevFrame = grey;
+
+  let brightness = 0;
+  for(let i=0;i<grey.length;i++) brightness += grey[i];
+  brightness /= grey.length;
+
+  const lap = [];
+  for(let y=1;y<h-1;y++){
+    for(let x=1;x<w-1;x++){
+      lap.push(-4*grey[y*w+x] + grey[(y-1)*w+x] + grey[(y+1)*w+x] + grey[y*w+x-1] + grey[y*w+x+1]);
+    }
+  }
+  const lapMean = lap.reduce((a,b)=>a+b,0)/lap.length;
+  const sharpness = lap.reduce((a,v)=>a+(v-lapMean)*(v-lapMean),0)/lap.length;
+
+  // Report the most useful single problem rather than a wall of complaints.
+  let problem = null;
+  if(brightness < AUTOCAP_BRIGHT_MIN) problem = 'Too dark';
+  else if(brightness > AUTOCAP_BRIGHT_MAX) problem = 'Too bright — cut the glare';
+  else if(motion > AUTOCAP_MOTION_MAX) problem = 'Hold steady';
+  else if(sharpness < AUTOCAP_SHARP_MIN) problem = 'Focusing…';
+
+  const els = autoEls();
+  const autoOn = document.getElementById('vf-auto-on').checked;
+
+  if(problem){
+    autoGoodStreak = 0;
+    cancelCountdown();
+    els.dot.className = 'vf-auto-dot hold';
+    els.text.textContent = problem;
+    return;
+  }
+
+  autoGoodStreak++;
+  els.dot.className = 'vf-auto-dot ready';
+
+  if(!autoOn){
+    els.text.textContent = 'Looks good — tap Capture';
+    return;
+  }
+
+  els.text.textContent = 'Looks good';
+  if(autoGoodStreak >= AUTOCAP_STABLE_SAMPLES && !autoCountdownTimer) beginCountdown();
+}
+
+function beginCountdown(){
+  const els = autoEls();
+  autoCountdown = AUTOCAP_COUNTDOWN;
+  els.count.style.display = 'flex';
+  els.num.textContent = autoCountdown;
+  els.text.textContent = 'Capturing…';
+  autoCountdownTimer = setInterval(()=>{
+    autoCountdown--;
+    if(autoCountdown <= 0){
+      cancelCountdown();
+      capturePhoto();
+    } else {
+      els.num.textContent = autoCountdown;
+    }
+  }, 700);
+}
+
+function capturePhoto(){
+  const video = document.getElementById('vf-video');
+  if(!video || !video.videoWidth) return;
+  capturedPhotoDims = { width: video.videoWidth, height: video.videoHeight };
+  // Stamped at the moment the shutter fires, not at submit. An angler who
+  // photographs a fish and files it twenty minutes later has a stamp that says
+  // when the fish was on the board, which is the question that matters.
+  capturedPhotoStamp = photoStamp(PHOTO_SOURCE_CAMERA);
+  capturedPhotoData = encodeToBudget(video, video.videoWidth, video.videoHeight,
+                                     capturedPhotoStamp);
+
+  stopAutoCapture();
+  document.getElementById('vf-preview-img').src = capturedPhotoData;
+  document.getElementById('vf-preview').style.display='block';
+  document.getElementById('vf-wrap').style.display='none';
+  document.getElementById('vf-controls-live').style.display='none';
+  document.getElementById('vf-controls-idle').style.display='flex';
+  document.getElementById('vf-autotoggle').style.display='none';
+  if(camStream){ camStream.getTracks().forEach(t=>t.stop()); camStream=null; }
+}
+
+bindEl('vf-open','click', startCamera);
+bindEl('vf-cancel','click', stopCamera);
+bindEl('vf-capture','click', capturePhoto);
+bindEl('vf-auto-on','change', ()=>{
+  autoGoodStreak = 0;
+  cancelCountdown();
+});
+
+bindEl('vf-retake','click', ()=>{
+  capturedPhotoData = null;
+  capturedPhotoDims = { width: 0, height: 0 };
+  capturedPhotoStamp = null;
+  document.getElementById('vf-preview').style.display='none';
+  startCamera();
+});
+
+// Picking from the library replaces an in-app capture. Submit prefers
+// capturedPhotoData, so without this the "choose a photo" field did nothing
+// once you had already taken a shot in the viewfinder.
+bindEl('sub-photo','change', (e)=>{
+  if(e.target.files && e.target.files[0]){
+    capturedPhotoData = null;
+    capturedPhotoDims = { width: 0, height: 0 };
+    capturedPhotoStamp = null;
+    const preview = document.getElementById('vf-preview');
+    if(preview) preview.style.display = 'none';
+  }
+});
+
+bindEl('sub-submit','click', async ()=>{
+  const errEl = document.getElementById('sub-err');
+  const anglerId = document.getElementById('sub-angler').value;
+  const length = parseFloat(document.getElementById('sub-length').value);
+  const species = document.getElementById('sub-species').value;
+  const fileInput = document.getElementById('sub-photo');
+  const submitBtn = document.getElementById('sub-submit');
+  const fail = (msg)=>{ errEl.textContent = msg; errEl.style.display='block'; };
+
+  // Checked here and again below against a fresh roster read. This first pass
+  // only saves the angler a wait; the one that matters is the one inside the
+  // try, because the roster this screen was painted from can be minutes old.
+  if(!anglerId){ fail('Select the angler this catch belongs to.'); return; }
+  if(!length || length<=0){ fail('Enter a valid length in inches.'); return; }
+  if(!capturedPhotoData && !fileInput.files[0]){ fail('Capture or upload a photo on an approved bump board.'); return; }
+
+  // Checked BEFORE the button is disabled and the photo is prepared, so an
+  // angler hears the truth while the fish is still on the board rather than
+  // after a minute of "Saving...". One more sign-in attempt is made here: the
+  // ramp is where signal comes back, and a catch is worth the extra second.
+  if(!await identityReadyForWrite()){ fail(identityBlockedText('a catch')); return; }
+  errEl.style.display='none';
+
+  // Everything past here runs behind a disabled button, so it all has to sit
+  // in a try/finally. A throw anywhere in the middle used to leave the button
+  // dead and mislabelled until the angler reloaded the page.
+  submitBtn.disabled = true;
+  try{
+    const anglers = await loadAnglers();
+    // The roster as it is NOW, not as it was when this screen was painted.
+    const guard = actionGuard(anglerId, anglers, activeEvent().name);
+    if(!guard.ok){ fail(guard.message); return; }
+    const angler = guard.angler;
+    let photoData = capturedPhotoData || '';
+    let srcWidth = capturedPhotoDims.width, srcHeight = capturedPhotoDims.height;
+    let stamp = capturedPhotoStamp;
+
+    if(!photoData && fileInput.files[0]){
+      submitBtn.textContent = 'Preparing photo…';
+      try{
+        // A file off the camera roll could have been shot at any time, so its
+        // stamp reads as the time of submission and says so on the photo.
+        stamp = photoStamp(PHOTO_SOURCE_UPLOAD);
+        const resized = await resizeImage(fileInput.files[0], stamp);
+        photoData = resized.dataUrl;
+        srcWidth = resized.srcWidth;
+        srcHeight = resized.srcHeight;
+      }catch(e){
+        console.error(e);
+        // Never save a photoless catch - the photo IS the evidence, and a
+        // swallowed error here used to do exactly that.
+        fail('That photo could not be read. Pick a different file, or use the in-app camera.');
+        return;
+      }
+    }
+    if(!photoData){ fail('No photo is attached. Capture or choose one, then submit.'); return; }
+
+    submitBtn.textContent = 'Checking photo…';
+    const precheck = await analyzePhoto(photoData, srcWidth, srcHeight);
+
+    submitBtn.textContent = 'Checking location…';
+    const catchLocation = await getCatchLocation();
+
+    submitBtn.textContent = 'Saving…';
+    const catchId = uid();
+    // ORDER MATTERS: the catch record goes in FIRST, then the photo.
+    //
+    // The storage policy that stops one angler overwriting another's evidence
+    // asks "does the catch this photo belongs to belong to you?" - which it can
+    // only answer if the catch row already exists. Uploading first made that
+    // check impossible and every first upload would have been rejected.
+    //
+    // Nothing is lost by the swap: the photo's URL is derived from the catch id
+    // (see publicPhotoUrl), so the record does not need the upload to have
+    // happened in order to point at it.
+    const catches = await loadCatches();
+    catches.push({
+      id: catchId,
+      anglerId,
+      // Never 'Unknown' any more - actionGuard has already refused anything
+      // that is not on this event's roster.
+      anglerName: angler.name,
+      division: angler.division || 'solo',
+      // Null unless somebody else's device filed this. See filedByFor.
+      filedBy: filedByFor(anglerId, anglers),
+      species,
+      length,
+      hasPhoto: true,
+      photoUrl: store && store.photoUrlFor ? store.photoUrlFor(catchId) : '',
+      precheck,
+      location: catchLocation,
+      // The same values that were burned into the pixels. Kept beside them so
+      // the director's list can be read and sorted without opening every photo
+      // - never INSTEAD of them, which is why the stamp is drawn at all.
+      capture: stamp ? {
+        at: stamp.at, source: stamp.source, clockOffsetMs: stamp.clockOffsetMs
+      } : null,
+      timestamp: Date.now(),
+      status: 'pending'
+    });
+    if(!await saveCatches(catches)){
+      fail(writeFailureText('catch'));
+      return;
+    }
+
+    const photoRef = await savePhoto(catchId, photoData);
+    if(photoRef === null){
+      // The record landed but the image did not. Take the record back out so
+      // the angler is never told a catch is filed when its evidence is missing.
+      const after = await loadCatches();
+      const at = after.findIndex(c=> c.id === catchId);
+      if(at !== -1){ after.splice(at, 1); await saveCatches(after); }
+      fail(writeFailureText('photo'));
+      return;
+    }
+
+    // The catch is safely filed by here. Announcing is a nice-to-have, so it
+    // runs after and its failure is swallowed rather than reported as a failed
+    // submission.
+    const announce = document.getElementById('sub-announce');
+    if(!announce || announce.checked) await announceCatch(catchId, angler);
+    // The catch already carries a fix, so the director's position view stays
+    // current without ever waking the GPS on its own.
+    if(catchLocation) await publishSignal(catchLocation);
+
+    document.getElementById('sub-length').value='';
+    fileInput.value='';
+    capturedPhotoData = null;
+    capturedPhotoDims = { width: 0, height: 0 };
+    capturedPhotoStamp = null;
+    document.getElementById('vf-preview').style.display='none';
+    goto('manage');
+  }catch(e){
+    console.error(e);
+    fail('Something went wrong submitting this catch. Try again.');
+  }finally{
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Submit catch for scoring';
+  }
+});
+
+// ---- manage catch ----
+async function renderManageScreen(){
+  await populateAnglerSelect('man-angler', 'man-angler-note');
+  await renderManageList();
+}
+bindEl('man-angler','change', renderManageList);
+
+async function renderManageList(){
+  const anglerId = document.getElementById('man-angler').value;
+  const el = document.getElementById('man-list');
+  // No entry signed in on this device: the picker is empty, so there is nothing
+  // to list and nothing this device may edit.
+  if(!anglerId){
+    el.innerHTML = '<p class="empty">Sign in to your entry to see and edit your catches.</p>';
+    return;
+  }
+  const catches = (await loadCatches()).filter(c=>c.anglerId===anglerId).sort((a,b)=>b.timestamp-a.timestamp);
+  if(catches.length===0){ el.innerHTML = '<p class="empty">No catches submitted yet.</p>'; return; }
+
+  el.innerHTML = catches.map(c=>{
+    const img = photoSlotHtml(c);
+    const editable = c.status==='pending';
+    const actions = editable
+      ? '<div class="actions"><input type="number" step="0.25" class="edit-len" value="'+c.length+'" data-id="'+c.id+'"><button class="small" data-act="savelen" data-id="'+c.id+'">Save</button><button class="small danger" data-act="withdraw" data-id="'+c.id+'">Withdraw</button></div>'
+      : '<div class="hint" style="margin-top:6px;">Locked &mdash; already reviewed by the director.</div>';
+    return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+lengthHtml(c.length)+'</span>'+statusHtml(c.status)+'</div>'+
+      '<div class="name">'+escapeHtml(c.species)+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
+      '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+'</div>'+actions+'</div></div>';
+  }).join('');
+
+  hydratePhotos(el);
+
+  // The buttons above are only drawn for a pending catch, but that was decided
+  // when the list was PAINTED. The director can approve in between - and the
+  // background repaint that would have removed the buttons is suppressed while
+  // an input has focus, which is exactly when the angler is typing a length. So
+  // the check has to happen again here, against a fresh read.
+  const stillEditable = (catches, anglers, id)=>{
+    const idx = catches.findIndex(c=>c.id===id);
+    if(idx === -1){
+      setText('man-err', 'That catch is no longer on the list. Refreshing.');
+      return -1;
+    }
+    if(catches[idx].status !== 'pending'){
+      setText('man-err', 'The director reviewed that catch while this page was open, '+
+        'so it is locked now. Nothing was changed.');
+      return -1;
+    }
+    // The picker only offers entries this device is signed in to, but the
+    // picker is markup. Confirm the catch really is one of ours before writing.
+    if(!canActFor(catches[idx].anglerId, anglers)){
+      setText('man-err', 'That catch belongs to another angler, so nothing was changed.');
+      return -1;
+    }
+    return idx;
+  };
+
+  el.querySelectorAll('[data-act="savelen"]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      setText('man-err', '');
+      const input = el.querySelector('.edit-len[data-id="'+btn.dataset.id+'"]');
+      const newLen = parseFloat(input.value);
+      if(!newLen || newLen<=0) return;
+      const catches = await loadCatches();
+      const idx = stillEditable(catches, await loadAnglers(), btn.dataset.id);
+      if(idx === -1){ renderManageList(); return; }
+      catches[idx].length = newLen;
+      await saveCatches(catches);
+      renderManageList();
+    });
+  });
+  el.querySelectorAll('[data-act="withdraw"]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      setText('man-err', '');
+      const catches = await loadCatches();
+      const idx = stillEditable(catches, await loadAnglers(), btn.dataset.id);
+      if(idx === -1){ renderManageList(); return; }
+      if(!window.confirm('Withdraw this catch? It is removed along with its photo, and cannot be brought back.')) return;
+      catches.splice(idx,1);
+      await saveCatches(catches);
+      renderManageList();
+    });
+  });
+}
+
+// ---- CPR livewell ----
+async function renderLivewell(){
+  await populateAnglerSelect('lw-angler');
+  await renderLivewellList();
+}
+bindEl('lw-angler','change', renderLivewellList);
+
+async function renderLivewellList(){
+  const anglerId = document.getElementById('lw-angler').value;
+  const el = document.getElementById('lw-list');
+  if(!anglerId){
+    el.innerHTML = '<p class="empty">Sign in to your entry to see your livewell.</p>';
+    return;
+  }
+  const catches = (await loadCatches()).filter(c=>c.anglerId===anglerId && isScoringSpecies(c.species)).sort(byLengthThenEarliest);
+  if(catches.length===0){ el.innerHTML = '<p class="empty">No '+escapeHtml(speciesPhrase())+' submitted yet.</p>'; return; }
+
+  const bestApprovedId = (catches.find(c=>c.status==='approved') || {}).id;
+  el.innerHTML = catches.map(c=>{
+    const img = photoSlotHtml(c);
+    const isBest = c.id===bestApprovedId;
+    const badge = isBest ? '<span class="badge">Currently counts</span>' : '';
+    return '<div class="catchcard'+(isBest?' best':'')+'">'+img+'<div class="info"><div class="top"><span class="len">'+lengthHtml(c.length)+'</span>'+statusHtml(c.status)+'</div>'+badge+'</div></div>';
+  }).join('');
+  hydratePhotos(el);
+}
+
+// ---- what is still outstanding before registration opens ----
+// A note in a commit message is not a reminder. Neither is a comment in the
+// source, or a line in a README nobody opens between tournaments. The only
+// place a decision taken in September reliably reaches the person who has to
+// act on it the following June is the screen they go to when they set the next
+// event up - so this lives there, and it only appears while there is still
+// time to act on it.
+//
+// Each item says what is missing, what it costs to leave it, and the date it
+// stops being possible to fix cheaply.
+function setupTodos(evt, anglers, now){
+  const at = now === undefined ? Date.now() : now;
+  const out = [];
+  const closeMs = new Date((evt && evt.registrationClose) || 0).getTime();
+  const open = isFinite(closeMs) && at < closeMs;
+  if(!open) return out;
+
+  // ANGLER ACCOUNTS. The trophy case joins one person's entries across years by
+  // PHONE NUMBER, because there is nothing better on the records. Two people
+  // sharing a number - a parent and a kid, most obviously - get one merged
+  // trophy case showing fish neither of them caught alone. Fixing that means
+  // real accounts, and the only moment it can be done without splitting a
+  // history in half is BEFORE a registration window opens.
+  const shared = {};
+  (anglers || []).forEach(a=>{
+    const k = personKey(a);
+    if(k) shared[k] = (shared[k] || 0) + 1;
+  });
+  const collisions = Object.keys(shared).filter(k=> shared[k] > 1).length;
+  out.push({
+    id: 'accounts',
+    title: 'Angler accounts are not set up',
+    detail: 'The trophy case links an angler\'s years together by phone number. ' +
+      'Two people sharing one number share a trophy case, and a changed number ' +
+      'splits one in half. Real sign-in (email and password) fixes both, and ' +
+      'signInWithPassword is already in the app for the director.' +
+      (collisions > 0
+        ? ' There ' + (collisions === 1 ? 'is already 1 phone number' : 'are already ' +
+          collisions + ' phone numbers') + ' shared by more than one entry on this roster.'
+        : ''),
+    // Doing it after registration opens means half the field has an account
+    // and half does not, which is worse than either.
+    deadline: closeMs,
+    severity: collisions > 0 ? 'now' : 'soon'
+  });
+  out.push({
+    id: 'smtp',
+    title: 'Password-reset email is not configured',
+    detail: 'Only matters once accounts exist, and it has to be done first. ' +
+      'Supabase\'s built-in mail is rate limited to a handful an hour and is ' +
+      'often filed as spam, so a registration rush would lock people out and ' +
+      'leave you answering the phone. A real SMTP provider is free at this size.',
+    deadline: closeMs,
+    severity: 'soon'
+  });
+  return out;
+}
+
+// ---- freezing a tournament's result ----
+// The trophy case looks BACKWARDS, and everything it says about a finished
+// event is otherwise worked out again from the catch records every time the
+// screen opens. That is right while an event is live and wrong the moment it
+// is over: a data cleanup, a re-run of the boundary check, or an edit to an old
+// event's target species would silently rewrite what somebody's 2027 trophy
+// case says about 2027. A placing an angler was told on the day has to stay the
+// placing they were told.
+//
+// So the director freezes the result once the reviewing is done, and from then
+// on the trophy case reads the frozen copy. Deriving stays the fallback for any
+// event nobody has frozen - including every event from before this existed.
+function frozenResults(eventId){
+  const all = (liveCache.config && liveCache.config.results) || {};
+  return all[eventId || activeEventId()] || null;
+}
+async function saveFrozenResults(eventId, record){
+  const all = Object.assign({}, (liveCache.config && liveCache.config.results) || {});
+  if(record) all[eventId] = record; else delete all[eventId];
+  return await saveConfig({ results: all });
+}
+
+// Who took the Big Fish pot. Derived here and stored at freeze time, because
+// nothing records it as it happens - it is a running answer to "who is winning"
+// right up until the moment it becomes a result.
+function bigFishWinner(anglers, catches, target){
+  const inPot = {};
+  bigFishEntrants(anglers || []).forEach(a=>{ inPot[a.id] = true; });
+  const best = (catches || [])
+    .filter(c=> c && c.status === 'approved' && isScoringSpecies(c.species, target) && inPot[c.anglerId])
+    .sort(byLengthThenEarliest)[0];
+  return best ? { anglerId: best.anglerId, catchId: best.id, length: best.length } : null;
+}
+
+// Enough to answer "where did I come and what did I win" without ever going
+// back to the catches. Deliberately small: the fish themselves are still on
+// record, this is only the verdict on them.
+function buildResults(anglers, catches, bets, target){
+  const divisions = {};
+  ['solo', 'team'].forEach(div=>{
+    divisions[div] = standingsFor(div, catches || [], anglers || [], target)
+      .map(row=> ({ key: row.key, anglerIds: row.anglerIds.slice(),
+                    best: row.best, top3: row.top3sum }));
+  });
+  return {
+    frozenAt: Date.now(),
+    targetSpecies: target,
+    divisions,
+    bigFish: bigFishWinner(anglers, catches, target),
+    // Only settled ones. An open bet has no winner and freezing it as though it
+    // had would put a prize in somebody's trophy case that nobody awarded.
+    bets: betRecords(bets || [])
+      .filter(b=> b && b.winnerId)
+      .map(b=> ({ id: b.id, title: b.title, winnerId: b.winnerId }))
+  };
+}
+
+// Painted at the top of Director -> Event, which is the screen the next
+// tournament gets set up on. Nothing to do means nothing on screen.
+async function renderSetupTodos(){
+  const el = document.getElementById('setup-todos');
+  if(!el) return;
+  const todos = setupTodos(activeEvent(), await loadAnglers());
+  if(todos.length === 0){ el.innerHTML = ''; return; }
+  el.innerHTML = todos.map(td=>{
+    const days = Math.ceil((td.deadline - Date.now()) / 86400000);
+    const when = days > 0
+      ? days + (days === 1 ? ' day until registration closes' : ' days until registration closes')
+      : 'registration has closed';
+    return '<div class="todo ' + escapeHtml(td.severity) + '">' +
+      '<span class="todo-title">' + escapeHtml(td.title) + '</span>' +
+      '<span class="todo-detail">' + escapeHtml(td.detail) + '</span>' +
+      '<span class="todo-when">' + escapeHtml(when) + '</span></div>';
+  }).join('');
+}
+
+// ---- the director's Results tool ----
+async function renderResultsAdmin(){
+  const wrap = document.getElementById('results-preview');
+  if(!wrap) return;
+  const evt = activeEvent();
+  const frozen = frozenResults(evt.id);
+  const anglers = await loadAnglers();
+  const catches = await loadCatches();
+  const bets = await loadBets();
+  // A frozen record's targetSpecies may be a single name (frozen before an
+  // event could score several) or a list. isScoringSpecies takes either.
+  const target = frozen ? frozen.targetSpecies : scoringSpecies();
+  const view = frozen || buildResults(anglers, catches, bets, target);
+  const byId = {};
+  anglers.forEach(a=>{ byId[a.id] = a; });
+
+  const pending = catches.filter(c=> c.status === 'pending').length;
+  setText('results-tool-summary', frozen ? 'Frozen' : 'Not frozen');
+  setText('results-state', frozen
+    ? 'Frozen ' + new Date(frozen.frozenAt).toLocaleString() + '. The trophy case ' +
+      'reads this, so nothing logged from here on changes it.'
+    : (pending > 0
+        ? pending + ' still waiting on review. Freezing now would leave them out.'
+        : 'Not frozen. The trophy case is still working this out from the catches ' +
+          'every time it opens.'));
+
+  const freezeBtn = document.getElementById('results-freeze');
+  const thawBtn = document.getElementById('results-thaw');
+  if(freezeBtn) freezeBtn.textContent = frozen ? 'Re-freeze from the catches as they stand' : 'Freeze this year\u2019s results';
+  if(thawBtn) thawBtn.style.display = frozen ? '' : 'none';
+
+  const podium = (div)=>{
+    const rows = (view.divisions && view.divisions[div]) || [];
+    if(rows.length === 0) return '<p class="hint" style="margin:4px 0 0;">Nobody ranked.</p>';
+    return rows.slice(0, 3).map((r, i)=>
+      '<div class="lbrow"><div class="rank">' + (i + 1) + '</div><div class="who"><div class="name">' +
+      escapeHtml(r.anglerIds.map(id=> displayHandle(byId[id])).join(' & ')) +
+      '</div></div><div class="len">' + Number(r.best).toFixed(2) + '&quot;</div></div>').join('');
+  };
+  const bf = view.bigFish;
+  wrap.innerHTML =
+    '<h2 style="margin-bottom:6px;">Solo</h2>' + podium('solo') +
+    '<h2 style="margin:12px 0 6px;">Team</h2>' + podium('team') +
+    '<h2 style="margin:12px 0 6px;">Big Fish pot</h2>' +
+    (bf ? '<div class="lbrow"><div class="who"><div class="name">' +
+      escapeHtml(displayHandle(byId[bf.anglerId])) + '</div></div><div class="len">' +
+      Number(bf.length).toFixed(2) + '&quot;</div></div>'
+     : '<p class="hint" style="margin:4px 0 0;">No qualifying catch in the pot.</p>') +
+    '<h2 style="margin:12px 0 6px;">Side bets</h2>' +
+    ((view.bets || []).length === 0
+      ? '<p class="hint" style="margin:4px 0 0;">None settled.</p>'
+      : view.bets.map(b=> '<div class="lbrow"><div class="who"><div class="name">' +
+          escapeHtml(b.title) + '</div><div class="sub">' +
+          escapeHtml(displayHandle(byId[b.winnerId])) + '</div></div></div>').join(''));
+}
+
+bindEl('results-freeze','click', async ()=>{
+  const err = document.getElementById('results-err');
+  if(err) err.style.display = 'none';
+  const catches = await loadCatches();
+  const pending = catches.filter(c=> c.status === 'pending').length;
+  const msg = 'Freeze this year\u2019s results?\n\n' +
+    'Every angler\u2019s trophy case will show these placings from now on, ' +
+    'whatever happens to the records afterwards.' +
+    (pending > 0 ? '\n\n' + pending + ' catches are still pending review and will NOT count.' : '');
+  if(!window.confirm(msg)) return;
+  const anglers = await loadAnglers();
+  const record = buildResults(anglers, catches, await loadBets(), scoringSpecies());
+  if(!await saveFrozenResults(activeEventId(), record)){
+    if(err){ err.textContent = 'That did not save. Check the sync line and try again.'; err.style.display = 'block'; }
+    return;
+  }
+  renderResultsAdmin();
+});
+
+bindEl('results-thaw','click', async ()=>{
+  if(!window.confirm('Unfreeze? The trophy case goes back to working the placings ' +
+    'out from the catches, so they can move again.')) return;
+  await saveFrozenResults(activeEventId(), null);
+  renderResultsAdmin();
+});
+
+// ---- the trophy case ----
+// Personal bests, a row for every event fished, and badges earned.
+//
+// WHO YOU ARE, ACROSS EVENTS. Entry ids are per-event - a fresh registration
+// every year - handles get re-rolled between events, and names are typed by
+// hand and get typed differently each time. The join is the PHONE NUMBER,
+// which is already what claimEntry() treats as proof that an entry is yours.
+//
+// It is used as a key and never displayed. This is matching your own entries
+// on your own phone, not building a directory: nothing here leaves the device
+// and nothing here is shown to anybody else.
+function personKey(angler){
+  const p = normPhone(angler && angler.phone);
+  return p ? 'p:' + p : null;
+}
+
+// Every entry belonging to the same person as the live event's entries. An
+// entry with no phone on it still counts for its own event - it simply cannot
+// be matched to any other, which is better than guessing on a name.
+function myEntryIds(allAnglers, myIds){
+  const out = new Set(myIds || []);
+  const keys = new Set();
+  (allAnglers || []).forEach(a=>{
+    if(!a || !out.has(a.id)) return;
+    const k = personKey(a);
+    if(k) keys.add(k);
+  });
+  if(keys.size){
+    (allAnglers || []).forEach(a=>{
+      const k = personKey(a);
+      if(k && keys.has(k)) out.add(a.id);
+    });
+  }
+  return out;
+}
+
+// A calendar day in a named zone. eventTimeParts() answers this for the LIVE
+// event only, and a past event may have been fished somewhere else.
+const dayKeyFormatters = new Map();
+function dayKeyIn(ts, tz){
+  const zone = tz || 'UTC';
+  let f = dayKeyFormatters.get(zone);
+  if(!f){
+    try{
+      f = new Intl.DateTimeFormat('en-CA',
+        { timeZone: zone, year:'numeric', month:'2-digit', day:'2-digit' });
+    }catch(e){
+      // A record carrying a zone this browser has never heard of should cost a
+      // stat its precision, not take the screen down.
+      f = new Intl.DateTimeFormat('en-CA',
+        { timeZone:'UTC', year:'numeric', month:'2-digit', day:'2-digit' });
+    }
+    dayKeyFormatters.set(zone, f);
+  }
+  return f.format(new Date(Number(ts) || 0));
+}
+
+// One event's line in the history. `settingsFor` and `eventInfo` are passed in
+// rather than read from globals so this can be tested without an app around it.
+function trophyEventRow(eventId, evAnglers, evCatches, evBets, mineIds, info){
+  const meHere = evAnglers.filter(a=> mineIds.has(a.id));
+  if(meHere.length === 0) return null;
+  const frozen = (info && info.results) || null;
+  // A frozen event is scored by the species it was frozen against, so the fish
+  // count on the row and the board it was placed on can never disagree.
+  const target = frozen ? frozen.targetSpecies : ((info && info.targetSpecies) || '');
+  const tz = (info && info.timeZone) || 'UTC';
+  const approved = evCatches.filter(c=>
+    c && c.status === 'approved' && mineIds.has(c.anglerId));
+  const scoring = approved.filter(c=> isScoringSpecies(c.species, target)).slice().sort(byLengthThenEarliest);
+  const lengths = scoring.map(c=> Number(c.length) || 0);
+
+  const perDay = {};
+  approved.forEach(c=>{ const k = dayKeyIn(c.timestamp, tz); perDay[k] = (perDay[k] || 0) + 1; });
+  const bestDay = Object.keys(perDay).reduce((m, k)=> Math.max(m, perDay[k]), 0);
+
+  const entry = meHere[0];
+  const division = entry.division || 'solo';
+  // The frozen board if there is one; otherwise worked out now, against THIS
+  // event's species rather than the live one's - see isScoringSpecies().
+  const table = (frozen && frozen.divisions && frozen.divisions[division])
+    ? frozen.divisions[division]
+    : standingsFor(division, evCatches, evAnglers, target);
+  let placing = 0;
+  for(let i = 0; i < table.length; i++){
+    if((table[i].anglerIds || []).some(id=> mineIds.has(id))){ placing = i + 1; break; }
+  }
+  const bigFish = frozen ? frozen.bigFish : bigFishWinner(evAnglers, evCatches, target);
+  const wonBets = (frozen ? (frozen.bets || [])
+                          : betRecords(evBets || []).filter(b=> b && b.winnerId))
+    .filter(b=> mineIds.has(b.winnerId))
+    .map(b=> b.title)
+    .sort();
+  const days = {};
+  meHere.forEach(a=>{
+    Object.keys(a.checkins || {}).forEach(k=>{
+      const rec = a.checkins[k] || {};
+      if(rec.in && rec.out) days[k] = true;
+    });
+  });
+
+  return {
+    eventId,
+    name: (info && info.name) || eventId,
+    year: (info && info.year) || '',
+    // The handle carried THAT year. It is re-rolled per entry, so this is what
+    // the board actually called you at the time - which is the point of showing
+    // it rather than today's.
+    handle: displayHandle(entry),
+    frozen: !!frozen,
+    bigFishWon: !!(bigFish && mineIds.has(bigFish.anglerId)),
+    betsWon: wonBets,
+    division,
+    fish: approved.length,
+    scoring: scoring.length,
+    best: lengths.length ? lengths[0] : 0,
+    // The actual fish, so the all-time best can name its species and be tied
+    // back to a record rather than being a bare number.
+    bestCatch: scoring[0] || null,
+    top3: lengths.slice(0, 3).reduce((t, v)=> t + v, 0),
+    bestDay,
+    placing,
+    entrants: table.length,
+    disqualified: meHere.some(a=> a.disqualified),
+    bigfish: meHere.some(a=> a.bigfish),
+    fullDays: Object.keys(days).length,
+    species: Array.from(new Set(approved.map(c=> c.species).filter(Boolean))).sort()
+  };
+}
+
+// Everything the trophy case shows, in one pass, so the numbers on the screen
+// and the badges beneath them can never disagree about what you have done.
+function trophyStats(allAnglers, allCatches, allBets, myIds, infoFor){
+  const ids = myEntryIds(allAnglers, myIds);
+  const anglersBy = {}, catchesBy = {}, betsBy = {};
+  (allAnglers || []).forEach(a=>{
+    const k = rowEventId(a); (anglersBy[k] = anglersBy[k] || []).push(a);
+  });
+  (allCatches || []).forEach(c=>{
+    const k = rowEventId(c); (catchesBy[k] = catchesBy[k] || []).push(c);
+  });
+  (allBets || []).forEach(b=>{
+    const k = rowEventId(b); (betsBy[k] = betsBy[k] || []).push(b);
+  });
+
+  const history = [];
+  Object.keys(anglersBy).forEach(eventId=>{
+    const row = trophyEventRow(eventId, anglersBy[eventId], catchesBy[eventId] || [],
+      betsBy[eventId] || [], ids, infoFor ? infoFor(eventId) : null);
+    if(row) history.push(row);
+  });
+  // Most recent event first, and a stable order when two share a year.
+  history.sort((a, b)=>
+    String(b.year).localeCompare(String(a.year)) || String(a.eventId).localeCompare(String(b.eventId)));
+
+  const mineAll = (allCatches || []).filter(c=>
+    c && c.status === 'approved' && ids.has(c.anglerId));
+  // The personal best is the longest fish that SCORED, taken from each event's
+  // own row so it is measured against the species that event was fished for.
+  //
+  // Not simply the longest thing ever landed: a 40" pike in a walleye event is
+  // a real fish and it counts among the fish caught, but calling it a personal
+  // best would put it above every walleye on the board and hand out the
+  // thirty-inch badge for a species nobody was fishing for.
+  const longest = history.map(r=> r.bestCatch).filter(Boolean)
+    .sort(byLengthThenEarliest)[0] || null;
+  const pick = (key)=> history.reduce((best, r)=> r[key] > best ? r[key] : best, 0);
+  const placed = history.filter(r=> r.placing > 0).map(r=> r.placing);
+
+  return {
+    history,
+    events: history.length,
+    fish: mineAll.length,
+    species: Array.from(new Set(mineAll.map(c=> c.species).filter(Boolean))).sort(),
+    longest,
+    best: longest ? Number(longest.length) || 0 : 0,
+    bestTop3: pick('top3'),
+    bestDay: pick('bestDay'),
+    mostInEvent: pick('fish'),
+    fullDays: history.reduce((t, r)=> t + r.fullDays, 0),
+    bigFishBuyIns: history.filter(r=> r.bigfish).length,
+    // 0 means never ranked, so "best" here is the LOWEST number above zero.
+    bestPlacing: placed.length ? Math.min.apply(null, placed) : 0,
+    wins: history.filter(r=> r.placing === 1).length,
+    podiums: history.filter(r=> r.placing >= 1 && r.placing <= 3).length,
+    bigFishWins: history.filter(r=> r.bigFishWon).length,
+    betsWon: history.reduce((n, r)=> n + r.betsWon.length, 0)
+  };
+}
+
+// Badges. Every one of these has to be checkable against the record - a badge
+// nobody can explain is worse than no badge, because the first thing an angler
+// does is ask why somebody else has it.
+//
+// `earned` reads the stats above and nothing else, so a badge can never claim
+// something the trophy case is not also showing.
+const TROPHY_BADGES = [
+  { id:'first-fish', name:'First Fish', icon:'\u{1F41F}',
+    need:'Land an approved fish', earned: s=> s.fish >= 1 },
+  { id:'ten-fish', name:'Ten Fish', icon:'\u{1F3A3}',
+    need:'Ten approved fish, all time', earned: s=> s.fish >= 10 },
+  { id:'fifty-fish', name:'Fifty Fish', icon:'⚓',
+    need:'Fifty approved fish, all time', earned: s=> s.fish >= 50 },
+  { id:'twenty', name:'Twenty-Incher', icon:'\u{1F4CF}',
+    need:'A fish of 20 inches or better', earned: s=> s.best >= 20 },
+  { id:'twentyfive', name:'Twenty-Five Club', icon:'\u{1F947}',
+    need:'A fish of 25 inches or better', earned: s=> s.best >= 25 },
+  { id:'thirty', name:'Thirty-Inch Giant', icon:'\u{1F409}',
+    need:'A fish of 30 inches or better', earned: s=> s.best >= 30 },
+  { id:'mixed-bag', name:'Mixed Bag', icon:'\u{1F3A8}',
+    need:'Two or more species logged', earned: s=> s.species.length >= 2 },
+  { id:'hot-day', name:'Hot Hand', icon:'\u{1F525}',
+    need:'Five approved fish in one day', earned: s=> s.bestDay >= 5 },
+  { id:'full-days', name:'Full Day', icon:'\u{1F305}',
+    need:'Check in and back out on the same day', earned: s=> s.fullDays >= 1 },
+  { id:'pot', name:'In The Pot', icon:'\u{1F3B2}',
+    need:'Buy into the Big Fish pot', earned: s=> s.bigFishBuyIns >= 1 },
+  { id:'podium', name:'Podium', icon:'\u{1F396}',
+    need:'Finish in the top three', earned: s=> s.podiums >= 1 },
+  { id:'champion', name:'Champion', icon:'\u{1F3C6}',
+    need:'Win your division', earned: s=> s.wins >= 1 },
+  { id:'veteran', name:'Veteran', icon:'\u{1F9ED}',
+    need:'Fish two or more tournaments', earned: s=> s.events >= 2 },
+  { id:'big-fish', name:'Big Fish', icon:'\u{1F3C5}',
+    need:'Take the Big Fish pot', earned: s=> s.bigFishWins >= 1 },
+  { id:'side-bet', name:'Side Bet', icon:'\u{1F91D}',
+    need:'Win a side bet', earned: s=> s.betsWon >= 1 }
+];
+
+function trophyBadges(stats){
+  return TROPHY_BADGES.map(b=> ({
+    id: b.id, name: b.name, icon: b.icon, need: b.need,
+    earned: !!(stats && b.earned(stats))
+  }));
+}
+
+// What trophyStats needs to know about an event in order to score its catches:
+// the species that counted THERE, the zone its days were kept in, and a name
+// to print. Scoring a 2027 walleye event against a 2029 pike event's target
+// would quietly empty its board, which is the whole reason this is passed in.
+function trophyEventInfo(eventId){
+  const evt = eventById(eventId);
+  const dates = (evt && evt.dates) || [];
+  return {
+    name: (evt && evt.name) || eventId,
+    year: dates.length ? String(dates[dates.length - 1]).slice(0, 4) : '',
+    targetSpecies: eventSettings(eventId).targetSpecies,
+    timeZone: (evt && evt.timeZone) || 'UTC',
+    // Present once the director has called the result. From then on the row is
+    // read from here rather than worked out again.
+    results: frozenResults(eventId)
+  };
+}
+
+function statHtml(val, key, sub){
+  return '<div class="stat"><span class="stat-val">' + escapeHtml(String(val)) + '</span>' +
+    '<span class="stat-key">' + escapeHtml(key) + '</span>' +
+    (sub ? '<span class="stat-sub">' + escapeHtml(sub) + '</span>' : '') + '</div>';
+}
+function placingText(n){
+  if(n === 1) return '1st';
+  if(n === 2) return '2nd';
+  if(n === 3) return '3rd';
+  return n + 'th';
+}
+function trophyHistoryHtml(row){
+  // The handle carried that year comes first: it is what the board called you
+  // at the time, and an angler looking back remembers the name, not the id.
+  const bits = [];
+  if(row.handle) bits.push('as ' + row.handle);
+  bits.push(row.division === 'team' ? 'Team' : 'Solo');
+  bits.push(row.fish + ' fish');
+  if(row.best > 0) bits.push('best ' + Number(row.best).toFixed(2) + '"');
+  if(row.disqualified) bits.push('disqualified');
+  const won = [];
+  if(row.bigFishWon) won.push('\u{1F3C5} Big Fish pot');
+  (row.betsWon || []).forEach(title=> won.push('\u{1F91D} ' + title));
+  const wonHtml = won.length === 0 ? ''
+    : '<span class="hist-won">' + won.map(escapeHtml).join(' &middot; ') + '</span>';
+  const place = row.disqualified ? '&mdash;'
+    : (row.placing > 0 ? placingText(row.placing) : '&mdash;');
+  const placeSub = row.disqualified ? 'no placing'
+    : (row.placing > 0 ? 'of ' + row.entrants : 'unranked');
+  return '<div class="hist-row' + (row.placing === 1 && !row.disqualified ? ' won' : '') + '">' +
+    '<span class="hist-main"><span class="hist-name">' + escapeHtml(row.name) + '</span>' +
+    '<span class="hist-sub">' + escapeHtml(bits.join(' \u00b7 ')) + '</span>' + wonHtml + '</span>' +
+    '<span class="hist-place"><span class="pl">' + place + '</span>' +
+    '<span class="pl-sub">' + escapeHtml(placeSub) + '</span></span></div>';
+}
+
+async function renderTrophyCase(){
+  const anglers = await loadAnglers();
+  const mine = myAnglerIds(anglers);
+  const stats = trophyStats(await loadAnglersAllEvents(), await loadCatchesAllEvents(),
+    await loadBetsAllEvents(), mine, trophyEventInfo);
+
+  const bests = document.getElementById('trophy-bests');
+  const hist = document.getElementById('trophy-history');
+  const badges = document.getElementById('trophy-badges');
+  if(!bests || !hist || !badges) return;
+
+  if(mine.length === 0){
+    setText('trophy-intro', 'This device is not signed in to an entry, so there is nothing ' +
+      'to show yet. Open Register and choose \u201cSign in to my entry\u201d, or register for ' +
+      'the tournament.');
+    bests.innerHTML = '';
+    hist.innerHTML = '<p class="empty">No tournaments yet.</p>';
+    badges.innerHTML = '';
+    return;
+  }
+
+  setText('trophy-intro', stats.fish === 0
+    ? 'Nothing on the board yet. Everything here fills in as the director approves your catches.'
+    : 'Worked out from every catch of yours the director has approved, across every tournament ' +
+      'this app has a record of.');
+
+  const longest = stats.longest;
+  bests.innerHTML = '<div class="stat-grid">' +
+    statHtml(stats.best > 0 ? Number(stats.best).toFixed(2) + '"' : '\u2014', 'Personal best',
+      longest ? longest.species : '') +
+    statHtml(stats.bestTop3 > 0 ? Number(stats.bestTop3).toFixed(2) + '"' : '\u2014',
+      'Best 3 combined', 'in one tournament') +
+    statHtml(stats.fish, 'Fish on the board', 'approved, all time') +
+    statHtml(stats.bestDay || '\u2014', 'Best single day', 'approved fish') +
+    statHtml(stats.events, 'Tournaments', stats.wins > 0
+      ? stats.wins + (stats.wins === 1 ? ' win' : ' wins') : '') +
+    statHtml(stats.bestPlacing > 0 ? placingText(stats.bestPlacing) : '\u2014',
+      'Best finish', stats.podiums > 0 ? stats.podiums + ' on the podium' : '') +
+    statHtml(stats.bigFishWins + stats.betsWon, 'Pots and bets won',
+      stats.bigFishWins > 0 ? stats.bigFishWins + ' Big Fish' : '') +
+    '</div>';
+
+  hist.innerHTML = stats.history.length === 0
+    ? '<p class="empty">No tournaments yet. Your first one shows up here once you have registered.</p>'
+    : stats.history.map(trophyHistoryHtml).join('');
+
+  const earned = trophyBadges(stats);
+  badges.innerHTML = '<div class="badge-grid">' + earned.map(b=>
+    '<div class="badge-tile' + (b.earned ? '' : ' locked') + '">' +
+    '<span class="bi">' + b.icon + '</span>' +
+    '<span class="bn">' + escapeHtml(b.name) + '</span>' +
+    '<span class="bw">' + escapeHtml(b.earned ? 'Earned' : b.need) + '</span></div>').join('') +
+    '</div>';
+}
+
+// ---- the fish gallery ----
+// Every approved fish in the event, the angler's own first.
+//
+// PRIVACY IS THE SHAPE OF THIS FUNCTION. It returns a PROJECTION rather than
+// the catch records, so the real name on a catch (c.anglerName) cannot reach
+// the gallery even by accident - there is nothing to leak because the field is
+// not in the object. The public identity is the handle, here as everywhere.
+//
+// Approved only. A pending fish may still be rejected, and publishing a
+// rejected one hangs a director's judgement on the wall where the angler has
+// to argue with it. Your own pending fish are on the livewell and manage
+// screens, which is where deciding about them belongs.
+function galleryOrder(catches, anglers, myIds){
+  const mine = new Set(myIds || []);
+  const byId = {};
+  (anglers || []).forEach(a=>{ byId[a.id] = a; });
+  return (catches || [])
+    .filter(c=>{
+      if(!c || c.status !== 'approved') return false;
+      // Same rule as the leaderboard: a disqualified entry is off the board, and
+      // a gallery still showing their fish asks a question nobody wants to
+      // answer at a prizegiving.
+      const a = byId[c.anglerId];
+      return !(a && a.disqualified);
+    })
+    .map(c=> ({
+      id: c.id,
+      handle: displayHandle(byId[c.anglerId]),
+      species: c.species,
+      length: c.length,
+      division: c.division,
+      timestamp: c.timestamp,
+      mine: mine.has(c.anglerId)
+    }))
+    .sort((a, b)=>
+      // Yours first - the whole point of the ordering.
+      (Number(b.mine) - Number(a.mine))
+      // Then newest, so a fish you just landed is at the top of your own block.
+      || (galleryTime(b) - galleryTime(a))
+      || String(a.id).localeCompare(String(b.id)));
+}
+
+// catchTime() pushes an undated fish to the BACK of an earliest-first sort by
+// making it enormous. Newest-first needs the opposite sentinel or that same
+// fish would leap to the FRONT of the gallery. Zero puts it at the end either
+// way, which is where a record missing its timestamp belongs.
+function galleryTime(c){
+  const n = Number(c && c.timestamp);
+  return isFinite(n) ? n : 0;
+}
+
+function galleryTileHtml(row){
+  // The photo lands in .photo-target; the marker and caption sit over it and
+  // are not touched when the image arrives.
+  return '<button type="button" class="gallery-tile' + (row.mine ? ' mine' : '') +
+    '" data-photo-for="' + escapeHtml(row.id) + '">' +
+    '<span class="photo-target"><span class="noimg">&hellip;</span></span>' +
+    (row.mine ? '<span class="gallery-mine-tag">YOURS</span>' : '') +
+    '<span class="gallery-cap">' +
+      '<span class="who">' + escapeHtml(row.handle) + '</span>' +
+      '<span class="len">' + escapeHtml(Number(row.length).toFixed(2)) + '&quot;</span>' +
+    '</span></button>';
+}
+
+// ---- the highlight reel ----
+// Compiles YOUR approved photos into a short vertical video to post.
+//
+// ONLY YOUR OWN FISH. Not a policy bolted on afterwards - reelRows() runs the
+// gallery projection and then keeps the rows marked `mine`, so somebody else's
+// photo cannot reach a file you are about to put on the internet. Whether the
+// field is happy to be on a public wall inside the app is a different question
+// from whether they are happy to be in your Instagram post, and only one of
+// those did anyone agree to.
+const REEL_W = 1080, REEL_H = 1920;      // 9:16, which is what reels and stories want
+const REEL_FPS = 30;
+const REEL_TITLE_MS = 1700;
+const REEL_SHOT_MS = 2200;
+const REEL_END_MS = 1900;
+// Twelve fish is about thirty seconds. Past that every social app truncates it
+// and the reel ends mid-fish.
+const REEL_MAX_SHOTS = 12;
+
+// Your own approved fish, biggest first, because a highlight reel opens with
+// the fish you would open with.
+function reelRows(catches, anglers, myIds){
+  return galleryOrder(catches, anglers, myIds)
+    .filter(r=> r.mine)
+    .sort((a, b)=> (Number(b.length) - Number(a.length))
+                || String(a.id).localeCompare(String(b.id)));
+}
+
+// The running order and how long each scene holds. Split out from the drawing
+// because the TIMING is the part worth checking: a scene of zero length is a
+// frame nobody sees, and a reel that runs long gets cut off by the app it is
+// posted to rather than by us.
+function reelPlan(rows, opts){
+  const o = opts || {};
+  const max = o.maxShots === undefined ? REEL_MAX_SHOTS : o.maxShots;
+  const all = (rows || []).filter(Boolean);
+  const shots = all.slice(0, Math.max(0, max));
+  const scenes = [{ kind:'title', ms: REEL_TITLE_MS }];
+  shots.forEach(row=> scenes.push({ kind:'shot', ms: REEL_SHOT_MS, row: row }));
+  scenes.push({ kind:'end', ms: REEL_END_MS });
+  return {
+    scenes,
+    shots: shots.length,
+    dropped: all.length - shots.length,
+    totalMs: scenes.reduce((t, sc)=> t + sc.ms, 0)
+  };
+}
+
+// Which scene is on screen at t, and how far through it we are. Returns null
+// past the end so the recorder knows to stop.
+function reelSceneAt(plan, ms){
+  let acc = 0;
+  const scenes = (plan && plan.scenes) || [];
+  for(let i = 0; i < scenes.length; i++){
+    if(ms < acc + scenes[i].ms){
+      return { scene: scenes[i], index: i, progress: (ms - acc) / scenes[i].ms };
+    }
+    acc += scenes[i].ms;
+  }
+  return null;
+}
+
+function reelSupported(){
+  try{
+    if(typeof MediaRecorder === 'undefined') return false;
+    const c = document.createElement('canvas');
+    return typeof c.captureStream === 'function';
+  }catch(e){ return false; }
+}
+
+// MP4 first, deliberately. WebM records fine in Chrome and then will not upload
+// from a phone to most social apps, which makes a working recorder useless at
+// the only moment it matters. Safari records MP4 natively.
+function reelMimeType(){
+  const R = typeof MediaRecorder !== 'undefined' ? MediaRecorder : null;
+  if(!R || typeof R.isTypeSupported !== 'function') return '';
+  const wanted = ['video/mp4;codecs=avc1.42E01E', 'video/mp4',
+                  'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  for(let i = 0; i < wanted.length; i++){
+    if(R.isTypeSupported(wanted[i])) return wanted[i];
+  }
+  return '';
+}
+function reelFileExt(mime){ return String(mime || '').indexOf('mp4') !== -1 ? 'mp4' : 'webm'; }
+
+// One fish, named so it is still identifiable in a camera roll six months on.
+function catchPhotoFileName(evt, c){
+  const bits = [(evt && evt.prefix) || 'LiveWire'];
+  if(c && c.species) bits.push(String(c.species));
+  if(c && c.length) bits.push(Number(c.length).toFixed(2) + 'in');
+  return bits.join('-').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/-+/g, '-') + '.jpg';
+}
+
+// A filename somebody can find again in a camera roll six months later.
+function reelFileName(evt, handle, ext){
+  const bits = [(evt && evt.prefix) || 'LiveWire'];
+  const dates = (evt && evt.dates) || [];
+  if(dates.length) bits.push(String(dates[dates.length - 1]).slice(0, 4));
+  if(handle) bits.push(handle);
+  bits.push('highlights');
+  return bits.join('-').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/-+/g, '-') + '.' + ext;
+}
+
+// Drawing a cross-origin image onto a canvas TAINTS it, and captureStream() on
+// a tainted canvas throws SecurityError - so a photo living in object storage
+// is fetched as a blob and loaded from a same-origin blob: URL instead. A data:
+// URL (a photo still on this device) is already safe and is used as it stands.
+// A photo that will not load is skipped: a missing shot is better than no reel.
+async function reelImage(catchId){
+  let revoke = '';
+  try{
+    const url = await loadPhoto(catchId);
+    if(!url) return null;
+    let src = url;
+    if(/^https?:/i.test(url)){
+      const res = await fetch(url, { mode:'cors', credentials:'omit' });
+      if(!res.ok) return null;
+      src = URL.createObjectURL(await res.blob());
+      revoke = src;
+    }
+    const img = await new Promise((resolve)=>{
+      const i = new Image();
+      i.onload = ()=> resolve(i);
+      i.onerror = ()=> resolve(null);
+      i.src = src;
+    });
+    if(!img){ if(revoke) URL.revokeObjectURL(revoke); return null; }
+    return { img, revoke };
+  }catch(e){
+    if(revoke) URL.revokeObjectURL(revoke);
+    console.error(e);
+    return null;
+  }
+}
+
+function reelCover(ctx, img, w, h){
+  const scale = Math.max(w / img.width, h / img.height);
+  const dw = img.width * scale, dh = img.height * scale;
+  ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+}
+function reelText(ctx, text, x, y, font, colour, align){
+  ctx.font = font;
+  ctx.fillStyle = colour;
+  ctx.textAlign = align || 'left';
+  ctx.fillText(text, x, y);
+}
+
+function paintReelFrame(ctx, plan, ms, meta){
+  const at = reelSceneAt(plan, ms);
+  const m = meta || {};
+  ctx.fillStyle = '#0C1412';
+  ctx.fillRect(0, 0, REEL_W, REEL_H);
+  if(!at) return;
+  const sc = at.scene;
+
+  if(sc.kind === 'title' || sc.kind === 'end'){
+    const lines = sc.kind === 'title'
+      ? [m.eventName || 'Tournament', m.dateText || '', m.handle || '']
+      : [(m.shots || 0) + (m.shots === 1 ? ' fish' : ' fish'),
+         m.best ? 'Best ' + Number(m.best).toFixed(2) + '"' : '',
+         'Caught, photographed, released'];
+    ctx.textAlign = 'center';
+    reelText(ctx, lines[0], REEL_W / 2, REEL_H / 2 - 90,
+      '700 78px Oswald, Impact, sans-serif', '#F4F1E9', 'center');
+    if(lines[1]) reelText(ctx, lines[1], REEL_W / 2, REEL_H / 2 + 10,
+      '500 46px Inter, system-ui, sans-serif', '#9FD9BB', 'center');
+    if(lines[2]) reelText(ctx, lines[2], REEL_W / 2, REEL_H / 2 + 96,
+      '500 40px Inter, system-ui, sans-serif', '#C8D3CC', 'center');
+    return;
+  }
+
+  // A fish. Photo behind, a band across the bottom so the numbers stay readable
+  // over whatever the water was doing that day.
+  if(sc.image && sc.image.img) reelCover(ctx, sc.image.img, REEL_W, REEL_H);
+  else reelText(ctx, 'photo unavailable', REEL_W / 2, REEL_H / 2,
+    '500 40px Inter, system-ui, sans-serif', '#6B7B74', 'center');
+
+  const bandTop = REEL_H - 300;
+  const grad = ctx.createLinearGradient(0, bandTop, 0, REEL_H);
+  grad.addColorStop(0, 'rgba(12,20,18,0)');
+  grad.addColorStop(1, 'rgba(12,20,18,0.9)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, bandTop, REEL_W, 300);
+
+  const row = sc.row || {};
+  reelText(ctx, Number(row.length).toFixed(2) + '"', 64, REEL_H - 150,
+    '700 116px Oswald, Impact, sans-serif', '#F4F1E9');
+  reelText(ctx, String(row.species || ''), 64, REEL_H - 86,
+    '500 42px Inter, system-ui, sans-serif', '#9FD9BB');
+  if(m.handle) reelText(ctx, m.handle, REEL_W - 64, REEL_H - 86,
+    '500 38px Inter, system-ui, sans-serif', '#C8D3CC', 'right');
+}
+
+// Builds the file. Every photo is fetched BEFORE recording starts: a fetch
+// stalling halfway through would be recorded as a stall.
+async function buildHighlightReel(rows, meta, onProgress){
+  if(!reelSupported()) throw new Error('This browser cannot record video.');
+  const plan = reelPlan(rows);
+  if(plan.shots === 0) throw new Error('There are no approved photos to use yet.');
+
+  const say = (msg)=>{ if(onProgress) onProgress(msg); };
+  const shots = plan.scenes.filter(sc=> sc.kind === 'shot');
+  for(let i = 0; i < shots.length; i++){
+    say('Fetching photo ' + (i + 1) + ' of ' + shots.length + '…');
+    shots[i].image = await reelImage(shots[i].row.id);
+  }
+  const release = ()=> shots.forEach(sc=>{
+    if(sc.image && sc.image.revoke) URL.revokeObjectURL(sc.image.revoke);
+  });
+
+  try{
+    const canvas = document.createElement('canvas');
+    canvas.width = REEL_W; canvas.height = REEL_H;
+    const ctx = canvas.getContext('2d');
+    paintReelFrame(ctx, plan, 0, meta);
+
+    const mime = reelMimeType();
+    const stream = canvas.captureStream(REEL_FPS);
+    const rec = new MediaRecorder(stream,
+      mime ? { mimeType: mime, videoBitsPerSecond: 6000000 } : undefined);
+    const chunks = [];
+    rec.ondataavailable = (e)=>{ if(e.data && e.data.size) chunks.push(e.data); };
+    const stopped = new Promise((resolve)=>{ rec.onstop = resolve; });
+
+    say('Recording…');
+    rec.start();
+    const started = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const now = ()=> (typeof performance !== 'undefined' ? performance.now() : Date.now()) - started;
+    // Painted against the CLOCK rather than a frame count, so a dropped frame
+    // shortens nothing - the reel is the length it says it is.
+    await new Promise((resolve)=>{
+      const step = ()=>{
+        const t = now();
+        if(t >= plan.totalMs){ resolve(); return; }
+        paintReelFrame(ctx, plan, t, meta);
+        if(typeof requestAnimationFrame === 'function') requestAnimationFrame(step);
+        else setTimeout(step, 1000 / REEL_FPS);
+      };
+      step();
+    });
+    rec.stop();
+    await stopped;
+    (stream.getTracks() || []).forEach(tr=> tr.stop());
+
+    if(chunks.length === 0) throw new Error('The recorder produced nothing.');
+    const type = mime || 'video/webm';
+    return { blob: new Blob(chunks, { type: type }), mime: type, plan: plan };
+  } finally {
+    release();
+  }
+}
+
+// Hands the viewer a file. On iOS a blob download often opens the file rather
+// than saving it, which is why the reel is also left on screen in a <video>:
+// long-pressing that is the reliable way to get it into a camera roll.
+function triggerDownload(href, filename){
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = filename;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+// One photo, saved. Same cross-origin dance as the reel: object storage is
+// fetched to a blob so the file lands with a name rather than opening a tab.
+async function downloadCatchPhoto(catchId, filename){
+  const url = await loadPhoto(catchId);
+  if(!url) return false;
+  let href = url, revoke = '';
+  try{
+    if(/^https?:/i.test(url)){
+      const res = await fetch(url, { mode:'cors', credentials:'omit' });
+      if(!res.ok) return false;
+      href = URL.createObjectURL(await res.blob());
+      revoke = href;
+    }
+    triggerDownload(href, filename);
+    return true;
+  }catch(e){
+    console.error(e);
+    return false;
+  } finally {
+    if(revoke) setTimeout(()=> URL.revokeObjectURL(revoke), 30000);
+  }
+}
+
+async function renderGallery(){
+  const anglers = await loadAnglers();
+  const rows = galleryOrder(await loadCatches(), anglers, myAnglerIds(anglers));
+  const el = document.getElementById('gallery-grid');
+  if(!el) return;
+  const mineCount = rows.filter(r=> r.mine).length;
+  setText('gallery-note', rows.length === 0
+    ? 'Nothing approved yet. Every fish the director approves shows up here.'
+    : rows.length + ' approved fish' +
+      (mineCount > 0 ? ', yours first' : '') + '. Tap one to see it full size.');
+  el.innerHTML = rows.length === 0 ? '' : rows.map(galleryTileHtml).join('');
+  hydratePhotos(el);
+  renderReelCard(rows);
+}
+
+// ---- the highlight reel, on screen ----
+let reelBlobUrl = '';
+let reelFile = '';
+
+function reelSay(msg){
+  const el = document.getElementById('reel-status');
+  if(!el) return;
+  el.textContent = msg || '';
+  el.style.display = msg ? 'block' : 'none';
+}
+
+async function renderReelCard(rows){
+  const card = document.getElementById('reel-card');
+  if(!card) return;
+  // Nothing of your own on the board yet means nothing to compile. The whole
+  // card stays away rather than offering a button that cannot work.
+  const mine = (rows || []).filter(r=> r.mine);
+  card.style.display = mine.length === 0 ? 'none' : 'block';
+  if(mine.length === 0) return;
+
+  const btn = document.getElementById('reel-build');
+  if(!reelSupported()){
+    setText('reel-intro', 'This browser cannot record video. Safari on iPhone and ' +
+      'Chrome on Android both can \u2014 open the app there and the button appears.');
+    if(btn) btn.disabled = true;
+    return;
+  }
+  if(btn) btn.disabled = false;
+  const plan = reelPlan(mine);
+  const secs = Math.round(plan.totalMs / 1000);
+  setText('reel-intro',
+    'Your ' + (plan.shots === 1 ? 'fish' : plan.shots + ' best fish') +
+    ', biggest first, as a ' + secs + '-second vertical video to post. ' +
+    (plan.dropped > 0 ? 'Your other ' + plan.dropped + ' stay off it so it does not run long. ' : '') +
+    'Yours only \u2014 nobody else\u2019s fish go into a file you are about to put online.');
+}
+
+bindEl('reel-build','click', async ()=>{
+  const btn = document.getElementById('reel-build');
+  const result = document.getElementById('reel-result');
+  const anglers = await loadAnglers();
+  const mineIds = myAnglerIds(anglers);
+  const rows = reelRows(await loadCatches(), anglers, mineIds);
+  if(rows.length === 0){ reelSay('Nothing approved yet.'); return; }
+
+  if(btn){ btn.disabled = true; btn.textContent = 'Working\u2026'; }
+  if(result) result.hidden = true;
+  try{
+    const evt = activeEvent();
+    const me = anglers.find(a=> mineIds.indexOf(a.id) !== -1);
+    const meta = {
+      eventName: stripEntities(evt.name),
+      dateText: eventDateRangeText(evt),
+      handle: displayHandle(me),
+      shots: Math.min(rows.length, REEL_MAX_SHOTS),
+      best: rows.length ? rows[0].length : 0
+    };
+    const out = await buildHighlightReel(rows, meta, reelSay);
+    if(reelBlobUrl) URL.revokeObjectURL(reelBlobUrl);
+    reelBlobUrl = URL.createObjectURL(out.blob);
+    reelFile = reelFileName(evt, meta.handle, reelFileExt(out.mime));
+    const video = document.getElementById('reel-video');
+    if(video) video.src = reelBlobUrl;
+    if(result) result.hidden = false;
+    setText('reel-savehint', 'On an iPhone, press and hold the video and choose Save ' +
+      'to Video if the Download button opens it instead of saving it.');
+    reelSay('Done \u2014 ' + Math.round(out.blob.size / 1024) + ' KB, ' +
+      Math.round(out.plan.totalMs / 1000) + ' seconds.');
+  }catch(e){
+    console.error(e);
+    reelSay((e && e.message) || 'That did not work. Try again with a signal.');
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = 'Make my highlight reel'; }
+  }
+});
+
+bindEl('reel-download','click', ()=>{
+  if(!reelBlobUrl) return;
+  triggerDownload(reelBlobUrl, reelFile || 'highlights.mp4');
+});
+
+// ---- leaderboard ----
+let currentDiv = 'solo';
+document.querySelectorAll('.divtabs button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.divtabs button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    currentDiv = btn.dataset.div;
+    renderLeaderboard();
+  });
+});
+
+// TIE-BREAKING. Length ties happen - a bump board reads to the quarter inch and
+// a good day puts several fish on the same mark. Ranking on length alone leaves
+// the order to however the rows happened to arrive, and rows arrive in whatever
+// order Postgres hands them back, which CHANGES when a row is updated. So
+// approving one catch could reorder a tie somewhere else entirely, and two
+// phones could show different boards from identical data.
+//
+// The rule is EARLIEST FISH WINS, which is the usual tournament answer and the
+// one published in the rules. It is also stable: a timestamp never changes, so
+// every device sorts the same way for good.
+//
+// A catch with no usable timestamp sorts last rather than first - a missing
+// field should never win a tie - and the id settles the impossible case, so the
+// order is total and nothing is ever left to arrival order.
+const TIE_LAST = Number.MAX_SAFE_INTEGER;
+function catchTime(c){
+  const n = Number(c && c.timestamp);
+  return isFinite(n) ? n : TIE_LAST;
+}
+// Longest first, then earliest, then id. Used for single fish (Big Fish, the
+// winning fish on the state form) so those two can never disagree.
+function byLengthThenEarliest(a, b){
+  return (Number(b.length) - Number(a.length))
+      || (catchTime(a) - catchTime(b))
+      || String(a.id).localeCompare(String(b.id));
+}
+// The same rule upside down, for the "smallest fish" side bet. Earliest still
+// wins the tie - the tie-break is about who got there first, not about which
+// end of the tape the bet is scored from.
+function bySmallestThenEarliest(a, b){
+  return (Number(a.length) - Number(b.length))
+      || (catchTime(a) - catchTime(b))
+      || String(a.id).localeCompare(String(b.id));
+}
+
+// Shared ranking used by BOTH the public leaderboard and the director's
+// contestant view, so "current standing" can never drift between the two.
+// Disqualified anglers are excluded here, which removes them everywhere at once.
+function standingsFor(division, catches, anglers, target){
+  const anglerById = {};
+  anglers.forEach(a=>{ anglerById[a.id] = a; });
+
+  const eligible = catches.filter(c=>{
+    if(c.status!=='approved' || !isScoringSpecies(c.species, target) || c.division!==division) return false;
+    const a = anglerById[c.anglerId];
+    // Disqualification only. An entry whose fee has not been matched yet still
+    // scores: see feePaid() for why that gate was removed.
+    return !(a && a.disqualified);
+  });
+
+  const groups = {};
+  eligible.forEach(c=>{
+    const angler = anglerById[c.anglerId];
+    // A team ranks as one unit, so either partner's fish lands in the same group.
+    const key = (division==='team' && angler && angler.teamId) ? angler.teamId : c.anglerId;
+    // Named by handle, never by c.anglerName - the leaderboard is public.
+    if(!groups[key]) groups[key] = { key, name: displayHandle(angler), fish: [], anglerIds: [] };
+    // The whole catch, not just its length - the tie-break needs its timestamp.
+    groups[key].fish.push(c);
+    if(groups[key].anglerIds.indexOf(c.anglerId)===-1) groups[key].anglerIds.push(c.anglerId);
+    if(division==='team' && angler && angler.teamId){
+      const mate = anglers.find(m=>m.teamId===angler.teamId && m.id!==angler.id);
+      groups[key].name = mate ? displayHandle(angler)+' & '+displayHandle(mate) : displayHandle(angler);
+    }
+  });
+
+  return Object.keys(groups).map(k=>{
+    const g = groups[k];
+    // Longest first, and among equal lengths the one landed first - so bestAt
+    // is when this group's best fish was actually caught.
+    const sorted = g.fish.slice().sort(byLengthThenEarliest);
+    return {
+      key: g.key, name: g.name, anglerIds: g.anglerIds,
+      best: Number(sorted[0].length),
+      bestAt: catchTime(sorted[0]),
+      top3sum: sorted.slice(0,3).reduce((s,c)=>s+Number(c.length),0),
+      count: g.fish.length
+    };
+    // Best fish, then best 3 combined, then whoever got there first. The key
+    // is a last resort that can only matter if two groups tie on all three
+    // AND both carry no timestamp; it exists so the order is never arrival
+    // order. See byLengthThenEarliest() for why that matters.
+  }).sort((a,b)=> (b.best - a.best)
+               || (b.top3sum - a.top3sum)
+               || (a.bestAt - b.bestAt)
+               || String(a.key).localeCompare(String(b.key)));
+}
+
+// 1-based placing for one angler in their division, or 0 if they aren't ranked.
+function rankOf(angler, catches, anglers){
+  const table = standingsFor(angler.division, catches, anglers);
+  for(let i=0;i<table.length;i++){
+    if(table[i].anglerIds.indexOf(angler.id) !== -1) return i+1;
+  }
+  return 0;
+}
+
+async function renderLeaderboard(){
+  const catches = await loadCatches();
+  const anglers = await loadAnglers();
+  const ranked = standingsFor(currentDiv, catches, anglers);
+
+  const el = document.getElementById('lb-list');
+  if(ranked.length===0){ el.innerHTML = '<p class="empty">No approved catches yet in this division.</p>'; }
+  else{
+    el.innerHTML = ranked.map((a,i)=>
+      '<div class="lbrow"><div class="rank">'+(i+1)+'</div><div class="who"><div class="name">'+escapeHtml(a.name)+'</div><div class="sub">Best 3 combined: '+a.top3sum.toFixed(2)+'"</div></div><div class="len">'+a.best.toFixed(2)+'"</div></div>'
+    ).join('');
+  }
+  const sp = speciesPhrase();
+  document.getElementById('lb-tiebreak-note').textContent = currentDiv==='team'
+    ? 'Ranked by the single longest '+sp+' caught by either teammate. Ties broken by the combined length of the team\'s best 3 fish, then by whichever fish was logged first.'
+    : 'Ranked by single longest '+sp+'. Ties broken by combined length of best 3 fish, then by whichever fish was logged first.';
+}
+
+// ---- big fish ----
+// Who is actually in the pot: bought in, still eligible, and confirmed. Split
+// out of the render so the rule is testable without a browser - a pot that
+// quietly included an unpaid entry would only show up in a payout dispute.
+function bigFishEntrants(anglers){
+  return (anglers || []).filter(a=> a.bigfish && !a.disqualified);
+}
+
+async function renderBigFish(){
+  const anglers = await loadAnglers();
+  const inPot = new Set(bigFishEntrants(anglers).map(a=>a.id));
+  const catches = (await loadCatches()).filter(c=>c.status==='approved' && isScoringSpecies(c.species) && inPot.has(c.anglerId));
+  const byId = {};
+  anglers.forEach(a=>{ byId[a.id] = a; });
+  const el = document.getElementById('bf-list');
+  if(catches.length===0){ el.innerHTML = '<p class="empty">No qualifying catches yet.</p>'; return; }
+  const sorted = catches.slice().sort(byLengthThenEarliest).slice(0,10);
+  el.innerHTML = sorted.map((c,i)=>
+    '<div class="lbrow"><div class="rank">'+(i+1)+'</div><div class="who"><div class="name">'+escapeHtml(displayHandle(byId[c.anglerId]))+'</div><div class="sub">'+(c.division==='team'?'Team':'Solo')+' division</div></div><div class="len">'+c.length.toFixed(2)+'"</div></div>'
+  ).join('');
+}
+
+// Painted at the top of the director panel, above the sync line, because once
+// the deadline has passed nothing else on that screen matters as much.
+//
+// Real names and phone numbers, deliberately: this is the director's own
+// screen and the whole point is being able to ring somebody.
+async function renderOverdueAlert(){
+  const el = document.getElementById('overdue-alert');
+  if(!el) return;
+  const anglers = await loadAnglers();
+  const list = overdueCheckouts(anglers, new Date());
+  if(list.length === 0){ el.style.display = 'none'; el.innerHTML = ''; return; }
+
+  const signals = await loadSignals();
+  const byId = {};
+  signals.forEach(s=>{ byId[s.id] = s; });
+  const sorted = sortOverdue(list, signals);
+  const mins = Math.floor(sorted[0].overdueSeconds / 60);
+
+  const rows = sorted.map(item=>{
+    const a = item.angler;
+    const sig = byId[a.id];
+    const where = sig
+      ? 'Last seen ' + escapeHtml(signalAgeText(sig)) +
+        (sig.lat != null && sig.lng != null
+          ? ' &middot; ' + Number(sig.lat).toFixed(4) + ', ' + Number(sig.lng).toFixed(4)
+          : '')
+      : '<strong>No position ever recorded</strong>';
+    const phone = a.phone
+      ? '<a href="tel:' + escapeHtml(String(a.phone).replace(/[^\d+]/g, '')) + '">' + escapeHtml(a.phone) + '</a>'
+      : 'no phone on file';
+    // The number to ring when the angler's own does not answer.
+    const ice = a.emergencyPhone
+      ? '<div class="od-ice">Emergency: ' + escapeHtml(a.emergencyName || 'contact') + ' &middot; ' +
+        '<a href="tel:' + escapeHtml(String(a.emergencyPhone).replace(/[^\d+]/g, '')) + '">' +
+        escapeHtml(a.emergencyPhone) + '</a></div>'
+      : '<div class="od-ice">No emergency contact on file</div>';
+    return '<div class="od-row">' +
+      '<div class="od-name">' + escapeHtml(a.name) +
+        ' <span class="od-id">' + escapeHtml(a.tournamentId) + '</span></div>' +
+      '<div class="od-line">' + phone + '</div>' +
+      '<div class="od-line">' + where + '</div>' +
+      ice +
+    '</div>';
+  }).join('');
+
+  el.innerHTML =
+    '<div class="overdue">' +
+      '<div class="overdue-head">' + sorted.length +
+        (sorted.length === 1 ? ' angler has' : ' anglers have') + ' not checked out</div>' +
+      '<div class="overdue-sub">Final check-in was ' + mins + ' minute' + (mins===1?'':'s') +
+        ' ago. Oldest position first.</div>' +
+      rows +
+      '<div class="overdue-foot">This clears itself as each one checks out. ' +
+        'You can also check someone out for them from Contestants.</div>' +
+    '</div>';
+  el.style.display = 'block';
+}
+
+// ---- position signals ----
+// Two things share one collection, because both are "where a device last was":
+//
+//   1. A position the DIRECTOR can see. Anglers cannot see each other, on
+//      purpose - in a fishing tournament, knowing where someone is fishing is
+//      competitive intelligence, and "where is my friend" and "where is the
+//      leader sitting" are the same feature.
+//   2. A BEACON, which an angler raises deliberately when they need help. That
+//      one goes to the whole field, because the nearest help on a reservoir is
+//      another kayak, not somebody on shore.
+//
+// One row per angler, keyed by their id, so a fix overwrites rather than
+// appends. A row per fix would be tens of thousands of rows by Sunday.
+//
+// Nothing is published on a timer by default. A position is recorded only when
+// the app was already taking a GPS fix for its own reasons - submitting a
+// catch, checking your position, raising a beacon - so this costs no extra
+// battery. Battery is not a side issue here: a flat phone cannot submit a
+// catch, and a tournament day is seven hours long.
+const SIGNAL_STALE_MINUTES = 45;   // past this, a position is history, not a location
+
+function signalAgeMinutes(sig){
+  if(!sig || !sig.at) return Infinity;
+  return Math.max(0, (Date.now() - sig.at) / 60000);
+}
+function signalIsFresh(sig){ return signalAgeMinutes(sig) <= SIGNAL_STALE_MINUTES; }
+function signalAgeText(sig){
+  const mins = signalAgeMinutes(sig);
+  if(!isFinite(mins)) return 'never';
+  if(mins < 1) return 'just now';
+  if(mins < 60) return Math.round(mins) + ' min ago';
+  const hrs = mins / 60;
+  if(hrs < 24) return (hrs < 2 ? '1 hour ago' : Math.round(hrs) + ' hours ago');
+  return 'over a day ago';
+}
+
+// Compass bearing from one point to another, as an eight-point label. Good
+// enough to point a paddle at, which is all it needs to be.
+const COMPASS_POINTS = ['N','NE','E','SE','S','SW','W','NW'];
+function compassFrom(from, to){
+  const rad = bearingFrom(from, to);            // radians from north, +east
+  let deg = (rad * 180 / Math.PI + 360) % 360;
+  return COMPASS_POINTS[Math.round(deg / 45) % 8];
+}
+
+// Records where this device is, against its own angler row. Best-effort by
+// design: every caller has already done its real job by the time this runs, so
+// a failure here must never surface as that job failing.
+async function publishSignal(pos, opts){
+  try{
+    const o = opts || {};
+    const anglers = await loadAnglers();
+    const me = chatAuthor(anglers);
+    if(!me || !pos || !isFinite(pos.lat) || !isFinite(pos.lng)) return false;
+
+    const signals = await loadSignals();
+    const idx = signals.findIndex(x=> x.id === me.id);
+    const prev = idx === -1 ? null : signals[idx];
+    const row = {
+      id: me.id,
+      anglerId: me.id,
+      handle: displayHandle(me),
+      lat: Number(pos.lat),
+      lng: Number(pos.lng),
+      accuracyMiles: isFinite(pos.accuracyMiles) ? Number(pos.accuracyMiles) : null,
+      at: Date.now(),
+      // A beacon stays raised until it is stood down. An ordinary position
+      // update must never quietly clear one.
+      beacon: o.beacon === true ? true : (o.beacon === false ? false : !!(prev && prev.beacon)),
+      beaconAt: o.beacon === true ? Date.now() : (o.beacon === false ? null : (prev ? prev.beaconAt : null)),
+      note: o.note !== undefined ? String(o.note || '').slice(0, 140)
+                                 : (prev ? (prev.note || '') : '')
+    };
+    if(idx === -1) signals.push(row); else signals[idx] = row;
+    return await saveSignals(signals);
+  }catch(e){ console.error(e); return false; }
+}
+
+// Beacons only. This is the one part of the collection every angler may see.
+async function activeBeacons(){
+  return (await loadSignals()).filter(s=> s.beacon === true);
+}
+
+// ---- beacon tracking ----
+// Everywhere else in this app, battery wins: a position is only recorded when
+// the GPS was already awake for something else. A raised beacon is the one
+// case where that trade flips. Somebody is coming to find you, and a position
+// that stopped moving twenty minutes ago sends them to the wrong water.
+//
+// So while a beacon is up - and only then - the position refreshes on a timer.
+// It stops the moment the beacon is stood down.
+const BEACON_REFRESH_MS = 60000;
+let beaconTimer = null;
+
+function stopBeaconTracking(){
+  if(beaconTimer){ clearInterval(beaconTimer); beaconTimer = null; }
+}
+// One pass of the loop, named so it can be exercised directly. Returns whether
+// tracking should continue - a tracker that cannot stop itself would sit there
+// waking the GPS for the rest of the day, which is the whole thing this design
+// is trying to avoid.
+async function beaconTick(){
+  // Stood down from another device, or the angler is no longer registered.
+  if(!await myBeacon()){ stopBeaconTracking(); return false; }
+  try{
+    const pos = await currentPosition(20000);
+    myPosition = Object.assign({ at: Date.now() }, pos);
+    await publishSignal(pos);
+    if(currentScreen === 'gps') await renderPublicGps();
+  }catch(e){
+    // A fix that fails is normal on the water. Keep the last one and try again
+    // next tick rather than tearing the beacon down.
+    console.warn('Beacon refresh could not get a fix.', e);
+  }
+  return true;
+}
+
+function startBeaconTracking(){
+  if(beaconTimer) return;   // never stack a second interval on the first
+  beaconTimer = setInterval(beaconTick, BEACON_REFRESH_MS);
+}
+// Survives a reload: if this device still has a beacon up, resume refreshing.
+async function resumeBeaconTracking(){
+  try{ if(await myBeacon()) startBeaconTracking(); }catch(e){}
+}
+
+async function myBeacon(){
+  const me = chatAuthor(await loadAnglers());
+  if(!me) return null;
+  return (await loadSignals()).find(s=> s.id === me.id && s.beacon === true) || null;
+}
+
+// ---- tournament chat ----
+// One flat collection of messages, event-scoped like everything else because
+// it loads through cachedRows(). Two kinds:
+//   catch - posted automatically when a catch is submitted, the brag
+//   chat  - something an angler typed
+// Either can carry replyTo, which threads it under a parent. Deliberately one
+// level deep: this is a boat-ramp group chat, not a forum.
+const CHAT_MAX = 280;
+
+// Every message is written by whoever is holding this device. An angler cannot
+// post as someone else, the same way the catch and check-in pickers are scoped.
+function chatAuthor(anglers){
+  const mine = myAnglerIds(anglers);
+  if(mine.length === 0) return null;
+  return anglers.find(a=> a.id === mine[0]) || null;
+}
+
+function chatSeenKey(){ return 'chatSeen:' + activeEventId(); }
+function chatLastSeen(){
+  const raw = localGet(chatSeenKey());
+  const n = raw ? parseInt(raw, 10) : 0;
+  return isFinite(n) ? n : 0;
+}
+function markChatSeen(messages){
+  const newest = (messages || []).reduce((m, x)=> Math.max(m, x.timestamp || 0), 0);
+  if(newest > chatLastSeen()) localSet(chatSeenKey(), String(newest));
+}
+
+// Anything newer than the last visit, not written by this device. Own posts
+// are excluded or the badge would light up for your own bragging.
+function chatUnreadCount(messages, anglers){
+  const since = chatLastSeen();
+  const mine = new Set(myAnglerIds(anglers));
+  return (messages || []).filter(m=>
+    (m.timestamp || 0) > since && !mine.has(m.anglerId)).length;
+}
+
+async function refreshChatBadge(){
+  const badge = document.getElementById('chat-badge');
+  if(!badge) return;
+  const n = chatUnreadCount(await loadMessages(), await loadAnglers());
+  badge.hidden = n === 0;
+  badge.textContent = n > 99 ? '99+' : String(n);
+}
+
+function chatWhen(ts){
+  const d = new Date(ts);
+  const mins = Math.floor((Date.now() - ts) / 60000);
+  if(mins < 1) return 'just now';
+  if(mins < 60) return mins + 'm ago';
+  if(mins < 24*60) return d.toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
+  return d.toLocaleDateString([], { month:'short', day:'numeric' });
+}
+
+// The brag body for a catch message, read from the catch itself rather than
+// copied at post time - so a catch later rejected does not keep boasting.
+function chatBragHtml(msg, catches){
+  const c = catches.find(x=> x.id === msg.catchId);
+  if(!c) return '<div class="chat-brag">That catch is no longer on the board.</div>';
+  return '<div class="chat-brag"><strong>' + lengthHtml(c.length) + '</strong> ' +
+    escapeHtml(c.species) + ' &middot; ' + (c.division === 'team' ? 'Team' : 'Solo') +
+    ' ' + statusHtml(c.status) + '</div>';
+}
+
+// Who may delete a message: whoever wrote it, or the director. Nobody else -
+// and that includes a team partner.
+//
+// This used to read `ctx.mine.has(msg.anglerId)`, and ctx.mine covers BOTH
+// halves of a team, because for "show this as mine" that is the right set. For
+// "let this device delete it" it is the wrong one: it let either half of a team
+// clear the other's messages. A message has one author.
+//
+// Shared by the button and by the write, so the two cannot drift.
+function canDeleteMessage(msg, meId, isDirector){
+  if(!msg) return false;
+  if(isDirector) return true;
+  return !!meId && msg.anglerId === meId;
+}
+
+function chatItemHtml(msg, ctx, isReply){
+  const angler = ctx.anglerById[msg.anglerId];
+  const mine = ctx.mine.has(msg.anglerId);
+  const canDelete = canDeleteMessage(msg, ctx.meId, ctx.isDirector);
+  const body = msg.text
+    ? '<div class="chat-text">' + escapeHtml(msg.text) + '</div>' : '';
+  const brag = msg.kind === 'catch' ? chatBragHtml(msg, ctx.catches) : '';
+  const acts = [];
+  if(!isReply) acts.push('<button class="small" data-chat-act="reply" data-chat-id="'+escapeHtml(msg.id)+'">Reply</button>');
+  if(canDelete) acts.push('<button class="small danger" data-chat-act="delete" data-chat-id="'+escapeHtml(msg.id)+'">Delete</button>');
+
+  const replies = isReply ? [] : (ctx.repliesByParent[msg.id] || []);
+  const replyHtml = replies.length
+    ? '<div class="chat-replies">' + replies.map(r=> chatItemHtml(r, ctx, true)).join('') + '</div>'
+    : '';
+
+  return '<div class="' + (isReply ? 'chat-reply' : 'chat-item') + (mine ? ' chat-mine' : '') + '">' +
+    '<div class="chat-top"><span class="chat-handle">' + escapeHtml(displayHandle(angler)) + '</span>' +
+    '<span class="chat-when">' + escapeHtml(chatWhen(msg.timestamp)) + '</span></div>' +
+    body + brag +
+    '<div class="chat-actions">' + acts.join('') + '</div>' +
+    replyHtml +
+    '</div>';
+}
+
+// Which message a reply is being composed against, or null for a new post.
+let chatReplyTo = null;
+
+async function renderChat(){
+  const messages = await loadMessages();
+  const anglers = await loadAnglers();
+  const catches = await loadCatches();
+  const me = chatAuthor(anglers);
+
+  setText('chat-intro', me
+    ? 'You post as ' + displayHandle(me) + '. Catches you submit show up here automatically, so the field knows.'
+    : 'Register on this device to join in. You can read along either way.');
+
+  const input = document.getElementById('chat-input');
+  const send = document.getElementById('chat-send');
+  if(input) input.disabled = !me;
+  if(send){
+    send.disabled = !me;
+    send.textContent = chatReplyTo ? 'Reply' : 'Post';
+  }
+  if(input && !me) input.placeholder = 'Register to join the chat';
+  else if(input) input.placeholder = chatReplyTo ? 'Your reply…' : 'Say something to the field…';
+
+  const ctx = {
+    anglerById: {},
+    catches,
+    mine: new Set(myAnglerIds(anglers)),
+    // The posting identity, which is the only one allowed to delete its own
+    // messages - narrower than `mine`, deliberately. See canDeleteMessage().
+    meId: me ? me.id : null,
+    isDirector: adminUnlocked || authMode === 'director',
+    repliesByParent: {}
+  };
+  anglers.forEach(a=>{ ctx.anglerById[a.id] = a; });
+  messages.forEach(m=>{
+    if(!m.replyTo) return;
+    (ctx.repliesByParent[m.replyTo] = ctx.repliesByParent[m.replyTo] || []).push(m);
+  });
+  Object.keys(ctx.repliesByParent).forEach(k=>
+    ctx.repliesByParent[k].sort((a,b)=> a.timestamp - b.timestamp));
+
+  // Newest conversation first; replies read oldest-first underneath.
+  const top = messages.filter(m=> !m.replyTo).sort((a,b)=> b.timestamp - a.timestamp);
+  const el = document.getElementById('chat-feed');
+  el.innerHTML = top.length === 0
+    ? '<p class="empty">Nothing said yet. Land a fish and it will announce itself.</p>'
+    : top.map(m=> chatItemHtml(m, ctx, false)).join('');
+
+  wireChatActions();
+  markChatSeen(messages);
+  refreshChatBadge();
+}
+
+function wireChatActions(){
+  document.querySelectorAll('#chat-feed [data-chat-act]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = btn.dataset.chatId;
+      if(btn.dataset.chatAct === 'reply'){
+        chatReplyTo = id;
+        renderChat();
+        const input = document.getElementById('chat-input');
+        if(input) input.focus();
+        return;
+      }
+      const messages = await loadMessages();
+      const msg = messages.find(m=> m.id === id);
+      if(!msg) return;
+      // The button is only drawn for a message this device may delete, but the
+      // button is markup in a page anyone can open the inspector on. Same rule,
+      // checked again against a fresh read, before anything is written.
+      const meNow = chatAuthor(await loadAnglers());
+      if(!canDeleteMessage(msg, meNow && meNow.id, adminUnlocked || authMode === 'director')){
+        window.alert('That message was posted by another angler, so it was not deleted.');
+        renderChat();
+        return;
+      }
+      if(!window.confirm('Delete this message? Any replies to it go too.')) return;
+      // A parent takes its replies with it, or they orphan into invisibility.
+      const doomed = new Set([id]);
+      messages.forEach(m=>{ if(m.replyTo === id) doomed.add(m.id); });
+      await saveMessages(messages.filter(m=> !doomed.has(m.id)));
+      renderChat();
+    });
+  });
+}
+
+bindEl('chat-input','input', ()=>{
+  const input = document.getElementById('chat-input');
+  const left = CHAT_MAX - (input.value || '').length;
+  setText('chat-remaining', left <= 40 ? left + ' left' : '');
+});
+
+bindEl('chat-send','click', async ()=>{
+  const errEl = document.getElementById('chat-err');
+  errEl.style.display = 'none';
+  const input = document.getElementById('chat-input');
+  const text = (input.value || '').trim();
+  if(!text) return;
+  if(text.length > CHAT_MAX){
+    errEl.textContent = 'That is longer than ' + CHAT_MAX + ' characters.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const anglers = await loadAnglers();
+  const me = chatAuthor(anglers);
+  if(!me){
+    errEl.textContent = 'Register on this device before posting.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const messages = await loadMessages();
+  messages.push({
+    id: uid(),
+    anglerId: me.id,
+    handle: displayHandle(me),   // denormalised so old posts survive a rename
+    kind: 'chat',
+    text,
+    replyTo: chatReplyTo || null,
+    timestamp: Date.now()
+  });
+  if(!await saveMessages(messages)){
+    errEl.textContent = 'That did not send. Check your signal — it will retry.';
+    errEl.style.display = 'block';
+    return;
+  }
+  input.value = '';
+  setText('chat-remaining', '');
+  chatReplyTo = null;
+  renderChat();
+});
+
+// Called after a catch is filed. Best-effort: a catch is already safely on the
+// board by this point, so a failure here must never look like a failed
+// submission.
+async function announceCatch(catchId, angler){
+  try{
+    const messages = await loadMessages();
+    messages.push({
+      id: uid(),
+      anglerId: angler ? angler.id : null,
+      handle: displayHandle(angler),
+      kind: 'catch',
+      catchId,
+      text: '',
+      replyTo: null,
+      timestamp: Date.now()
+    });
+    await saveMessages(messages);
+  }catch(e){ console.error(e); }
+}
+
+// ---- side bets ----
+// Bets anglers run among themselves. The app keeps SCORE, never money: entry
+// fees already work that way, and the moment an app starts tracking who owes
+// who a beer it needs to be right about it.
+//
+// One collection, two record shapes, because joining has to be its own row.
+// Holding a list of entrants inside the bet would mean two anglers joining at
+// the same moment write the same record, and last-writer-wins quietly drops
+// one of them - the same trap the store's own notes warn about.
+//
+//   { kind:'bet',  id, title, stake, scoring, creatorId, winnerId, settledAt }
+//   { kind:'join', id, betId, anglerId }
+//
+// Scoring: smallest / most / first are worked out from approved catches, so
+// nobody has to adjudicate. 'manual' is for everything an app cannot see -
+// whoever started it calls the winner.
+const BET_TITLE_MAX = 70;
+const BET_STAKE_MAX = 40;
+const BET_OPEN_MAX = 3;      // per angler, so one person cannot flood the screen
+const BET_SCORING = ['smallest', 'most', 'first', 'manual'];
+
+function betRecords(rows){ return rows.filter(r=> r.kind === 'bet'); }
+function betJoins(rows, betId){ return rows.filter(r=> r.kind === 'join' && r.betId === betId); }
+function betHasJoined(rows, betId, anglerId){
+  return rows.some(r=> r.kind === 'join' && r.betId === betId && r.anglerId === anglerId);
+}
+
+// Who is winning, from approved catches of the scoring species only. Returns
+// null when it cannot be called yet, which is different from a draw.
+function betStanding(bet, rows, catches, anglerById){
+  if(bet.scoring === 'manual') return null;
+  const entrants = betJoins(rows, bet.id).map(j=> j.anglerId);
+  if(entrants.length === 0) return null;
+
+  const eligible = catches.filter(c=>
+    c.status === 'approved' && isScoringSpecies(c.species) &&
+    entrants.indexOf(c.anglerId) !== -1 &&
+    !(anglerById[c.anglerId] && anglerById[c.anglerId].disqualified));
+  if(eligible.length === 0) return null;
+
+  if(bet.scoring === 'most'){
+    const counts = {};
+    eligible.forEach(c=>{ counts[c.anglerId] = (counts[c.anglerId] || 0) + 1; });
+    let bestId = null, best = -1;
+    Object.keys(counts).forEach(id=>{ if(counts[id] > best){ best = counts[id]; bestId = id; } });
+    return { anglerId: bestId, detail: best + ' approved ' + (best === 1 ? 'fish' : 'fish') };
+  }
+  if(bet.scoring === 'first'){
+    const first = eligible.slice().sort((a,b)=> (catchTime(a) - catchTime(b))
+                                            || String(a.id).localeCompare(String(b.id)))[0];
+    return { anglerId: first.anglerId,
+             detail: 'at ' + new Date(first.timestamp).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) };
+  }
+  // smallest
+  const small = eligible.slice().sort(bySmallestThenEarliest)[0];
+  return { anglerId: small.anglerId, detail: Number(small.length).toFixed(2) + '"' };
+}
+
+function betCardHtml(bet, rows, catches, ctx){
+  const joins = betJoins(rows, bet.id);
+  const joined = betHasJoined(rows, bet.id, ctx.meId);
+  const mine = bet.creatorId === ctx.meId;
+  const settled = !!bet.winnerId;
+  const standing = settled ? null : betStanding(bet, rows, catches, ctx.anglerById);
+
+  const scoringLabel = {
+    smallest: 'Smallest approved fish',
+    most: 'Most approved fish',
+    first: 'First approved fish',
+    manual: 'Called by ' + escapeHtml(displayHandle(ctx.anglerById[bet.creatorId]))
+  }[bet.scoring] || 'Called by whoever started it';
+
+  let standingHtml = '';
+  if(settled){
+    standingHtml = '<div class="bet-standing settled">Won by <strong>' +
+      escapeHtml(displayHandle(ctx.anglerById[bet.winnerId])) + '</strong></div>';
+  } else if(standing){
+    standingHtml = '<div class="bet-standing">Leading: <strong>' +
+      escapeHtml(displayHandle(ctx.anglerById[standing.anglerId])) + '</strong> &middot; ' +
+      escapeHtml(standing.detail) + '</div>';
+  } else if(bet.scoring !== 'manual' && joins.length > 0){
+    standingHtml = '<div class="bet-standing">No approved catches from anyone in yet.</div>';
+  }
+
+  const acts = [];
+  if(!settled && ctx.meId){
+    acts.push(joined
+      ? '<button class="small" data-bet-act="leave" data-bet-id="'+escapeHtml(bet.id)+'">Leave</button>'
+      : '<button class="small" data-bet-act="join" data-bet-id="'+escapeHtml(bet.id)+'">I&rsquo;m in</button>');
+  }
+  if(!settled && (mine || ctx.isDirector) && joins.length > 0){
+    acts.push('<button class="small" data-bet-act="settle" data-bet-id="'+escapeHtml(bet.id)+'">Call the winner</button>');
+  }
+  if(mine || ctx.isDirector){
+    acts.push('<button class="small danger" data-bet-act="delete" data-bet-id="'+escapeHtml(bet.id)+'">Delete</button>');
+  }
+
+  return '<div class="bet">' +
+    '<div class="bet-top"><span class="bet-title">' + escapeHtml(bet.title) +
+      (joined ? '<span class="bet-in">In</span>' : '') + '</span>' +
+      (bet.stake ? '<span class="bet-stake">' + escapeHtml(bet.stake) + '</span>' : '') + '</div>' +
+    '<div class="bet-meta">' + scoringLabel + ' &middot; ' +
+      joins.length + (joins.length === 1 ? ' angler in' : ' anglers in') + ' &middot; started by ' +
+      escapeHtml(displayHandle(ctx.anglerById[bet.creatorId])) + '</div>' +
+    standingHtml +
+    (acts.length ? '<div class="bet-actions">' + acts.join('') + '</div>' : '') +
+    '</div>';
+}
+
+async function renderBets(){
+  const rows = await loadBets();
+  const anglers = await loadAnglers();
+  const catches = await loadCatches();
+  const me = chatAuthor(anglers);
+  const ctx = {
+    meId: me ? me.id : null,
+    anglerById: {},
+    isDirector: adminUnlocked || authMode === 'director'
+  };
+  anglers.forEach(a=>{ ctx.anglerById[a.id] = a; });
+
+  // Open bets first, then settled ones, newest first within each.
+  const bets = betRecords(rows).sort((a, b)=>{
+    const aSettled = !!a.winnerId, bSettled = !!b.winnerId;
+    if(aSettled !== bSettled) return aSettled ? 1 : -1;
+    return (b.timestamp || 0) - (a.timestamp || 0);
+  });
+
+  const list = document.getElementById('bet-list');
+  if(list){
+    list.innerHTML = bets.length === 0
+      ? '<p class="empty">No side bets yet. Start one below &mdash; smallest fish is a classic.</p>'
+      : bets.map(b=> betCardHtml(b, rows, catches, ctx)).join('');
+  }
+
+  const card = document.getElementById('bet-new-card');
+  if(card) card.style.display = me ? 'block' : 'none';
+  wireBetActions();
+}
+
+function wireBetActions(){
+  document.querySelectorAll('#bet-list [data-bet-act]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = btn.dataset.betId;
+      const act = btn.dataset.betAct;
+      const rows = await loadBets();
+      const anglers = await loadAnglers();
+      const me = chatAuthor(anglers);
+      const bet = betRecords(rows).find(b=> b.id === id);
+      if(!bet || !me) return;
+
+      if(act === 'join'){
+        if(betHasJoined(rows, id, me.id)) return;
+        // Its own record, so two anglers joining at once cannot overwrite
+        // each other.
+        rows.push({ id: uid(), kind:'join', betId: id, anglerId: me.id, timestamp: Date.now() });
+        await saveBets(rows);
+        return renderBets();
+      }
+      if(act === 'leave'){
+        await saveBets(rows.filter(r=>
+          !(r.kind === 'join' && r.betId === id && r.anglerId === me.id)));
+        return renderBets();
+      }
+      if(act === 'settle'){
+        const entrants = betJoins(rows, id).map(j=> j.anglerId);
+        const byId = {};
+        anglers.forEach(a=>{ byId[a.id] = a; });
+        const suggested = betStanding(bet, rows, await loadCatches(), byId);
+        const names = entrants.map((eid, i)=> (i+1) + '. ' + displayHandle(byId[eid])).join('\\n');
+        const pick = window.prompt(
+          'Who won "' + bet.title + '"?\\n\\n' + names +
+          (suggested ? '\\n\\nThe app makes it ' + displayHandle(byId[suggested.anglerId]) + '.' : '') +
+          '\\n\\nType the number:', suggested ? String(entrants.indexOf(suggested.anglerId) + 1) : '');
+        if(pick === null) return;
+        const idx = parseInt(pick, 10) - 1;
+        if(!(idx >= 0 && idx < entrants.length)){ window.alert('That is not one of the numbers listed.'); return; }
+        const at = rows.findIndex(r=> r.id === id);
+        rows[at] = Object.assign({}, rows[at], { winnerId: entrants[idx], settledAt: Date.now() });
+        await saveBets(rows);
+        return renderBets();
+      }
+      if(act === 'delete'){
+        if(!window.confirm('Delete "' + bet.title + '"? Everyone in it is dropped too.')) return;
+        // The bet takes its joins with it, or they linger pointing at nothing.
+        await saveBets(rows.filter(r=>
+          r.id !== id && !(r.kind === 'join' && r.betId === id)));
+        return renderBets();
+      }
+    });
+  });
+}
+
+bindEl('bet-create','click', async ()=>{
+  const errEl = document.getElementById('bet-err');
+  const fail = (msg)=>{ errEl.textContent = msg; errEl.style.display = 'block'; };
+  errEl.style.display = 'none';
+
+  const title = (document.getElementById('bet-title').value || '').trim();
+  const stake = (document.getElementById('bet-stake').value || '').trim();
+  const scoring = document.getElementById('bet-kind').value;
+  if(!title) return fail('Say what the bet is.');
+  if(title.length > BET_TITLE_MAX) return fail('Keep the title under ' + BET_TITLE_MAX + ' characters.');
+  if(stake.length > BET_STAKE_MAX) return fail('Keep the stake under ' + BET_STAKE_MAX + ' characters.');
+  if(BET_SCORING.indexOf(scoring) === -1) return fail('Pick how the winner is decided.');
+
+  const anglers = await loadAnglers();
+  const me = chatAuthor(anglers);
+  if(!me) return fail('Register on this device before starting a bet.');
+
+  const rows = await loadBets();
+  // A cap rather than moderation after the fact: one angler with a sense of
+  // humour should not be able to bury the screen.
+  const openMine = betRecords(rows).filter(b=> b.creatorId === me.id && !b.winnerId).length;
+  if(openMine >= BET_OPEN_MAX){
+    return fail('You already have ' + openMine + ' bets running. Settle or delete one first.');
+  }
+  if(betRecords(rows).some(b=> b.title.toLowerCase() === title.toLowerCase() && !b.winnerId)){
+    return fail('There is already an open bet with that name.');
+  }
+
+  const betId = uid();
+  rows.push({
+    id: betId, kind:'bet', title, stake, scoring,
+    creatorId: me.id, winnerId: null, settledAt: null, timestamp: Date.now()
+  });
+  // Starting a bet puts you in it - nobody starts one to sit it out.
+  rows.push({ id: uid(), kind:'join', betId, anglerId: me.id, timestamp: Date.now() });
+  if(!await saveBets(rows)) return fail('That did not save. Check your signal — it will retry.');
+
+  document.getElementById('bet-title').value = '';
+  document.getElementById('bet-stake').value = '';
+  renderBets();
+});
+
+// ---- admin ----
+let adminUnlocked = false;
+// Reviewing fish is what a director actually does while the event is running,
+// so that is what the panel opens on.
+let activeAdminTool = 'review';
+
+function showAdminTool(name){
+  activeAdminTool = name;
+  document.querySelectorAll('[data-admin-tool]').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.adminTool===name);
+  });
+  ['gps','payout','contestants','event','positions','report','review','results'].forEach(tool=>{
+    document.getElementById('admin-tool-'+tool).style.display = tool===name ? 'block' : 'none';
+  });
+  // Maps built inside a hidden card have no size until now.
+  if(name === 'event'){ renderBoundaryEditor(); renderSetupTodos(); }
+  if(name === 'positions') renderPositionsAdmin();
+  if(name === 'report') renderFwpReport();
+  if(name === 'results') renderResultsAdmin();
+}
+
+document.querySelectorAll('[data-admin-tool]').forEach(btn=>{
+  btn.addEventListener('click', ()=>showAdminTool(btn.dataset.adminTool));
+});
+
+function tryAdminUnlock(){
+  const val = document.getElementById('admin-pass').value;
+  const errEl = document.getElementById('admin-err');
+  // An empty ADMIN_PASS would otherwise let an empty box straight in.
+  if(!ADMIN_PASS){
+    errEl.textContent = 'No director passcode is set in this build. Set ADMIN_PASS before the event.';
+    errEl.style.display='block';
+    return;
+  }
+  if(val === ADMIN_PASS){
+    adminUnlocked = true;
+    errEl.style.display='none';
+    document.getElementById('admin-pass').value = '';
+    document.getElementById('admin-lock-card').style.display='none';
+    document.getElementById('admin-panel').style.display='block';
+    showAdminTool(activeAdminTool);
+    renderAdminAuthBanner();
+    renderAdmin();
+  } else {
+    errEl.textContent = 'Incorrect passcode.';
+    errEl.style.display='block';
+  }
+}
+bindEl('admin-unlock','click', tryAdminUnlock);
+bindEl('admin-signin','click', signInDirector);
+bindEl('admin-email','keydown', (e)=>{ if(e.key === 'Enter') document.getElementById('admin-password').focus(); });
+bindEl('admin-password','keydown', (e)=>{ if(e.key === 'Enter') signInDirector(); });
+bindEl('admin-signout','click', signOutDirector);
+// Phone keyboards show "go" on this field; without this it did nothing.
+bindEl('admin-pass','keydown', (e)=>{ if(e.key === 'Enter') tryAdminUnlock(); });
+
+function renderGpsCheck(catches){
+  // withinBounds is true / false / null - null meaning no boundary was set when
+  // the catch was logged. Only an explicit false is out of bounds.
+  const inBounds = catches.filter(c=>c.location && c.location.withinBounds === true).length;
+  const outside = catches.filter(c=>c.location && c.location.withinBounds === false).length;
+  const missing = catches.filter(c=>!c.location).length;
+  const flagged = outside + missing;
+  const summary = document.getElementById('gps-tool-summary');
+  summary.textContent = catches.length===0
+    ? 'No catches yet'
+    : flagged===0 ? 'All '+catches.length+' catches clear' : flagged+' need'+(flagged===1?'s':'')+' review';
+
+  // Catches logged while no boundary was set get their own tile rather than
+  // being quietly folded into one of the other three, so the counts add up.
+  const unjudged = catches.length - inBounds - outside - missing;
+  const statHtml = '<div class="gps-summary">'+
+    '<div class="gps-stat"><strong>'+inBounds+'</strong><span>In bounds</span></div>'+
+    '<div class="gps-stat"><strong>'+outside+'</strong><span>Outside</span></div>'+
+    '<div class="gps-stat"><strong>'+missing+'</strong><span>No GPS</span></div>'+
+    '</div>'+
+    (unjudged > 0
+      ? '<p class="hint">'+unjudged+' catch'+(unjudged===1?' was':'es were')+
+        ' logged with no course boundary set. Set one under Event, then re-check.</p>'
+      : '');
+  const review = catches.filter(c=>!c.location || c.location.withinBounds === false).sort((a,b)=>b.timestamp-a.timestamp);
+  const rows = review.length===0
+    ? '<p class="empty">'+(catches.length===0?'No catches submitted yet.':'Nothing flagged — every catch with a position is inside the course.')+'</p>'
+    : review.map(c=>{
+        const submitted = new Date(c.timestamp).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+        return '<div class="gps-row"><div class="gps-row-top"><span class="gps-row-name">'+escapeHtml(c.anglerName)+'</span><span class="gps-row-meta">'+c.length.toFixed(2)+'&quot;</span></div>'+
+          '<div class="gps-row-meta">'+submitted+' &middot; '+escapeHtml(c.status)+'</div><div style="margin-top:5px;">'+boundaryBadgeHtml(c)+'</div></div>';
+      }).join('');
+  document.getElementById('gps-body').innerHTML = statHtml + rows;
+}
+
+// ---- "where am I" (angler) ----
+// The last fix taken on this device. Kept in memory only: a stale position is
+// worse than none, so it goes when the page does.
+let myPosition = null;
+
+function myPositionHtml(){
+  const b = courseBoundary();
+  if(!myPosition){
+    return '<div class="lw-readout"><strong>Not checked yet</strong>' +
+      '<span>' + (boundaryIsUsable(b) ? 'Tap below for a fix' : 'No boundary set for this event') + '</span></div>';
+  }
+  const v = evaluateBoundary(myPosition.lat, myPosition.lng);
+  const acc = myPosition.accuracyMiles
+    ? '±' + (myPosition.accuracyMiles * 5280).toFixed(0) + ' ft'
+    : '';
+  const taken = new Date(myPosition.at).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
+  const coords = myPosition.lat.toFixed(5) + ', ' + myPosition.lng.toFixed(5);
+
+  if(v.withinBounds === null){
+    return '<div class="lw-readout"><strong>Position recorded</strong>' +
+      '<span>' + coords + '<br>No boundary set &middot; ' + taken + (acc ? ' &middot; ' + acc : '') + '</span></div>';
+  }
+  if(v.withinBounds){
+    // Distance to the line is the useful number when you are inside it.
+    const room = typeof v.edgeMiles === 'number' ? v.edgeMiles
+      : (typeof v.distanceMiles === 'number' && b.kind === 'circle' ? b.radiusMiles - v.distanceMiles : null);
+    const roomText = (room !== null && isFinite(room))
+      ? room.toFixed(2) + ' mi inside the line' : 'Inside the course boundary';
+    return '<div class="lw-readout in"><strong>In bounds</strong>' +
+      '<span>' + roomText + '<br>' + coords + ' &middot; ' + taken + (acc ? ' &middot; ' + acc : '') + '</span></div>';
+  }
+  return '<div class="lw-readout out"><strong>Outside the line</strong>' +
+    '<span>' + v.outsideMiles.toFixed(2) + ' mi past the boundary<br>' +
+    coords + ' &middot; ' + taken + (acc ? ' &middot; ' + acc : '') + '</span></div>';
+}
+
+// The angler's own catches, so the map shows where they have been fishing.
+// Set by renderPublicGps; the position button reuses whatever it last saw.
+let myGpsCatches = [];
+// Raised beacons, the only positions an angler is shown besides their own.
+let myGpsBeacons = [];
+
+function renderCourseMap(){
+  const b = courseBoundary();
+  const entry = ensureMap('course-map', boundaryCenter(b));
+  if(!entry) return;
+  drawBoundary(entry, b, BOUNDARY_STYLE);
+  entry.pins.clearLayers();
+
+  myGpsCatches.forEach(c=>{
+    if(!c.location || !isFinite(c.location.lat) || !isFinite(c.location.lng)) return;
+    const out = c.location.withinBounds === false;
+    L.circleMarker([c.location.lat, c.location.lng], {
+      radius:5, weight:2,
+      color: out ? '#A3372A' : '#5C6B4F',
+      fillColor: out ? '#F1D6D0' : '#DDE6D5', fillOpacity:1
+    }).bindTooltip(escapeHtml(c.species) + ' · ' + Number(c.length).toFixed(2) + '"',
+      { permanent:false }).addTo(entry.pins);
+  });
+
+  // Beacons go on last so they sit above the catch pins.
+  myGpsBeacons.forEach(b=>{
+    if(!isFinite(b.lat) || !isFinite(b.lng)) return;
+    L.marker([b.lat, b.lng], {
+      icon: L.divIcon({ className:'', html:'<div class="beacon-marker"></div>',
+                        iconSize:[22,22], iconAnchor:[11,11] }),
+      zIndexOffset: 2000, keyboard: false
+    }).bindTooltip(escapeHtml(b.handle || 'Beacon') + ' needs help', { permanent:false })
+      .addTo(entry.pins);
+  });
+
+  if(myPosition){
+    L.circleMarker([myPosition.lat, myPosition.lng],
+      { radius:7, color:'#24404D', fillColor:'#4FD2E8', fillOpacity:1, weight:3 })
+      .bindTooltip('You', { permanent:false }).addTo(entry.pins);
+  }
+  if(!entry.fittedCourse){
+    entry.fittedCourse = true;
+    if(boundaryIsUsable(b)) fitToBoundary(entry, b);
+    else if(myPosition) entry.map.setView([myPosition.lat, myPosition.lng], 13);
+  }
+  refreshMapSize(entry);
+}
+
+// ---- beacons, angler side ----
+async function renderBeacons(){
+  const wrap = document.getElementById('beacon-alerts');
+  const anglers = await loadAnglers();
+  const me = chatAuthor(anglers);
+  const beacons = await activeBeacons();
+  const mineRaised = me ? beacons.find(b=> b.id === me.id) : null;
+
+  const raiseBtn = document.getElementById('beacon-raise');
+  const standBtn = document.getElementById('beacon-standdown');
+  const noteField = document.getElementById('beacon-note-field');
+  if(raiseBtn){
+    raiseBtn.style.display = mineRaised ? 'none' : 'block';
+    raiseBtn.disabled = !me;
+    raiseBtn.textContent = me ? 'Raise a beacon' : 'Register on this device first';
+  }
+  if(standBtn) standBtn.style.display = mineRaised ? 'block' : 'none';
+  if(noteField) noteField.style.display = mineRaised ? 'none' : 'block';
+
+  if(!wrap) return;
+  if(beacons.length === 0){ wrap.innerHTML = ''; return; }
+
+  // Sorted nearest first when we know where we are, because the nearest angler
+  // is the one who can actually do something.
+  const withDistance = beacons.map(b=>{
+    const miles = myPosition ? milesBetween(myPosition.lat, myPosition.lng, b.lat, b.lng) : null;
+    const dir = myPosition ? compassFrom(myPosition, b) : '';
+    return { b, miles, dir };
+  }).sort((x, y)=>{
+    if(x.miles === null && y.miles === null) return (y.b.beaconAt||0) - (x.b.beaconAt||0);
+    if(x.miles === null) return 1;
+    if(y.miles === null) return -1;
+    return x.miles - y.miles;
+  });
+
+  wrap.innerHTML = withDistance.map(({ b, miles, dir })=>{
+    const isMine = !!(me && b.id === me.id);
+    const where = miles === null
+      ? 'Check your position to get a bearing'
+      : miles.toFixed(2) + ' mi ' + dir;
+    return '<div class="beacon-card' + (isMine ? ' mine' : '') + '">' +
+      '<div class="beacon-title"><span class="beacon-pulse"></span>' +
+      (isMine ? 'Your beacon is up' : 'Beacon raised') + '</div>' +
+      '<div class="beacon-row"><span class="beacon-who">' + escapeHtml(b.handle || 'An angler') + '</span>' +
+      '<span class="beacon-dist">' + escapeHtml(isMine ? signalAgeText(b) : where) + '</span></div>' +
+      (b.note ? '<div class="beacon-note">&ldquo;' + escapeHtml(b.note) + '&rdquo;</div>' : '') +
+      '<div class="beacon-note" style="font-style:normal;">' +
+      escapeHtml(isMine
+        ? 'The director and the whole field can see you, and your position refreshes while this page is open. Stand it down when you are safe.'
+        : 'Raised ' + signalAgeText({ at: b.beaconAt }) + ' · position ' + signalAgeText(b)) +
+      '</div></div>';
+  }).join('');
+}
+
+bindEl('beacon-raise','click', async (e)=>{
+  const btn = e.currentTarget;
+  const errEl = document.getElementById('beacon-err');
+  errEl.style.display = 'none';
+  const note = (document.getElementById('beacon-note').value || '').trim();
+  // Deliberately a confirm: this goes to everyone on the water, and a pocket
+  // press should not be able to do that.
+  if(!window.confirm('Raise a beacon?\n\nYour position goes to the tournament director and to every other angler on the water, and refreshes about every minute while this page stays open. It keeps going until you stand it down.')) return;
+
+  const was = btn.textContent;
+  btn.textContent = 'Getting a fix…'; btn.disabled = true;
+  try{
+    const pos = await currentPosition();
+    myPosition = Object.assign({ at: Date.now() }, pos);
+    const ok = await publishSignal(pos, { beacon: true, note });
+    if(ok) startBeaconTracking();
+    if(!ok){
+      errEl.textContent = 'The beacon could not be sent. It is queued and will go out when you have signal — get to safety and try again.';
+      errEl.style.display = 'block';
+    }
+    document.getElementById('beacon-note').value = '';
+    await renderPublicGps();
+  }catch(err){
+    // No fix means no beacon. Say so plainly rather than raising one that
+    // points nowhere.
+    errEl.textContent = err.message + ' A beacon needs a position, so nothing was sent.';
+    errEl.style.display = 'block';
+  }finally{
+    btn.textContent = was; btn.disabled = false;
+  }
+});
+
+bindEl('beacon-standdown','click', async ()=>{
+  if(!window.confirm('Stand down your beacon? The field stops being asked to come and find you.')) return;
+  const pos = myPosition || null;
+  const anglers = await loadAnglers();
+  const me = chatAuthor(anglers);
+  if(!me) return;
+  const signals = await loadSignals();
+  const idx = signals.findIndex(x=> x.id === me.id);
+  if(idx !== -1){
+    signals[idx] = Object.assign({}, signals[idx], { beacon: false, beaconAt: null, note: '' });
+    // Keep the last position rather than clearing it - the director still
+    // wants to know where everyone was.
+    if(pos && isFinite(pos.lat)) Object.assign(signals[idx], { lat: pos.lat, lng: pos.lng, at: Date.now() });
+    await saveSignals(signals);
+  }
+  stopBeaconTracking();
+  await renderPublicGps();
+});
+
+function renderMyPosition(){
+  const b = courseBoundary();
+  setText('my-pos-intro', boundaryIsUsable(b)
+    ? 'Check yourself against the course boundary before you launch, and any time you are not sure. This is for your own use — nothing here is sent to the director.'
+    : 'The director has not set a course boundary for this event, so there is no line to check against. Your position is still shown.');
+  setHtml('my-pos-readout', myPositionHtml());
+  renderCourseMap();
+}
+
+bindEl('my-pos-check','click', async (e)=>{
+  const errEl = document.getElementById('my-pos-err');
+  const btn = e.currentTarget;
+  errEl.style.display = 'none';
+  const was = btn.textContent;
+  btn.textContent = 'Finding…'; btn.disabled = true;
+  try{
+    const pos = await currentPosition();
+    myPosition = Object.assign({ at: Date.now() }, pos);
+    // The fix has already been taken, so telling the director costs nothing.
+    publishSignal(pos);
+    renderMyPosition();
+    const entry = ensureMap('course-map', boundaryCenter(courseBoundary()));
+    if(entry) entry.map.setView([pos.lat, pos.lng], 14);
+  }catch(err){
+    errEl.textContent = err.message;
+    errEl.style.display = 'block';
+  }finally{
+    btn.textContent = was; btn.disabled = false;
+  }
+});
+
+async function renderPublicGps(){
+  const catches = await loadCatches();
+  const myAnglerId = getMyAnglerId();
+  myGpsCatches = myAnglerId ? catches.filter(c=> c.anglerId === myAnglerId) : [];
+  myGpsBeacons = await activeBeacons();
+  await renderBeacons();
+  renderMyPosition();
+  // withinBounds is true / false / null - null meaning no boundary was set when
+  // the catch was logged. Only an explicit false is out of bounds.
+  const inBounds = catches.filter(c=>c.location && c.location.withinBounds === true).length;
+  const outside = catches.filter(c=>c.location && c.location.withinBounds === false).length;
+  const missing = catches.filter(c=>!c.location).length;
+  document.getElementById('public-gps-summary').innerHTML =
+    '<div class="gps-summary">'+
+      '<div class="gps-stat"><strong>'+inBounds+'</strong><span>In bounds</span></div>'+
+      '<div class="gps-stat"><strong>'+outside+'</strong><span>Flagged</span></div>'+
+      '<div class="gps-stat"><strong>'+missing+'</strong><span>No GPS</span></div>'+
+    '</div>'+
+    '<p class="hint" style="margin-bottom:0;">'+catches.length+' total catch submission'+(catches.length===1?'':'s')+' checked.</p>';
+
+  const myId = getMyAnglerId();
+  const list = document.getElementById('public-gps-list');
+  if(!myId){
+    list.innerHTML = '<p class="empty">Register on this device to view your individual catch-location checks.</p>';
+    return;
+  }
+  const mine = catches.filter(c=>c.anglerId===myId).sort((a,b)=>b.timestamp-a.timestamp);
+  if(mine.length===0){
+    list.innerHTML = '<p class="empty">You have not submitted any catches yet.</p>';
+    return;
+  }
+  list.innerHTML = mine.map(c=>{
+    const submitted = new Date(c.timestamp).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+    return '<div class="gps-row"><div class="gps-row-top"><span class="gps-row-name">'+escapeHtml(c.species)+'</span><span class="gps-row-meta">'+Number(c.length).toFixed(2)+'&quot;</span></div>'+
+      '<div class="gps-row-meta">'+submitted+' &middot; '+escapeHtml(c.status)+'</div><div style="margin-top:5px;">'+boundaryBadgeHtml(c)+'</div></div>';
+  }).join('');
+}
+
+// The entry fees, named once. They were written as bare 30 / 50 / 10 inside the
+// payout maths, which was fine while that was the only place they appeared -
+// outstandingFees() needs the same three numbers, and two copies of a price is
+// how a tournament ends up quoting one figure and banking another.
+const FEE_SOLO = 30;
+const FEE_TEAM = 50;
+const FEE_BIGFISH = 10;
+
+// Money the roster implies that nobody has matched a payment to yet. The pools
+// only ever count what arrived - this is the gap, shown next to them so it is a
+// number the director can act on rather than a silent absence.
+function outstandingFees(anglers){
+  const owing = (anglers || []).filter(a=> !feePaid(a));
+  const solo = owing.filter(a=> a.division === 'solo').length;
+  // One fee per team, so the partner record is not billed a second time.
+  const teams = owing.filter(a=> a.division === 'team' && a.role !== 'partner').length;
+  // Big Fish is per angler, and both halves of a team have their own record.
+  const bigfish = owing.filter(a=> a.bigfish).length;
+  return {
+    solo, teams, bigfish,
+    entries: owing.filter(a=> a.role !== 'partner').length,
+    anglers: owing,
+    total: solo * FEE_SOLO + teams * FEE_TEAM + bigfish * FEE_BIGFISH
+  };
+}
+
+// Anyone placing, or leading the Big Fish pot, whose fee has not been matched.
+// This is the one moment the flag genuinely matters: money paid out to an entry
+// that never paid in comes out of everybody else's share, and it is the last
+// point at which that can be caught.
+function unpaidInTheMoney(anglers, catches){
+  const roster = anglers || [];
+  const byId = {};
+  roster.forEach(a=>{ byId[a.id] = a; });
+  const out = [], seen = {};
+  const place = ['1st', '2nd', '3rd'];
+
+  ['solo', 'team'].forEach(division=>{
+    standingsFor(division, catches || [], roster).slice(0, 3).forEach((row, i)=>{
+      (row.anglerIds || []).forEach(id=>{
+        const a = byId[id];
+        if(!a || feePaid(a) || seen[a.id]) return;
+        seen[a.id] = true;
+        out.push({ angler: a, why: place[i] + ' in the ' + division + ' division' });
+      });
+    });
+  });
+
+  const inPot = {};
+  bigFishEntrants(roster).forEach(a=>{ inPot[a.id] = true; });
+  const best = (catches || [])
+    .filter(c=> c.status === 'approved' && isScoringSpecies(c.species) && inPot[c.anglerId])
+    .sort(byLengthThenEarliest)[0];
+  if(best){
+    const a = byId[best.anglerId];
+    if(a && !feePaid(a) && !seen[a.id]){
+      seen[a.id] = true;
+      out.push({ angler: a, why: 'leading the Big Fish pot' });
+    }
+  }
+  return out;
+}
+
+// What each pool is built from. A pool is money that actually ARRIVED, so this
+// is the one place the fee flag still decides a number - an entry nobody has
+// matched a payment to must not inflate what the field thinks it is playing
+// for. renderPayoutCalculator() shows the unmatched total alongside it, so the
+// gap is visible rather than silently missing.
+// Split out of the render for the same reason as bigFishEntrants().
+function poolCounts(anglers){
+  const confirmed = (anglers || []).filter(feePaid);
+  return {
+    solo:    confirmed.filter(a=> a.division === 'solo').length,
+    // A team is one entry fee, so the partner record is not counted again.
+    teams:   confirmed.filter(a=> a.division === 'team' && a.role !== 'partner').length,
+    // Big Fish is per angler, and both halves of a team have their own record.
+    bigfish: confirmed.filter(a=> a.bigfish).length
+  };
+}
+
+// ============================================================
+// Montana FWP fishing contest report
+//
+// Montana Fish, Wildlife & Parks requires a contest report within 30 days of
+// the last day fished. Everything on that form that the tournament actually
+// recorded is derived here; the rest - the filer's address, water temperature,
+// the sponsor - is the director's to type, and is saved per event so the form
+// can be built up over those 30 days instead of in one sitting.
+//
+// The rule this whole section follows: never guess a number that goes to the
+// state. Where the app cannot know something it says so and asks, and where a
+// count had to leave records out it says which ones. reportWarnings() is that
+// promise made visible.
+// ============================================================
+
+const FWP_DEADLINE_DAYS = 30;
+
+// Filed on the whole roster: the state is counting people who fished, and an
+// entry fee the director has not ticked off yet says nothing about whether
+// somebody launched. The one exception is the "# Paid" box, which is the only
+// question on the form that is actually about money.
+
+// Per-event, in the shared config, so the half-finished form is on every one of
+// the director's devices rather than the one they started it on.
+function reportSettings(id){
+  const all = (liveCache.config && liveCache.config.fwpReports) || {};
+  return Object.assign({}, all[id || activeEventId()] || {});
+}
+async function saveReportSettings(patch){
+  const all = Object.assign({}, (liveCache.config && liveCache.config.fwpReports) || {});
+  const id = activeEventId();
+  all[id] = Object.assign({}, all[id] || {}, patch, { savedAt: Date.now() });
+  return await saveConfig({ fwpReports: all });
+}
+
+// A director's name, address and phone do not change between tournaments, so
+// next year's form opens already holding this year's answers. Only the contact
+// block is carried - water temperature and fish counts obviously are not.
+const REPORT_FILER_FIELDS = ['filerName','filerAddress','filerEmail','filerPhone','sponsor','region'];
+function lastFiledDetails(){
+  const all = (liveCache.config && liveCache.config.fwpReports) || {};
+  const here = activeEventId();
+  let best = null;
+  Object.keys(all).forEach(key=>{
+    if(key === here) return;
+    const r = all[key];
+    if(!r || !r.filerName) return;
+    if(!best || (r.savedAt || 0) > (best.savedAt || 0)) best = r;
+  });
+  const out = {};
+  if(best) REPORT_FILER_FIELDS.forEach(f=>{ if(best[f]) out[f] = best[f]; });
+  return out;
+}
+
+// Residency is asked at registration, so anyone who entered before the question
+// existed reads as unknown. Filing them as non-residents would be a guess on a
+// form that goes to the state, so they are counted apart and named - the
+// director can set them from the report screen.
+function residencyCounts(anglers){
+  const out = { resident:0, nonresident:0, unknown:0, unknownAnglers:[] };
+  // Everyone on the roster. The state is counting people who fished, not
+  // people whose PayPal has been matched up.
+  (anglers || []).forEach(a=>{
+    if(a.resident === true) out.resident++;
+    else if(a.resident === false) out.nonresident++;
+    else { out.unknown++; out.unknownAnglers.push(a); }
+  });
+  return out;
+}
+
+// The head of the form. `anglers` is people, `teams` is entries - a team of two
+// is one entry and two anglers, and the form asks for both.
+function reportFieldCounts(anglers){
+  const list = anglers || [];
+  const settled = list.filter(feePaid);
+  return {
+    // Everyone on the roster fished, whatever state their fee is in.
+    anglers: list.length,
+    teams: list.filter(a=> a.division === 'team' && a.role !== 'partner').length,
+    // The ONE box on the form that is about money: people whose fee has been
+    // matched. A team's single fee covers both halves, so this counts people,
+    // not fees collected.
+    paid: settled.length,
+    unpaid: list.length - settled.length
+  };
+}
+
+// Rejected catches are left out everywhere below. The usual reason a catch is
+// rejected is that it is the same fish photographed twice, and counting those
+// would report more fish to the state than came out of the water. Pending is
+// counted - by filing time it means reviewed-and-fine far more often than it
+// means unreviewed, and reportWarnings() flags any that are still open.
+function reportableCatches(catches){
+  return (catches || []).filter(c=> c && c.status !== 'rejected');
+}
+
+// A catch belongs to the day it was landed read in the EVENT's time zone. A
+// 9pm Montana catch is not the next day, whatever the phone reading this is
+// set to.
+function catchDayKey(c){
+  return eventTimeParts(new Date(c.timestamp)).dateKey;
+}
+
+// HOURS FISHED. The form wants the hours the field was actually on the water,
+// and check-in to check-out is exactly that: first line in, last boat off.
+function contestDayHours(anglers, dates){
+  const confirmed = (anglers || []);
+  return (dates || []).map((dateKey, i)=>{
+    const dayKey = 'day' + (i + 1);
+    let start = null, stop = null;
+    confirmed.forEach(a=>{
+      const rec = (a.checkins && a.checkins[dayKey]) || {};
+      if(rec.in && (start === null || rec.in < start)) start = rec.in;
+      if(rec.out && (stop === null || rec.out > stop)) stop = rec.out;
+    });
+    const hours = (start !== null && stop !== null && stop > start)
+      ? (stop - start) / 3600000
+      : null;
+    return { day: i + 1, dateKey, dayKey, start, stop, hours };
+  });
+}
+
+// Fish per day, plus a count of anything landed outside the event dates. Those
+// are almost always test entries, and they are reported rather than dropped -
+// a total that does not add up should be visible, not tidied away.
+function catchesPerDay(catches, dates){
+  const counts = {};
+  (dates || []).forEach(d=>{ counts[d] = 0; });
+  let offDays = 0;
+  reportableCatches(catches).forEach(c=>{
+    const key = catchDayKey(c);
+    if(counts[key] === undefined) offDays++;
+    else counts[key]++;
+  });
+  return { counts, offDays };
+}
+
+// NUMBER OF FISH CAUGHT, one row per species. `died` is the director's number:
+// this is a catch-photo-release tournament, so the app has no field for a fish
+// that did not swim away, and zero is the honest default rather than an
+// assumption dressed up as data.
+function speciesTally(catches, died){
+  const deaths = died || {};
+  const rows = new Map();
+  reportableCatches(catches).forEach(c=>{
+    const name = c.species || 'Unknown';
+    if(!rows.has(name)) rows.set(name, { species: name, caught: 0, longest: 0 });
+    const row = rows.get(name);
+    row.caught++;
+    if(Number(c.length) > row.longest) row.longest = Number(c.length);
+  });
+  return [...rows.values()].map(row=>{
+    // Clamped: more deaths than fish is a typo, and it would make `released`
+    // negative on a form going to the state.
+    const d = Math.max(0, Math.min(row.caught, Math.floor(Number(deaths[row.species]) || 0)));
+    return Object.assign({}, row, { died: d, released: row.caught - d });
+  }).sort((a, b)=> b.caught - a.caught || a.species.localeCompare(b.species));
+}
+
+// SIZE DISTRIBUTION. Page 2 carries two tables - one with columns 8 to 23, one
+// with 12 to 30+ - and asks for every fish 8 inches and up in the first, every
+// fish 12 and up in the second. Taken literally a 15" walleye belongs in both,
+// which would report it twice, so each species goes in whichever ONE table has
+// columns for the whole of its range.
+const SIZE_SMALL_MIN = 8;
+const SIZE_SMALL_MAX = 23;
+const SIZE_LARGE_MIN = 12;
+const SIZE_LARGE_MAX = 30;   // the last column is "30+", so anything longer folds into it
+
+function sizeDistribution(catches){
+  const byName = new Map();
+  let under8 = 0;
+  reportableCatches(catches).forEach(c=>{
+    const len = Number(c.length);
+    if(!(len > 0)) return;
+    // Down to the whole inch: the form's columns are whole inches, and a 12.75"
+    // fish is a fish in the 12 column.
+    const inch = Math.floor(len);
+    if(inch < SIZE_SMALL_MIN){ under8++; return; }
+    const name = c.species || 'Unknown';
+    if(!byName.has(name)) byName.set(name, []);
+    byName.get(name).push(inch);
+  });
+
+  const tally = (list, max)=> list.reduce((m, i)=>{
+    const col = Math.min(i, max);
+    m[col] = (m[col] || 0) + 1;
+    return m;
+  }, {});
+
+  const small = [], large = [];
+  [...byName.keys()].sort().forEach(name=>{
+    const inches = byName.get(name);
+    const min = Math.min.apply(null, inches);
+    const max = Math.max.apply(null, inches);
+    const needsSmall = min < SIZE_LARGE_MIN;     // has a fish only the 8-23 table has a column for
+    const needsLarge = max > SIZE_SMALL_MAX;     // has a fish only the 12-30+ table has a column for
+    if(needsSmall && needsLarge){
+      // An 8-incher and a 24-incher of the same species. Neither table can hold
+      // that range, so it is split across both and the report says which rows.
+      small.push({ species: name, counts: tally(inches.filter(i=> i < SIZE_LARGE_MIN), SIZE_SMALL_MAX), split: true });
+      large.push({ species: name, counts: tally(inches.filter(i=> i >= SIZE_LARGE_MIN), SIZE_LARGE_MAX), split: true });
+    } else if(needsSmall){
+      small.push({ species: name, counts: tally(inches, SIZE_SMALL_MAX), split: false });
+    } else {
+      large.push({ species: name, counts: tally(inches, SIZE_LARGE_MAX), split: false });
+    }
+  });
+  return { small, large, under8 };
+}
+
+// SIZE OF WINNING FISH. The same test the standings use - approved, the species
+// this event scores, and not from an entry that was disqualified or never
+// confirmed - so the form can never disagree with the trophy.
+function winningFish(catches, anglers){
+  const byId = {};
+  (anglers || []).forEach(a=>{ byId[a.id] = a; });
+  return (catches || []).filter(c=>{
+    if(c.status !== 'approved' || !isScoringSpecies(c.species)) return false;
+    const a = byId[c.anglerId];
+    return !(a && a.disqualified);
+    // Ties go to the fish landed first, exactly as the leaderboard ranks them,
+    // so the form and the trophy can never name different fish.
+  }).sort(byLengthThenEarliest)[0] || null;
+}
+
+// Thirty days from the last day fished.
+function reportDueDate(evt){
+  const dates = ((evt || activeEvent()).dates) || [];
+  if(dates.length === 0) return null;
+  const last = new Date(dates[dates.length - 1] + 'T00:00:00Z');
+  if(isNaN(last.getTime())) return null;
+  return new Date(last.getTime() + FWP_DEADLINE_DAYS * 86400000);
+}
+function reportDueText(evt, now){
+  const due = reportDueDate(evt);
+  if(!due) return 'This event has no dates set, so there is no deadline to count from.';
+  // Formatted in UTC to match the bare YYYY-MM-DD it was built from - see
+  // eventDayText() for the same trap.
+  const on = due.toLocaleDateString('en-US', { timeZone:'UTC', month:'long', day:'numeric', year:'numeric' });
+  const days = Math.ceil((due.getTime() - (now === undefined ? Date.now() : now)) / 86400000);
+  const plural = (n)=> Math.abs(n) === 1 ? 'day' : 'days';
+  if(days < 0) return 'Was due ' + on + ' — ' + Math.abs(days) + ' ' + plural(days) + ' ago.';
+  if(days === 0) return 'Due today, ' + on + '.';
+  return 'Due ' + on + ' — ' + days + ' ' + plural(days) + ' from now.';
+}
+
+// Everything the report knows it cannot vouch for. This is the part that keeps
+// the form honest: a number that had to leave records out says so here rather
+// than quietly being wrong.
+function reportWarnings(anglers, catches, dates){
+  const out = [];
+  const counts = reportFieldCounts(anglers);
+  const res = residencyCounts(anglers);
+  if(counts.unpaid > 0){
+    // No longer "left out" of anything except the # Paid box, so the warning
+    // says which box rather than implying the whole form is wrong.
+    out.push(counts.unpaid + ' ' + (counts.unpaid === 1 ? 'entry has' : 'entries have') +
+      ' no fee matched to ' + (counts.unpaid === 1 ? 'it' : 'them') + ', so the "# Paid" box ' +
+      'reads lower than the angler count. Tick them off if the money did arrive.');
+  }
+  if(res.unknown > 0){
+    out.push(res.unknown + ' angler' + (res.unknown === 1 ? '' : 's') + ' registered before the app asked about ' +
+      'residency. Set them below — the resident and non-resident boxes do not add up until you do.');
+  }
+  const pending = (catches || []).filter(c=> c.status === 'pending').length;
+  if(pending > 0){
+    out.push(pending + ' catch' + (pending === 1 ? ' is' : 'es are') + ' still awaiting review and ' +
+      (pending === 1 ? 'is' : 'are') + ' counted as caught. Review them if that is not right.');
+  }
+  const off = catchesPerDay(catches, dates).offDays;
+  if(off > 0){
+    out.push(off + ' catch' + (off === 1 ? '' : 'es') + ' fell outside the event dates, so ' +
+      (off === 1 ? 'it is' : 'they are') + ' in the species totals but on no day row. Usually a test entry.');
+  }
+  return out;
+}
+
+// ---- hours ----
+
+// "07:15", in the event's own time zone - which is also the format a time input
+// reads and writes, so a derived time and a typed one are the same string and
+// can be compared, saved and totalled without a second code path.
+function reportClockText(ms){
+  if(!ms) return '';
+  return new Date(ms).toLocaleTimeString('en-US', {
+    timeZone: activeEvent().timeZone, hour:'2-digit', minute:'2-digit', hourCycle:'h23'
+  });
+}
+function clockToMinutes(hhmm){
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm == null ? '' : hhmm).trim());
+  if(!m) return null;
+  const h = Number(m[1]), min = Number(m[2]);
+  if(h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+// One day's row. A saved override beats the check-in times, and the total is
+// always recomputed from whichever pair is in force - a corrected stop time
+// sitting next to a stale total is worse than no total at all.
+function reportDayRow(day, settings){
+  const saved = ((settings || {}).hours || {})[day.dayKey] || {};
+  const start = saved.start || reportClockText(day.start);
+  const stop  = saved.stop  || reportClockText(day.stop);
+  const from = clockToMinutes(start), to = clockToMinutes(stop);
+  return {
+    day: day.day, dateKey: day.dateKey, dayKey: day.dayKey, start, stop,
+    overridden: !!(saved.start || saved.stop),
+    hours: (from !== null && to !== null && to > from) ? (to - from) / 60 : null
+  };
+}
+
+// The one place that says what the report actually holds: what the director
+// has saved, over the top of what can be carried forward or derived.
+//
+// Both the input boxes and the printed sheet read THIS. They used not to - the
+// boxes showed a carried-forward name while the sheet printed "not filled in"
+// for the same field, because nothing is saved until the box loses focus and a
+// director who agreed with a default never touched it. A form going to the
+// state cannot say one thing on screen and another on paper.
+function reportWithDefaults(cfg){
+  const evt = activeEvent();
+  const out = Object.assign({}, lastFiledDetails(), cfg || {});
+  // These two are not guesses: the presenter line IS the sponsor, and the
+  // course label is the water. Clearing either falls back to them again, which
+  // is right - there is no version of this event where they are blank.
+  // Trailing "presents" and its like belong to the banner, not to the name of
+  // a sponsor - the form asks who sponsored the contest, not how they were
+  // announced at it.
+  // The alternation is written out in full rather than as `present(s|ed by)`:
+  // lint.mjs blanks strings but not regex literals, so a bare word followed by
+  // "(" inside one reads to it as a call to a function nobody wrote.
+  if(!out.sponsor) out.sponsor = stripEntities(evt.presenter || '').replace(/\s+(?:presents|presented by)\.?$/i, '');
+  if(!out.waterbody) out.waterbody = stripEntities(evt.courseLabelLong || '');
+  return out;
+}
+
+// ---- the whole report, in one object ----
+// The screen, the printed sheet and the copied text all read from this, so the
+// three of them cannot drift apart.
+function buildReportModel(anglers, catches, settings){
+  const evt = activeEvent();
+  const dates = evt.dates || [];
+  const cfg = reportWithDefaults(settings || reportSettings());
+  const counts = reportFieldCounts(anglers);
+  const perDay = catchesPerDay(catches, dates);
+  const species = speciesTally(catches, cfg.died);
+  const died = species.reduce((s, r)=> s + r.died, 0);
+  const caught = species.reduce((s, r)=> s + r.caught, 0);
+
+  const days = contestDayHours(anglers, dates).map(d=>{
+    const row = reportDayRow(d, cfg);
+    row.caught = perDay.counts[d.dateKey] || 0;
+    // The form wants fish released per day, but the only mortality the director
+    // records is per species - there is nothing that says which day a fish died
+    // on. So when nothing died, a day released everything it caught; when
+    // something did, this is left blank for the director rather than filled
+    // with a number nobody could stand behind.
+    row.released = died === 0 ? row.caught : null;
+    return row;
+  });
+
+  const boatsSet = cfg.boats !== undefined && cfg.boats !== null && cfg.boats !== '';
+  return {
+    event: evt,
+    settings: cfg,
+    dates, days,
+    waterbody: cfg.waterbody,
+    counts,
+    residency: residencyCounts(anglers),
+    // One angler, one kayak - which is what the field is, and still only a
+    // default the director can put right.
+    boats: boatsSet ? Number(cfg.boats) : counts.anglers,
+    boatsDerived: !boatsSet,
+    winner: winningFish(catches, anglers),
+    species, caught, died,
+    sizes: sizeDistribution(catches),
+    warnings: reportWarnings(anglers, catches, dates),
+    due: reportDueText(evt),
+    late: (function(){
+      const d = reportDueDate(evt);
+      return !!d && Date.now() > d.getTime();
+    })()
+  };
+}
+
+// ---- rendering ----
+// Split three ways so a phone never loses a keystroke: the fixed fields are
+// static markup filled once when the tool opens, the per-day and per-species
+// inputs are rebuilt only when their shape changes, and only the sheet is
+// repainted on every edit. Rebuilding a field under the finger tapping it is
+// exactly how a form eats an answer.
+let reportInputsFilled = false;
+let reportDiedShape = '';
+let reportHoursShape = '';
+
+// Called when the live event changes. Without this the report keeps last
+// tournament's answers in its boxes while reading this tournament's fish.
+function resetReportForm(){
+  reportInputsFilled = false;
+  reportDiedShape = '';
+  reportHoursShape = '';
+}
+
+function reportValue(v){ return v === undefined || v === null ? '' : String(v); }
+
+function fillReportInputs(cfg, anglerCount){
+  const values = reportWithDefaults(cfg);
+  document.querySelectorAll('#admin-tool-report [data-fwp]').forEach(el=>{
+    // reportValue() rather than `|| ''`, so a saved zero reaches the box as a
+    // zero instead of being wiped by its own falsiness.
+    el.value = reportValue(values[el.dataset.fwp]);
+  });
+  // Boats is the one field left showing its default as a PLACEHOLDER. It is
+  // derived from the roster rather than carried, so writing it in would freeze
+  // a number that should keep following the roster until the director
+  // deliberately overrides it.
+  const boats = document.getElementById('report-boats');
+  if(boats && !reportValue(values.boats)) boats.placeholder = String(anglerCount || 0);
+}
+
+function renderReportHours(days, cfg){
+  const el = document.getElementById('report-hours');
+  if(!el) return;
+  const shape = days.map(d=> d.dayKey + ':' + d.dateKey).join('|');
+  if(shape === reportHoursShape && el.innerHTML) return;   // typing into it right now
+  reportHoursShape = shape;
+  if(days.length === 0){
+    el.innerHTML = '<p class="empty">This event has no dates set.</p>';
+    return;
+  }
+  el.innerHTML = days.map(d=>{
+    const row = reportDayRow(d, cfg);
+    const total = row.hours === null ? 'no total yet' : row.hours.toFixed(2) + ' hours';
+    return '<div class="rday"><div class="rday-head">' +
+      '<span class="rday-name">Day ' + d.day + ' &middot; ' + escapeHtml(eventDayText(d.dateKey)) + '</span>' +
+      '<span class="hint" style="margin:0;">' + escapeHtml(total) + '</span></div>' +
+      '<div class="row2">' +
+        '<div class="field" style="margin-bottom:0;"><label for="report-start-' + d.dayKey + '">Start</label>' +
+        '<input type="time" id="report-start-' + d.dayKey + '" data-fwp-hour="' + d.dayKey + '.start" value="' + escapeHtml(row.start) + '"></div>' +
+        '<div class="field" style="margin-bottom:0;"><label for="report-stop-' + d.dayKey + '">Stop</label>' +
+        '<input type="time" id="report-stop-' + d.dayKey + '" data-fwp-hour="' + d.dayKey + '.stop" value="' + escapeHtml(row.stop) + '"></div>' +
+      '</div></div>';
+  }).join('');
+}
+
+function renderReportDied(species, cfg){
+  const el = document.getElementById('report-died');
+  if(!el) return;
+  const shape = species.map(s=> s.species).join('|');
+  if(shape === reportDiedShape && el.innerHTML) return;
+  reportDiedShape = shape;
+  if(species.length === 0){
+    el.innerHTML = '<p class="empty">No catches logged yet.</p>';
+    return;
+  }
+  const died = cfg.died || {};
+  el.innerHTML = species.map((s, i)=>
+    '<div class="field" style="margin-bottom:8px;">' +
+      '<label for="report-died-' + i + '">' + escapeHtml(s.species) + ' &mdash; ' + s.caught + ' caught</label>' +
+      '<input type="number" id="report-died-' + i + '" min="0" max="' + s.caught + '" step="1" ' +
+        'data-fwp-died="' + escapeHtml(s.species) + '" placeholder="0" value="' +
+        escapeHtml(reportValue(died[s.species] === 0 ? '' : died[s.species])) + '">' +
+    '</div>'
+  ).join('');
+}
+
+function renderReportResidency(res){
+  const el = document.getElementById('report-residency');
+  if(!el) return;
+  if(res.unknown === 0){
+    el.innerHTML = '<p class="rnote">' + res.resident + ' Montana ' +
+      (res.resident === 1 ? 'resident' : 'residents') + ', ' + res.nonresident +
+      ' non-' + (res.nonresident === 1 ? 'resident' : 'residents') + '. Nothing outstanding.</p>';
+    return;
+  }
+  el.innerHTML = res.unknownAnglers.map(a=>
+    '<div class="rfix"><span>' + escapeHtml(a.name || 'Unnamed') + '</span>' +
+    '<span class="actions" style="margin:0;">' +
+      '<button class="small" type="button" data-fwp-res="yes" data-angler="' + escapeHtml(a.id) + '">Montana</button>' +
+      '<button class="small" type="button" data-fwp-res="no" data-angler="' + escapeHtml(a.id) + '">Non-resident</button>' +
+    '</span></div>'
+  ).join('');
+}
+
+// ---- the sheet ----
+// A rebuild of the state's form rather than a summary of it: the same order,
+// the same wording, the same grid, so it can be held next to the paper copy
+// and read straight across. Row counts match the printed form too - four day
+// rows, six species rows - and pad out empty when there is less to say.
+//
+// Anything the app wants to SAY about the numbers - a species split across
+// both size tables, a released column it cannot fill in - is said on screen
+// above the sheet and never on the page that gets posted.
+
+const FWP_HOURS_ROWS = 4;
+const FWP_SPECIES_ROWS = 6;
+const FWP_SIZE_SMALL_ROWS = 6;
+const FWP_SIZE_LARGE_ROWS = 7;
+const FWP_FOOTER = 'Send to: MT Fish, Wildlife and Parks - Attn: Fishing Contest Reporting- ' +
+                   'PO Box 200701 - Helena, MT 59620-0701';
+
+// What a box that has not been filled in says. Named on screen, and hidden by
+// the print stylesheet so the posted copy has a genuinely empty box in it -
+// which is what the paper form would have had.
+const SHEET_BLANK = 'not filled in';
+function sheetValue(v, blank){
+  const s = reportValue(v).trim();
+  return s === '' ? [blank || SHEET_BLANK, true] : [s, false];
+}
+function fwpValue(v, blank){
+  const [text, missing] = sheetValue(v, blank);
+  return missing ? '<span class="rblank">' + escapeHtml(text) + '</span>' : escapeHtml(text);
+}
+// Blank rows, so a short tournament still prints a form the same shape as the
+// one it is copied onto.
+function fwpPad(have, want, cols){
+  let out = '';
+  for(let i = have; i < want; i++){
+    out += '<tr>' + new Array(cols + 1).join('<td>&nbsp;</td>') + '</tr>';
+  }
+  return out;
+}
+// The form's fill-in-the-blank options - Up / Down / Normal and the rest. The
+// answer goes in as an X on the blank, the way it would be written by hand.
+function fwpTick(actual, option){
+  const on = String(actual || '').toLowerCase() === option.toLowerCase();
+  return '<span class="fwp-box">' + (on ? 'X' : '&nbsp;') + '</span> ' + escapeHtml(option);
+}
+function fwpFill(v, blank){
+  return '<span class="fwp-fill">' + fwpValue(v, blank) + '</span>';
+}
+
+function sizeColumns(min, max){
+  const out = [];
+  for(let i = min; i <= max; i++) out.push(i);
+  return out;
+}
+// One of page two's two tables. `plusLast` labels the final column "30+",
+// which is how the form writes its catch-all.
+function sizeTableHtml(rows, min, max, plusLast, padTo){
+  const cols = sizeColumns(min, max);
+  const head =
+    '<tr><th rowspan="2" class="fwp-species-col">List Species</th>' +
+    '<th colspan="' + cols.length + '">Size in Inches</th></tr>' +
+    '<tr>' + cols.map(c=> '<th class="num">' + c + (plusLast && c === max ? '+' : '') + '</th>').join('') + '</tr>';
+  const body = rows.map(r=>
+    '<tr><td>' + escapeHtml(r.species) + '</td>' +
+    cols.map(c=> '<td class="num">' + (r.counts[c] ? r.counts[c] : '&nbsp;') + '</td>').join('') +
+    '</tr>'
+  ).join('');
+  return '<div class="rscroll"><table class="fwp-table fwp-size">' + head + body +
+    fwpPad(rows.length, padTo, cols.length + 1) + '</table></div>';
+}
+
+function renderReportSheet(model){
+  const el = document.getElementById('report-sheet');
+  if(!el) return;
+  const cfg = model.settings;
+  const res = model.residency;
+  const evt = model.event;
+
+  // --- page 1 ---
+  const residentCell = res.unknown
+    ? escapeHtml(String(res.resident)) + '<span class="rblank"> (+' + res.unknown + ' unanswered)</span>'
+    : escapeHtml(String(res.resident));
+  const nonResidentCell = res.unknown
+    ? escapeHtml(String(res.nonresident)) + '<span class="rblank"> (+' + res.unknown + ' unanswered)</span>'
+    : escapeHtml(String(res.nonresident));
+
+  const dateText = model.dates.length
+    ? model.dates.map(d=> eventDayText(d, { month:'numeric', day:'numeric', year:'numeric' })).join(', ')
+    : '';
+
+  const headTable =
+    '<table class="fwp-grid">' +
+      '<tr><th>Contest Name</th><td colspan="5">' + escapeHtml(stripEntities(evt.name || '')) + '</td></tr>' +
+      '<tr><th>Contest Date(s) M/D/Y</th><td colspan="2">' + fwpValue(dateText) + '</td>' +
+          '<th>Waterbody:</th><td colspan="2">' + fwpValue(model.waterbody) + '</td></tr>' +
+      '<tr><th>Total # of Anglers:</th><td>' + model.counts.anglers + '</td>' +
+          '<th># of Teams</th><td>' + model.counts.teams + '</td>' +
+          '<th># Paid:</th><td>' + model.counts.paid + '</td></tr>' +
+      '<tr><th># of Montana Residents:</th><td>' + residentCell + '</td>' +
+          '<th># of Non-Residents:</th><td>' + nonResidentCell + '</td>' +
+          '<th># of Boats (if applicable):</th><td>' + model.boats + '</td></tr>' +
+      '<tr><th>Size of Winning Fish:</th><td colspan="5">' +
+          (model.winner ? escapeHtml(Number(model.winner.length).toFixed(2) + '"') : fwpValue('')) +
+      '</td></tr>' +
+    '</table>';
+
+  const filerTable =
+    '<table class="fwp-grid">' +
+      '<tr><th>Form Completed By:</th><td colspan="3">' + fwpValue(cfg.filerName) + '</td>' +
+          '<th>Date:</th><td>' +
+          escapeHtml(new Date().toLocaleDateString('en-US', { month:'numeric', day:'numeric', year:'numeric' })) +
+      '</td></tr>' +
+      '<tr><th>Mailing Address:</th><td colspan="5">' +
+          fwpValue((cfg.filerAddress || '').replace(/\s*\n\s*/g, ', ')) + '</td></tr>' +
+      '<tr><th>Email Address:</th><td colspan="2">' + fwpValue(cfg.filerEmail) + '</td>' +
+          '<th>Telephone:</th><td colspan="2">' + fwpValue(cfg.filerPhone) + '</td></tr>' +
+      '<tr><th>Contest Sponsor:</th><td colspan="5">' + fwpValue(cfg.sponsor) + '</td></tr>' +
+    '</table>';
+
+  const hoursBody = model.days.map(d=>
+    '<tr><td class="num">' + d.day + '</td>' +
+    '<td class="num">' + fwpValue(d.start) + '</td>' +
+    '<td class="num">' + fwpValue(d.stop) + '</td>' +
+    '<td class="num">' + (d.hours === null ? fwpValue('') : d.hours.toFixed(2)) + '</td>' +
+    '<td class="num">' + d.caught + '</td>' +
+    '<td class="num">' + (d.released === null ? fwpValue('') : d.released) + '</td></tr>'
+  ).join('');
+  const hoursTable =
+    '<h3 class="fwp-head">HOURS FISHED:</h3>' +
+    '<table class="fwp-table">' +
+      '<tr><th>Day</th><th>Start Time</th><th>Stop Time</th><th>Total Hours</th>' +
+      '<th># Fish Caught</th><th># Fish Released</th></tr>' +
+      hoursBody + fwpPad(model.days.length, FWP_HOURS_ROWS, 6) +
+    '</table>';
+
+  const minLen = reportValue(cfg.minLength).trim();
+  const speciesBody = model.species.map(s=>
+    '<tr><td>' + escapeHtml(s.species) + '</td>' +
+    '<td class="num">' + s.caught + '</td>' +
+    '<td class="num">' + (isScoringSpecies(s.species) && minLen ? escapeHtml(minLen + '"') : '&nbsp;') + '</td>' +
+    '<td class="num">' + s.released + '</td>' +
+    '<td class="num">' + s.died + '</td></tr>'
+  ).join('');
+  const speciesTable =
+    '<h3 class="fwp-head">NUMBER OF FISH CAUGHT: <span class="fwp-head-note">' +
+    '**Please attach a copy of your contest results if available.</span></h3>' +
+    '<table class="fwp-table">' +
+      '<tr><th>Species Type</th><th>Total Number Caught</th>' +
+      '<th>Minimum Length Required for Contest</th><th>Number Released</th><th>Number Died</th></tr>' +
+      speciesBody + fwpPad(model.species.length, FWP_SPECIES_ROWS, 5) +
+    '</table>';
+
+  const page1 =
+    '<div class="fwp-page fwp-break">' +
+      '<div class="fwp-region">Region: ' + fwpFill(cfg.region) + '</div>' +
+      '<h2 class="fwp-title">FISHING CONTEST REPORT</h2>' +
+      '<p class="fwp-return">Please return within <u>30 days</u> after the contest to:</p>' +
+      '<div class="fwp-address">Montana Fish, Wildlife &amp; Parks<br>' +
+        'Attn: Fishing Contest Reporting<br>Fisheries Division<br>' +
+        'P.O. Box 200701<br>Helena, MT 59620-0701</div>' +
+      headTable + filerTable + hoursTable + speciesTable +
+      '<div class="fwp-foot"><span>' + FWP_FOOTER + '</span><span>Page 1 of 2</span></div>' +
+    '</div>';
+
+  // --- page 2 ---
+  const notes =
+    '<h3 class="fwp-head">OTHER INFORMATION: (if required)</h3>' +
+    '<div class="fwp-box-area">' + fwpValue(cfg.otherInfo, 'nothing to report') + '</div>' +
+    '<h3 class="fwp-head">COMMENTS:</h3>' +
+    '<div class="fwp-box-area">' + fwpValue(cfg.comments, 'none') + '</div>';
+
+  const optional =
+    '<h3 class="fwp-head">OPTIONAL INFORMATION:</h3>' +
+    '<p class="fwp-sub">The following information is optional, but would be of interest ' +
+    'for management purposes.</p>' +
+    '<div class="fwp-line"><strong>Body of Water:</strong> ' +
+      '<span class="fwp-fill wide">' + fwpValue(model.waterbody) + '</span></div>' +
+    '<div class="fwp-line"><strong>Water Level:</strong> ' +
+      fwpTick(cfg.waterLevel, 'Up') + fwpTick(cfg.waterLevel, 'Down') + fwpTick(cfg.waterLevel, 'Normal') +
+    '</div>' +
+    '<div class="fwp-line"><strong>Air Temperature:</strong> ' + fwpFill(cfg.airTemp, '') + ' Degrees F' +
+      '<span class="fwp-gap"></span><strong>Water Temperature:</strong> ' +
+      fwpFill(cfg.waterTemp, '') + ' Degrees F</div>' +
+    '<div class="fwp-line"><strong>Water Clarity:</strong> ' +
+      fwpTick(cfg.clarity, 'Clear') + fwpTick(cfg.clarity, 'Semi-turbid') + fwpTick(cfg.clarity, 'Muddy') +
+    '</div>';
+
+  const sizes =
+    '<h3 class="fwp-head">SIZE DISTRIBUTION OF FISH CAUGHT:</h3>' +
+    '<p class="fwp-sub em">Please record all fish caught that were 8 inches or longer.</p>' +
+    sizeTableHtml(model.sizes.small, SIZE_SMALL_MIN, SIZE_SMALL_MAX, false, FWP_SIZE_SMALL_ROWS) +
+    '<p class="fwp-sub em">Please record all fish caught that were 12 inches or longer.</p>' +
+    sizeTableHtml(model.sizes.large, SIZE_LARGE_MIN, SIZE_LARGE_MAX, true, FWP_SIZE_LARGE_ROWS);
+
+  const page2 =
+    '<div class="fwp-page">' + notes + optional + sizes +
+      '<div class="fwp-foot"><span>' + FWP_FOOTER + '</span><span>Page 2 of 2</span></div>' +
+    '</div>';
+
+  el.innerHTML = page1 + page2;
+}
+
+// What the form has no box for, said on screen only. The sheet above is a copy
+// of a state form and stays one; this is where the app gets to explain itself.
+function renderReportNotes(model){
+  const el = document.getElementById('report-notes');
+  if(!el) return;
+  const out = [];
+  if(model.died > 0){
+    out.push('Released is left blank per day: the app records which species did not survive, ' +
+      'not which day it happened on. Split the ' + model.died + ' across the day rows yourself.');
+  }
+  const split = model.sizes.small.filter(r=> r.split).map(r=> r.species);
+  if(split.length){
+    out.push(split.join(', ') + ' turned up both under 12 inches and over 23, which no single ' +
+      'size table has columns for. Those fish are split across both tables — every one is ' +
+      'reported exactly once, but the species appears on two rows.');
+  }
+  if(model.sizes.under8 > 0){
+    out.push(model.sizes.under8 + ' fish under 8 inches ' + (model.sizes.under8 === 1 ? 'is' : 'are') +
+      ' in the species totals but on neither size table. The form only asks for 8 inches and up.');
+  }
+  out.push('Boxes marked ' + SHEET_BLANK + ' print empty, exactly as they would on the paper form. ' +
+    'Fill them in above if the state needs them.');
+  el.innerHTML = out.map(n=> '<p class="rnote">' + escapeHtml(n) + '</p>').join('');
+}
+
+// The same sheet as plain text. Printing needs a printer; this needs nothing,
+// and pastes straight into an email to the region office.
+function reportSheetText(model){
+  const el = document.getElementById('report-sheet');
+  const html = el ? el.innerHTML : '';
+  const lines = [];
+  html.split(/<\/(?:div|tr|p|h3)>/i).forEach(chunk=>{
+    const text = stripEntities(chunk.replace(/<[^>]*>/g, '\t'))
+      .replace(/\t+/g, '\t').replace(/^\t|\t$/g, '').trim();
+    if(text) lines.push(text);
+  });
+  const title = stripEntities((model.event && model.event.name) || 'Fishing contest report');
+  return title + '\n' + (model.dates || []).join(', ') + '\n\n' + lines.join('\n');
+}
+
+async function renderFwpReport(){
+  if(!document.getElementById('admin-tool-report')) return;
+  const anglers = await loadAnglers();
+  const catches = await loadCatches();
+  const cfg = reportSettings();
+  const model = buildReportModel(anglers, catches, cfg);
+
+  if(!reportInputsFilled){ fillReportInputs(cfg, model.counts.anglers); reportInputsFilled = true; }
+
+  const due = document.getElementById('report-due');
+  if(due) due.innerHTML = '<div class="rdue' + (model.late ? ' late' : '') + '">' + escapeHtml(model.due) + '</div>';
+
+  const warn = document.getElementById('report-warnings');
+  if(warn){
+    warn.innerHTML = model.warnings
+      .map(w=> '<div class="rwarn">' + escapeHtml(w) + '</div>').join('');
+  }
+
+  renderReportHours(contestDayHours(anglers, model.dates), cfg);
+  renderReportDied(model.species, cfg);
+  renderReportResidency(model.residency);
+  renderReportSheet(model);
+  renderReportNotes(model);
+  // The sheet was just replaced, so its height and its page count are both
+  // new - neither the scale nor the spill warning survives a repaint.
+  scaleReportPages();
+  renderReportSpill();
+
+  setText('report-tool-summary', model.warnings.length
+    ? model.warnings.length + ' thing' + (model.warnings.length === 1 ? '' : 's') + ' to settle'
+    : model.due);
+}
+
+// One delegated listener for the whole card: the day and species fields are
+// rebuilt from time to time, and a listener bound to each of them would be lost
+// the moment they were.
+bindEl('admin-tool-report', 'change', async (e)=>{
+  const el = e.target;
+  if(!el || !el.dataset) return;
+  const cfg = reportSettings();
+
+  if(el.dataset.fwp){
+    await saveReportSettings({ [el.dataset.fwp]: el.value.trim() });
+  } else if(el.dataset.fwpHour){
+    const [dayKey, edge] = el.dataset.fwpHour.split('.');
+    const hours = Object.assign({}, cfg.hours || {});
+    hours[dayKey] = Object.assign({}, hours[dayKey] || {}, { [edge]: el.value.trim() });
+    await saveReportSettings({ hours });
+  } else if(el.dataset.fwpDied){
+    const died = Object.assign({}, cfg.died || {});
+    const n = Math.max(0, Math.floor(Number(el.value) || 0));
+    if(n === 0) delete died[el.dataset.fwpDied];
+    else died[el.dataset.fwpDied] = n;
+    await saveReportSettings({ died });
+  } else {
+    return;
+  }
+  // The inputs are already holding what was just typed, so only the derived
+  // half is repainted - see the note above renderFwpReport's helpers.
+  await renderFwpReport();
+});
+
+bindEl('admin-tool-report', 'click', async (e)=>{
+  const btn = e.target && e.target.closest ? e.target.closest('[data-fwp-res]') : null;
+  if(!btn) return;
+  const anglers = await loadAnglers();
+  const idx = anglers.findIndex(a=> a.id === btn.dataset.angler);
+  if(idx === -1) return;
+  anglers[idx].resident = btn.dataset.fwpRes === 'yes';
+  if(!await saveAnglers(anglers)){
+    setText('report-copied', 'That could not be saved. Check your signal and try again.');
+    document.getElementById('report-copied').style.display = 'block';
+    return;
+  }
+  await renderFwpReport();
+});
+
+// ---- page view ----
+// "Will this fit on the page" cannot be answered by the compact screen layout,
+// and answering it through the print dialog means opening a modal every time a
+// box changes. So the sheet can be laid out on real US Letter pages instead,
+// at the size it prints, and scaled down to whatever screen is reading it.
+//
+// Scaled, never reflowed. A preview that reflowed to the screen would break its
+// pages somewhere the printer never will, which is worse than no preview.
+
+// US Letter at the 96dpi CSS inch. The stylesheet says 8.5in/11in; these are
+// the same numbers in the units getBoundingClientRect answers in.
+const PAGE_WIDTH_PX = 816;
+const PAGE_HEIGHT_PX = 1056;
+
+let reportPageView = false;
+
+function scaleReportPages(){
+  const frame = document.getElementById('report-frame');
+  const sheet = document.getElementById('report-sheet');
+  if(!frame || !sheet) return;
+  if(!reportPageView){
+    sheet.style.transform = '';
+    frame.style.height = '';
+    return;
+  }
+  // Never scaled UP: a 30-inch monitor showing the form larger than life would
+  // be a worse guide to the paper than one showing it smaller.
+  const avail = frame.clientWidth || PAGE_WIDTH_PX;
+  const scale = Math.min(1, avail / PAGE_WIDTH_PX);
+  sheet.style.transform = 'scale(' + scale + ')';
+  // A transform does not affect layout, so the frame keeps the sheet's full
+  // unscaled height and leaves a screenful of empty card underneath it.
+  // Number() guarded: a height of NaN silently collapses the frame, and the
+  // sheet then overlaps whatever the card puts under it.
+  const tall = Number(sheet.scrollHeight) || 0;
+  frame.style.height = tall > 0 ? Math.ceil(tall * scale) + 'px' : '';
+}
+
+// Which pages hold more than a sheet of paper will take. A printer does not
+// clip the overflow, it carries it onto another sheet - so a two-page form
+// quietly comes out of the printer as three, with the "Page 1 of 2" footer
+// stranded in the middle. That is what this is looking for.
+function reportSpillPages(){
+  const sheet = document.getElementById('report-sheet');
+  if(!sheet || !sheet.querySelectorAll) return [];
+  const pages = sheet.querySelectorAll('.fwp-page');
+  const out = [];
+  for(let i = 0; i < pages.length; i++){
+    const page = pages[i];
+    if(page.classList) page.classList.remove('overflowing');
+    // Only meaningful in the page view: outside it the page has no fixed
+    // height to overflow, and every measurement would read as a fit.
+    if(!reportPageView) continue;
+    // 2px of slack for the sub-pixel rounding a scale transform leaves behind.
+    if(page.scrollHeight > PAGE_HEIGHT_PX + 2){
+      if(page.classList) page.classList.add('overflowing');
+      out.push(i + 1);
+    }
+  }
+  return out;
+}
+
+// Said in sheets of paper rather than pixels, because that is the decision:
+// how many pages am I about to put in an envelope.
+function spillText(pages){
+  if(pages.length === 0) return '';
+  const which = pages.length === 1
+    ? 'Page ' + pages[0] + ' holds'
+    : 'Pages ' + pages.slice(0, -1).join(', ') + ' and ' + pages[pages.length-1] + ' hold';
+  return which + ' more than one sheet of paper will take. Printing this gives you ' +
+    (2 + pages.length) + ' sheets rather than 2, and the page footers end up on the wrong ones. ' +
+    'The dashed line on each page marks where the paper actually ends.';
+}
+
+function renderReportSpill(){
+  const el = document.getElementById('report-spill');
+  if(!el) return;
+  const pages = reportSpillPages();
+  if(pages.length === 0){ el.innerHTML = ''; return; }
+  el.innerHTML = '<div class="rspill">' + escapeHtml(spillText(pages)) + '</div>';
+}
+
+function setReportPageView(on){
+  reportPageView = !!on;
+  const sheet = document.getElementById('report-sheet');
+  if(sheet && sheet.classList) sheet.classList.toggle('pageview', reportPageView);
+  setText('report-pageview', reportPageView ? 'Fit to screen' : 'Page view');
+  scaleReportPages();
+  renderReportSpill();
+}
+
+bindEl('report-pageview', 'click', ()=> setReportPageView(!reportPageView));
+
+// The scale is a function of how much room the card has, so it has to be
+// recomputed when that changes - a rotated phone otherwise leaves the sheet
+// either cropped or floating in a third of its frame.
+window.addEventListener('resize', ()=>{
+  if(!reportPageView) return;
+  scaleReportPages();
+  renderReportSpill();
+});
+
+bindEl('report-print', 'click', ()=>{ window.print(); });
+
+bindEl('report-copy', 'click', async ()=>{
+  const note = document.getElementById('report-copied');
+  const anglers = await loadAnglers();
+  const catches = await loadCatches();
+  const text = reportSheetText(buildReportModel(anglers, catches, reportSettings()));
+  const say = (msg)=>{ if(note){ note.textContent = msg; note.style.display = 'block'; } };
+  try{
+    await navigator.clipboard.writeText(text);
+    say('Copied. Paste it into an email or a document.');
+  }catch(err){
+    console.error(err);
+    say('This browser would not let the app reach the clipboard. Print the sheet instead, or select it by hand.');
+  }
+});
+
+// ---- splitting the pool ----
+// 50/30/20, worked in WHOLE CENTS.
+//
+// Doing it in floating point and rounding each share on its own does not add
+// up: a $300.05 pool gives 150.025 / 90.015 / 60.01, and rounding those
+// separately hands out $300.06 - a cent more than the pool holds. The other
+// direction leaves a cent stranded. Neither is a lot of money and both are
+// wrong on a sheet somebody is reading out at a prizegiving.
+//
+// So: floor every share to a cent, then hand the leftover cents out one at a
+// time, largest remainder first. That is the standard apportionment method and
+// it makes the parts add up to the whole, exactly, every time.
+const PAYOUT_SHARES = [
+  { place: '1st', share: 0.50 },
+  { place: '2nd', share: 0.30 },
+  { place: '3rd', share: 0.20 }
+];
+function splitFor(eligible, pool){
+  // Only pay out places the field can actually fill (a 1-entry division has no
+  // 2nd or 3rd place to award).
+  const paid = Math.min(Math.max(0, Number(eligible) || 0), PAYOUT_SHARES.length);
+  if(paid === 0) return [];
+  const cents = Math.round((Number(pool) || 0) * 100);
+  if(cents <= 0) return PAYOUT_SHARES.slice(0, paid).map(x=> ({ place: x.place, amount: 0 }));
+  const shares = PAYOUT_SHARES.slice(0, paid);
+  // An unfilled place is NOT redistributed - it stays unawarded and the screen
+  // says so - so the places being paid share only their own portion, never the
+  // whole pool.
+  const toGive = Math.round(cents * shares.reduce((s, x)=> s + x.share, 0));
+  const exact = shares.map(x=> cents * x.share);
+  const out = exact.map(v=> Math.floor(v));
+  let left = toGive - out.reduce((s, v)=> s + v, 0);
+  const byRemainder = exact
+    .map((v, i)=> ({ rem: v - Math.floor(v), i }))
+    .sort((a, b)=> (b.rem - a.rem) || (a.i - b.i));
+  for(let k = 0; k < byRemainder.length && left > 0; k++, left--) out[byRemainder[k].i]++;
+  return shares.map((x, i)=> ({ place: x.place, amount: out[i] / 100 }));
+}
+
+async function renderPayoutCalculator(){
+  const anglers = await loadAnglers();
+  const donations = await loadDonations();
+  const counts = poolCounts(anglers);
+  const confirmed = anglers.filter(feePaid);
+  const solo = confirmed.filter(a=>a.division==='solo');
+  // Team registrations now carry a real record for each partner (role: 'captain'/'partner'),
+  // so the $50 team entry fee is charged once per team, not once per person.
+  const teamEntries = confirmed.filter(a=>a.division==='team' && a.role!=='partner');
+  // Big Fish is $10/angler; both team members have their own record, so this
+  // already counts each real person once with no special-casing needed.
+  const bigfishAnglerCount = counts.bigfish;
+
+  function donatedTo(target){
+    return donations.filter(d=>d.target===target).reduce((s,d)=>s+d.amount, 0);
+  }
+  const soloDonated = donatedTo('solo');
+  const teamDonated = donatedTo('team');
+  const bigfishDonated = donatedTo('bigfish');
+  const generalFund = donatedTo('general');
+
+  const soloPool = solo.length * FEE_SOLO + soloDonated;
+  const teamPool = teamEntries.length * FEE_TEAM + teamDonated;
+  const bigfishPool = bigfishAnglerCount * FEE_BIGFISH + bigfishDonated;
+
+  // `entries` is everyone who paid in (the pool); `eligible` excludes
+  // disqualified anglers, who forfeit their place but not their entry fee.
+  function divisionHtml(name, entries, pool, donated, eligible){
+    const splits = splitFor(eligible, pool);
+    const rows = splits.length===0
+      ? '<p class="hint" style="margin:6px 0 0;">No entries yet.</p>'
+      : splits.map(s=>'<div class="lbrow"><div class="who"><div class="name">'+s.place+'</div></div><div class="len">$'+s.amount.toFixed(2)+'</div></div>').join('');
+    const donatedNote = donated>0 ? ' &middot; +$'+donated.toFixed(2)+' donated' : '';
+    const awarded = splits.reduce((s,x)=>s+x.amount, 0);
+    const unawarded = pool - awarded;
+    const shortfallNote = (eligible>0 && eligible<3 && unawarded>0.004)
+      ? '<p class="hint" style="margin:6px 0 0;">$'+unawarded.toFixed(2)+' of this pool is unawarded &mdash; the field is too small to fill all placements.</p>'
+      : '';
+    const dqNote = (entries>eligible)
+      ? '<p class="hint" style="margin:6px 0 0;">'+(entries-eligible)+' disqualified &mdash; entry fee stays in the pool, place forfeited.</p>'
+      : '';
+    return '<div style="margin-bottom:14px;"><div style="font-weight:600;font-size:13px;margin-bottom:4px;">'+name+' &middot; '+entries+' '+(entries===1?'entry':'entries')+' &middot; $'+pool.toFixed(2)+' pool'+donatedNote+'</div>'+rows+shortfallNote+dqNote+'</div>';
+  }
+
+  // A team entry keeps its placement while EITHER member is still eligible.
+  // standingsFor() only drops the disqualified angler's own catches, so the
+  // team can still rank; counting captains alone dropped teams that can place.
+  const eligibleTeamEntries = teamEntries.filter(entry=>{
+    if(!entry.disqualified) return true;
+    if(!entry.teamId) return false;
+    return anglers.some(a=>a.teamId===entry.teamId && a.id!==entry.id && !a.disqualified);
+  }).length;
+
+  const totalRaised = soloPool+teamPool+bigfishPool+generalFund;
+  const awardsBudget = await loadAwardsBudget();
+  const netAfterAwards = totalRaised - awardsBudget;
+
+  document.getElementById('payout-tool-summary').textContent = '$'+totalRaised.toFixed(2)+' across current pools';
+
+  const budgetInput = document.getElementById('awards-budget');
+  if(budgetInput && document.activeElement !== budgetInput){
+    budgetInput.value = awardsBudget ? awardsBudget.toFixed(2) : '';
+  }
+  const budgetSummaryEl = document.getElementById('awards-budget-summary');
+  if(budgetSummaryEl){
+    budgetSummaryEl.innerHTML =
+      '<div class="lbrow"><div class="who"><div class="name">Total raised</div></div><div class="len">$'+totalRaised.toFixed(2)+'</div></div>'+
+      '<div class="lbrow"><div class="who"><div class="name">Awards budget</div></div><div class="len">&minus;$'+awardsBudget.toFixed(2)+'</div></div>'+
+      '<div class="lbrow"><div class="who"><div class="name" style="font-weight:600;">Net cash for payouts</div></div><div class="len">$'+netAfterAwards.toFixed(2)+'</div></div>';
+  }
+  const generalHtml = generalFund>0
+    ? '<div class="lbrow"><div class="who"><div class="name">General tournament fund</div><div class="sub">Not split &mdash; held for director discretion</div></div><div class="len">$'+generalFund.toFixed(2)+'</div></div><div class="divider"></div>'
+    : '';
+  const payoutHtml =
+    generalHtml +
+    divisionHtml('Solo division', solo.length, soloPool, soloDonated, solo.filter(a=>!a.disqualified).length) +
+    divisionHtml('Team division', teamEntries.length, teamPool, teamDonated, eligibleTeamEntries) +
+    '<div class="divider"></div>' +
+    '<div class="lbrow"><div class="who"><div class="name">Big Fish pot</div><div class="sub">'+bigfishAnglerCount+' angler'+(bigfishAnglerCount===1?'':'s')+' opted in, winner take all'+(bigfishDonated>0?' &middot; +$'+bigfishDonated.toFixed(2)+' donated':'')+'</div></div><div class="len">$'+bigfishPool.toFixed(2)+'</div></div>';
+  document.getElementById('payout-body').innerHTML = payoutHtml;
+  document.getElementById('public-payout-body').innerHTML = payoutHtml;
+
+  // Deliberately NOT part of payoutHtml: that string is also written to the
+  // public payout screen, and who has paid is between the angler and the
+  // director.
+  renderOutstandingFees(anglers, await loadCatches());
+
+  renderDonationList(donations);
+}
+
+// Director-only. Two things: how much the roster implies is still to come, and
+// the one case that has to be settled before any money moves - somebody in the
+// money who has not paid in.
+function renderOutstandingFees(anglers, catches){
+  const el = document.getElementById('payout-outstanding');
+  if(!el) return;
+  const owed = outstandingFees(anglers);
+  if(owed.entries === 0){ el.innerHTML = ''; return; }
+
+  const bits = [];
+  if(owed.solo) bits.push(owed.solo + ' solo');
+  if(owed.teams) bits.push(owed.teams + ' team');
+  if(owed.bigfish) bits.push(owed.bigfish + ' Big Fish');
+
+  const placing = unpaidInTheMoney(anglers, catches);
+  const alert = placing.length
+    ? '<div class="fp-item"><span class="fp-dot level-flag"></span><span><strong>' +
+        placing.map(x=> escapeHtml(x.angler.name) + ' (' + escapeHtml(x.why) + ')').join(', ') +
+        '</strong> ' + (placing.length === 1 ? 'is' : 'are') + ' in the money with no fee matched. ' +
+        'Settle that before you pay anyone out.</span></div>'
+    : '';
+
+  el.innerHTML =
+    '<div class="fp ' + (placing.length ? 'level-flag' : 'level-review') + '" style="margin-top:12px;">' +
+      '<div class="fp-head"><span class="fp-title">Fees outstanding &middot; $' + owed.total.toFixed(2) + '</span></div>' +
+      alert +
+      '<div class="fp-item"><span class="fp-dot level-review"></span><span>' +
+        bits.join(', ') + ' &mdash; not counted in the pools above, so those figures are ' +
+        'what has actually arrived. Tick them off under Contestants as the money lands.' +
+      '</span></div>' +
+    '</div>';
+}
+
+const DONATION_TARGET_LABEL = { general:'General fund', solo:'Solo pool', team:'Team pool', bigfish:'Big Fish pot' };
+let editingDonationId = null;
+
+function renderDonationList(donations){
+  const el = document.getElementById('don-list');
+  if(!el) return;
+  if(donations.length===0){
+    el.innerHTML = '<p class="hint" style="margin:0;">No donations logged yet.</p>';
+    return;
+  }
+  el.innerHTML = donations.slice().reverse().map(d=>{
+    if(d.id === editingDonationId) return donationEditRowHtml(d);
+    const when = new Date(d.timestamp).toLocaleDateString([], {month:'short', day:'numeric'});
+    const label = DONATION_TARGET_LABEL[d.target] || d.target;
+    const note = d.note ? ' &middot; '+escapeHtml(d.note) : '';
+    return '<div class="lbrow"><div class="who"><div class="name">'+label+note+'</div><div class="sub">'+when+'</div></div><div class="len">$'+d.amount.toFixed(2)+'</div>'+
+      '<button class="small" data-act="edit-donation" data-id="'+d.id+'" style="margin-left:8px;">Edit</button>'+
+      '<button class="small danger" data-act="rm-donation" data-id="'+d.id+'" style="margin-left:6px;">Remove</button></div>';
+  }).join('');
+
+  el.querySelectorAll('[data-act="edit-donation"]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      editingDonationId = btn.dataset.id;
+      renderPayoutCalculator();
+    });
+  });
+  el.querySelectorAll('[data-act="rm-donation"]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(!window.confirm('Remove this donation? This cannot be undone.')) return;
+      const list = await loadDonations();
+      const idx = list.findIndex(d=>d.id===btn.dataset.id);
+      if(idx===-1) return;
+      list.splice(idx,1);
+      await saveDonations(list);
+      if(editingDonationId===btn.dataset.id) editingDonationId = null;
+      renderPayoutCalculator();
+    });
+  });
+  el.querySelectorAll('[data-act="save-donation"]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const row = btn.closest('.lbrow');
+      const target = row.querySelector('[data-field="target"]').value;
+      const amount = parseFloat(row.querySelector('[data-field="amount"]').value);
+      const note = row.querySelector('[data-field="note"]').value.trim();
+      if(!amount || amount<=0){ window.alert('Enter a donation amount greater than $0.'); return; }
+      const list = await loadDonations();
+      const idx = list.findIndex(d=>d.id===btn.dataset.id);
+      if(idx===-1) return;
+      list[idx] = { ...list[idx], target, amount, note };
+      await saveDonations(list);
+      editingDonationId = null;
+      renderPayoutCalculator();
+    });
+  });
+  el.querySelectorAll('[data-act="cancel-edit-donation"]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      editingDonationId = null;
+      renderPayoutCalculator();
+    });
+  });
+}
+
+function donationEditRowHtml(d){
+  const opts = Object.keys(DONATION_TARGET_LABEL).map(key=>
+    '<option value="'+key+'"'+(key===d.target?' selected':'')+'>'+DONATION_TARGET_LABEL[key]+'</option>'
+  ).join('');
+  return '<div class="lbrow" style="flex-wrap:wrap;align-items:flex-start;">'+
+    '<div class="field" style="flex:1 1 100%;margin-bottom:8px;"><select data-field="target" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:4px;background:var(--paper);color:var(--ink);font-family:inherit;">'+opts+'</select></div>'+
+    '<div class="field" style="flex:1;min-width:90px;margin-bottom:8px;"><input type="number" step="0.01" min="0" data-field="amount" value="'+d.amount+'" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:4px;background:var(--paper);color:var(--ink);font-family:inherit;"></div>'+
+    '<div class="field" style="flex:2;min-width:120px;margin-bottom:8px;"><input type="text" data-field="note" value="'+escapeHtml(d.note||'')+'" placeholder="Note" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:4px;background:var(--paper);color:var(--ink);font-family:inherit;"></div>'+
+    '<div style="flex:1 1 100%;display:flex;gap:6px;">'+
+      '<button class="small" data-act="save-donation" data-id="'+d.id+'">Save</button>'+
+      '<button class="small" data-act="cancel-edit-donation" data-id="'+d.id+'">Cancel</button>'+
+    '</div>'+
+  '</div>';
+}
+
+bindEl('awards-budget','change', async (e)=>{
+  const amount = parseFloat(e.target.value);
+  await saveAwardsBudget(amount>0 ? amount : 0);
+  renderPayoutCalculator();
+});
+
+bindEl('don-add','click', async ()=>{
+  const errEl = document.getElementById('don-err');
+  const target = document.getElementById('don-target').value;
+  const amount = parseFloat(document.getElementById('don-amount').value);
+  const note = document.getElementById('don-note').value.trim();
+
+  if(!amount || amount<=0){ errEl.textContent='Enter a donation amount greater than $0.'; errEl.style.display='block'; return; }
+  errEl.style.display='none';
+
+  const donations = await loadDonations();
+  donations.push({ id: uid(), target, amount, note, timestamp: Date.now() });
+  await saveDonations(donations);
+
+  document.getElementById('don-amount').value='';
+  document.getElementById('don-note').value='';
+  renderPayoutCalculator();
+});
+
+// ---- event switcher ----
+// Counts read the WHOLE cache rather than going through cachedRows(), because
+// the point of this panel is to show what the other events hold too.
+function eventRowCounts(id){
+  const count = (name)=> allRows(name).filter(r=> rowEventId(r) === id).length;
+  return { anglers: count('anglers'), catches: count('catches'), donations: count('donations') };
+}
+function eventLabel(evt){ return evt.name + ' · ' + eventDateRangeText(evt); }
+
+function renderEventAdmin(){
+  const activeId = activeEventId();
+  const sel = document.getElementById('event-select');
+  // Never yank a select out from under the director mid-choice.
+  if(sel && document.activeElement !== sel){
+    sel.innerHTML = visibleEvents().map(e=>
+      '<option value="'+escapeHtml(e.id)+'"'+(e.id===activeId?' selected':'')+'>'+
+      escapeHtml(eventLabel(e))+(e.id===activeId?' — live':'')+'</option>').join('');
+  }
+
+  setText('event-tool-summary', eventLabel(activeEvent()));
+
+  const list = document.getElementById('event-list');
+  if(list){
+    // Archived events are listed here even though they are out of the switcher,
+    // because this is where you go to bring one back.
+    list.innerHTML = allEvents().map(e=>{
+      const c = eventRowCounts(e.id);
+      const isLive = e.id === activeId;
+      const total = c.anglers + c.catches + c.donations;
+      const tags = [];
+      if(isLive) tags.push('<span class="badge" style="background:#DDE6D5;color:#3D6A50;">Live</span>');
+      if(e.archived) tags.push('<span class="badge" style="background:#E4E1D8;color:#6B6963;">Archived</span>');
+      if(!e.builtIn) tags.push('<span class="badge">Added here</span>');
+      const sub = c.anglers+' angler'+(c.anglers===1?'':'s')+' · '+
+                  c.catches+' catch'+(c.catches===1?'':'es')+' · '+
+                  c.donations+' donation'+(c.donations===1?'':'s');
+
+      // What you may do to it, and why not when you may not. The live event is
+      // frozen against archiving and deleting - switch away first. A built-in
+      // cannot be deleted at all: it lives in the code and would come back.
+      const acts = ['<button class="small" data-ev-act="edit" data-ev-id="'+escapeHtml(e.id)+'">Edit</button>'];
+      if(!isLive){
+        acts.push(e.archived
+          ? '<button class="small" data-ev-act="restore" data-ev-id="'+escapeHtml(e.id)+'">Restore</button>'
+          : '<button class="small" data-ev-act="archive" data-ev-id="'+escapeHtml(e.id)+'">Archive</button>');
+      }
+      // Clearing keeps the event and empties it - the thing you want between
+      // two runs at a practice event. Offered on the live one too, because a
+      // stress test IS the live event while it is being stressed; the typed
+      // confirmation is what stops it being a mis-tap.
+      if(total > 0){
+        acts.push('<button class="small" data-ev-act="clear" data-ev-id="'+escapeHtml(e.id)+'">Clear data</button>');
+      }
+      // A built-in cannot be deleted at all: it lives in the code and would
+      // come back on the next load. Anything added here can go, records and
+      // all - otherwise a practice event is permanent the moment somebody
+      // registers for it.
+      if(!e.builtIn && !isLive){
+        acts.push('<button class="small" data-ev-act="delete" data-ev-id="'+escapeHtml(e.id)+'">Delete</button>');
+      }
+      const why = isLive
+        ? '<div class="sub">Switch to another event before archiving or deleting this one.</div>'
+        : (e.builtIn && !e.archived
+            ? '<div class="sub">Shipped with the app — can be archived and cleared, not deleted.</div>'
+            : '');
+
+      return '<div class="gps-row"><div class="gps-row-top">'+
+             '<span class="gps-row-name">'+escapeHtml(eventLabel(e))+'</span>'+
+             '<span>'+tags.join(' ')+'</span></div>'+
+             '<div class="gps-row-meta">'+escapeHtml(sub)+'</div>'+
+             why+
+             '<div class="actions">'+acts.join('')+'</div></div>';
+    }).join('');
+  }
+}
+
+bindEl('event-apply','click', async ()=>{
+  const errEl = document.getElementById('event-err');
+  errEl.style.display = 'none';
+  const id = document.getElementById('event-select').value;
+  const evt = eventById(id);
+  if(!evt){
+    errEl.textContent = 'That event is not one this build knows about.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if(id === activeEventId()){
+    errEl.textContent = 'That event is already live.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if(!confirm('Make "'+eventLabel(evt)+'" the live event?\n\n'+
+              'Every device switches to it, and the leaderboard, Big Fish pot and payouts '+
+              'will show that event only. Nothing already logged is changed or deleted.')) return;
+
+  const ok = await setActiveEvent(id);
+  if(!ok){
+    errEl.textContent = 'Could not save the change on this device. Check your storage and try again.';
+    errEl.style.display = 'block';
+    return;
+  }
+  // The report form is per event and its fields are only filled once, so it has
+  // to be told to reload them - otherwise the new event opens holding the old
+  // one's water temperature.
+  resetReportForm();
+  // The whole app is scoped to this, so repaint everything rather than just
+  // this card - the roster, standings and payouts are all different now.
+  refreshActiveScreen();
+});
+
+// ---- target species (director) ----
+// The species tournaments are actually run for, grouped so the list stays
+// scannable on a phone. `inches` is a PLAUSIBILITY CEILING, not a record: it
+// sits comfortably above any real fish so an obvious mis-entry (a 300" walleye,
+// a length typed into the wrong box) gets flagged for the director. Anything
+// not here is typed in by hand, so the list never has to be complete.
+const SPECIES_PRESETS = [
+  { group:'Bass', items:[
+    { name:'Largemouth Bass', inches:32 },
+    { name:'Smallmouth Bass', inches:30 },
+    { name:'Spotted Bass',    inches:28 },
+    { name:'Striped Bass',    inches:60 },
+    { name:'White Bass',      inches:24 }
+  ]},
+  { group:'Walleye & pike', items:[
+    { name:'Walleye',       inches:36 },
+    { name:'Sauger',        inches:32 },
+    { name:'Northern Pike', inches:56 },
+    { name:'Muskellunge',   inches:66 }
+  ]},
+  { group:'Panfish', items:[
+    { name:'Yellow Perch',  inches:22 },
+    { name:'Black Crappie', inches:22 },
+    { name:'White Crappie', inches:22 },
+    { name:'Bluegill',      inches:18 }
+  ]},
+  { group:'Catfish', items:[
+    { name:'Channel Catfish',  inches:56 },
+    { name:'Blue Catfish',     inches:66 },
+    { name:'Flathead Catfish', inches:62 }
+  ]},
+  { group:'Trout & salmon', items:[
+    { name:'Rainbow Trout', inches:48 },
+    { name:'Brown Trout',   inches:48 },
+    { name:'Brook Trout',   inches:34 },
+    { name:'Lake Trout',    inches:56 },
+    { name:'Chinook Salmon',inches:60 }
+  ]},
+  { group:'Inshore saltwater', items:[
+    { name:'Redfish',         inches:60 },
+    { name:'Speckled Trout',  inches:40 },
+    { name:'Flounder',        inches:40 },
+    { name:'Snook',           inches:56 },
+    { name:'Sheepshead',      inches:30 }
+  ]}
+];
+const SPECIES_CUSTOM = '__custom__';
+
+function speciesPreset(name){
+  for(const g of SPECIES_PRESETS){
+    for(const it of g.items){ if(it.name === name) return it; }
+  }
+  return null;
+}
+
+// What the director has chosen right now, reading the dropdown and, when it is
+// set to Other, the free-text box next to it.
+function chosenSpeciesName(){
+  const sel = document.getElementById('species-select');
+  if(!sel) return '';
+  if(sel.value === SPECIES_CUSTOM){
+    const el = document.getElementById('species-name');
+    return el ? el.value.trim() : '';
+  }
+  return sel.value;
+}
+
+// The list this event scores, each with its ceiling and a way to take it off.
+// The FIRST one is marked primary: it is the default selection on the submit
+// screen and the one the camera guide is drawn for, and saying so beats leaving
+// the director to wonder why order matters.
+function speciesRowsHtml(list){
+  if(list.length === 0){
+    return '<p class="empty">No scoring species set. Nothing an angler submits ' +
+      'can be ranked, placed or paid until there is at least one.</p>';
+  }
+  return list.map((x, i)=>
+    '<div class="sp-row' + (i === 0 ? ' primary' : '') + '">' +
+      '<span class="sp-name">' + escapeHtml(x.name) + '</span>' +
+      '<span class="sp-ceiling">' + (x.recordInches > 0
+          ? escapeHtml(String(x.recordInches)) + '&quot; ceiling' : 'no ceiling') + '</span>' +
+      '<button class="small danger" data-sp-remove="' + escapeHtml(x.name) + '">Remove</button>' +
+    '</div>').join('');
+}
+
+function renderSpeciesAdmin(){
+  const s = eventSettings();
+  const sel = document.getElementById('species-select');
+  const nameEl = document.getElementById('species-name');
+  const recEl = document.getElementById('species-record');
+  const listEl = document.getElementById('species-list');
+  if(listEl){
+    listEl.innerHTML = speciesRowsHtml(speciesList(s));
+    listEl.querySelectorAll('[data-sp-remove]').forEach(btn=>{
+      btn.addEventListener('click', ()=> removeScoringSpecies(btn.dataset.spRemove));
+    });
+  }
+  if(!sel) return;
+
+  // The list never changes, so build it once. Rebuilding on every store tick
+  // would reset the director's choice mid-selection.
+  if(!sel.dataset.built){
+    sel.dataset.built = '1';
+    sel.innerHTML = SPECIES_PRESETS.map(g=>
+      '<optgroup label="'+escapeHtml(g.group)+'">'+
+      g.items.map(it=>'<option value="'+escapeHtml(it.name)+'">'+escapeHtml(it.name)+'</option>').join('')+
+      '</optgroup>').join('') +
+      '<option value="'+SPECIES_CUSTOM+'">Other — type it in</option>';
+  }
+
+  // This picker is now an ADD control rather than a mirror of what is saved, so
+  // it is left exactly where the director put it. Repainting it from the event
+  // would wipe a half-finished entry every time the store ticked.
+  const custom = sel.value === SPECIES_CUSTOM;
+  document.getElementById('species-custom-field').style.display = custom ? 'block' : 'none';
+}
+
+// Taking a species off the list does not delete anything: the catches keep the
+// name they were filed under, and simply stop counting. That is worth saying out
+// loud with a number attached, because it silently changes the standings.
+async function removeScoringSpecies(name){
+  const errEl = document.getElementById('species-err');
+  errEl.style.display = 'none';
+  const list = speciesList();
+  const next = list.filter(x=> x.name !== name);
+  if(next.length === list.length) return;
+  if(next.length === 0){
+    errEl.textContent = 'An event has to score something. Add another species first, ' +
+      'then remove this one.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const affected = (await loadCatches()).filter(c=> c.species === name).length;
+  if(affected && !window.confirm(
+      affected + ' catch' + (affected === 1 ? ' is' : 'es are') + ' logged as "' + name + '".\n\n' +
+      'Removing it means ' + (affected === 1 ? 'it stops' : 'they stop') + ' counting toward ' +
+      'standings, placements and the Big Fish pot. ' +
+      (affected === 1 ? 'It stays' : 'They stay') + ' on record either way.\n\nContinue?')) return;
+  if(!await saveSpeciesList(next)){
+    errEl.textContent = 'Could not save that on this device. Check your storage and try again.';
+    errEl.style.display = 'block';
+    return;
+  }
+  refreshActiveScreen();
+}
+
+// targetSpecies and recordInches are written alongside the list, so an older
+// copy of the app - a phone that has not reloaded since - still reads the
+// primary species rather than finding nothing at all.
+async function saveSpeciesList(list){
+  return await saveEventSettings({
+    speciesList: list,
+    targetSpecies: list.length ? list[0].name : '',
+    recordInches: list.length ? list[0].recordInches : 0
+  });
+}
+
+bindEl('species-select','change', ()=>{
+  const sel = document.getElementById('species-select');
+  const custom = sel.value === SPECIES_CUSTOM;
+  document.getElementById('species-custom-field').style.display = custom ? 'block' : 'none';
+  if(custom){
+    document.getElementById('species-name').focus();
+    return;
+  }
+  // Fill in the ceiling for the species just picked. It stays editable - this
+  // is the number a director is least likely to know off the top of their head.
+  const preset = speciesPreset(sel.value);
+  if(preset) document.getElementById('species-record').value = String(preset.inches);
+});
+
+bindEl('species-save','click', async ()=>{
+  const errEl = document.getElementById('species-err');
+  errEl.style.display = 'none';
+  const name = chosenSpeciesName();
+  const rec = parseFloat(document.getElementById('species-record').value);
+  if(!name){
+    errEl.textContent = 'Pick a species, or choose "Other" and type one in — this is what anglers see when they submit.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if(name.toLowerCase() === OTHER_SPECIES.toLowerCase()){
+    errEl.textContent = '"Other" is the not-scored bucket, so it cannot also be a scoring species.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const list = speciesList();
+  const ceiling = (isFinite(rec) && rec > 0) ? rec : 0;
+  // Case-insensitive, because "Northern pike" and "Northern Pike" would become
+  // two species sharing one leaderboard and nobody would spot why the count was
+  // wrong. An exact re-add is treated as editing the ceiling.
+  const at = list.findIndex(x=> x.name.toLowerCase() === name.toLowerCase());
+  if(at !== -1){
+    if(list[at].recordInches === ceiling){
+      errEl.textContent = '“' + list[at].name + '” is already on this event, with the ' +
+        'same ceiling. Change the ceiling to update it.';
+      errEl.style.display = 'block';
+      return;
+    }
+    // Keep the stored spelling rather than the one just typed: catches already
+    // logged carry the old one, and changing it here would drop them.
+    list[at] = { name: list[at].name, recordInches: ceiling };
+  } else {
+    list.push({ name: name, recordInches: ceiling });
+  }
+  if(!await saveSpeciesList(list)){
+    errEl.textContent = 'Could not save that on this device. Check your storage and try again.';
+    errEl.style.display = 'block';
+    return;
+  }
+  // Clear the ADD form, or the next species is entered on top of the last one.
+  const nameEl = document.getElementById('species-name');
+  if(nameEl) nameEl.value = '';
+  const recBox = document.getElementById('species-record');
+  if(recBox) recBox.value = '';
+  refreshActiveScreen();
+});
+
+// ---- add / edit an event (director) ----
+// evEditing is null when the form is adding, or the id of the event being
+// edited. The id itself is never editable: records point at it.
+let evEditing = null;
+
+function parseDateLines(text){
+  const out = [];
+  String(text||'').split('\n').forEach(line=>{
+    const t = line.trim();
+    if(!t) return;
+    // Accept 2029-9-5 as well as 2029-09-05, and normalise.
+    const m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if(!m) { out.push({ bad:t }); return; }
+    const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+    const key = m[1]+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    // Round-trip through Date to reject 2029-02-31 and friends.
+    const probe = new Date(key + 'T00:00:00Z');
+    if(isNaN(probe.getTime()) || probe.toISOString().slice(0,10) !== key){ out.push({ bad:t }); return; }
+    if(mo < 1 || mo > 12 || d < 1 || d > 31 || y < 2000 || y > 2100){ out.push({ bad:t }); return; }
+    out.push({ key });
+  });
+  return out;
+}
+function isValidTimeZone(tz){
+  if(!tz) return false;
+  try{ new Intl.DateTimeFormat('en-US', { timeZone: tz }); return true; }
+  catch(e){ return false; }
+}
+// The form takes a plain date - the last day anyone may enter. The stored value
+// is the instant registration STOPS, i.e. the start of the following day in the
+// event's own zone, which is what isRegistrationClosed() compares against.
+function registrationCloseFromDate(dateStr, tz){
+  const m = String(dateStr||'').trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if(!m) return null;
+  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+  const dayAfter = new Date(Date.UTC(y, mo-1, d+1));
+  const key = dayAfter.toISOString().slice(0,10);
+  // Work out that zone's offset on that date so the instant is right whether
+  // or not daylight saving is in force.
+  const probe = new Date(key + 'T12:00:00Z');
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, timeZoneName: 'longOffset'
+  }).formatToParts(probe).find(p=> p.type === 'timeZoneName');
+  const off = (parts && parts.value.match(/GMT([+-]\d{2}:\d{2})/) || [])[1] || '+00:00';
+  return key + 'T00:00:00' + off;
+}
+function registrationCloseToDate(iso, tz){
+  const t = new Date(iso);
+  if(isNaN(t.getTime())) return '';
+  // One millisecond earlier is the last day entries are open.
+  return new Date(t.getTime() - 1).toLocaleDateString('en-CA', { timeZone: tz || 'UTC' });
+}
+
+function renderEventForm(){
+  const editing = evEditing ? eventById(evEditing) : null;
+  setText('event-form-title', editing ? 'Edit ' + editing.name : 'Add an event');
+  setText('event-form-intro', editing
+    ? 'Changes reach every device. The entry ID prefix only affects anglers who register from now on — entry IDs already handed out do not change.'
+    : 'Set up next year’s tournament without touching the code. Nothing about the live event changes until you switch to the new one.');
+  const saveBtn = document.getElementById('ev-save');
+  if(saveBtn) saveBtn.textContent = editing ? 'Save changes' : 'Add event';
+  const cancel = document.getElementById('ev-cancel');
+  if(cancel) cancel.style.display = editing ? 'block' : 'none';
+  const copyRow = document.getElementById('ev-copy-course');
+  if(copyRow && copyRow.parentElement) copyRow.parentElement.style.display = editing ? 'none' : 'flex';
+
+  // Reuse the same species list the target-species picker uses.
+  const sp = document.getElementById('ev-species');
+  if(sp && !sp.dataset.built){
+    sp.dataset.built = '1';
+    sp.innerHTML = SPECIES_PRESETS.map(g=>
+      '<optgroup label="'+escapeHtml(g.group)+'">'+
+      g.items.map(it=>'<option value="'+escapeHtml(it.name)+'">'+escapeHtml(it.name)+'</option>').join('')+
+      '</optgroup>').join('');
+  }
+
+  const fill = (id, value)=>{
+    const el = document.getElementById(id);
+    if(el && document.activeElement !== el) el.value = value;
+  };
+  if(editing){
+    const s = eventSettings(editing.id);
+    fill('ev-name', editing.name || '');
+    fill('ev-prefix', editing.prefix || '');
+    fill('ev-dates', (editing.dates || []).join('\n'));
+    fill('ev-tz', editing.timeZone || '');
+    fill('ev-regclose', registrationCloseToDate(editing.registrationClose, editing.timeZone));
+    fill('ev-course', stripEntities(editing.courseLabel || ''));
+    if(sp && document.activeElement !== sp && speciesPreset(s.targetSpecies)) sp.value = s.targetSpecies;
+  }
+}
+
+// Course labels, presenter lines and event names in EVENTS carry HTML entities
+// (&middot;, &amp;) and the odd <br>, because they are written to be dropped
+// into markup. Two places need them as plain characters instead: the event
+// edit form, which is a text box, and the FWP report, which is a form going to
+// the state - "Silos &middot; Ponds" in a mailing address is a bug.
+//
+// toEntities() below is the way back, and only has to escape the ampersand:
+// nothing typed into a text box arrives as a tag.
+function stripEntities(s){
+  return String(s == null ? '' : s)
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/&middot;/g, '·').replace(/&nbsp;/g, ' ')
+    .replace(/&mdash;/g, '—').replace(/&ndash;/g, '–')
+    // The escapeHtml() set as well, because the plain-text copy of the report
+    // is built by stripping tags out of the rendered sheet - so whatever went
+    // through escapeHtml on the way in has to come back out here.
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    // LAST, always. Unescaping it first would turn a literal "&amp;quot;" into
+    // a quote mark instead of leaving it as the text it is.
+    .replace(/&amp;/g, '&')
+    .trim();
+}
+function toEntities(s){
+  return String(s).replace(/&/g, '&amp;');
+}
+
+function resetEventForm(){
+  evEditing = null;
+  ['ev-name','ev-prefix','ev-dates','ev-tz','ev-regclose','ev-course'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.value = '';
+  });
+  const copy = document.getElementById('ev-copy-course');
+  if(copy) copy.checked = true;
+  document.getElementById('ev-err').style.display = 'none';
+  renderEventForm();
+}
+
+bindEl('ev-cancel','click', ()=>{ resetEventForm(); renderAdmin(); });
+
+bindEl('ev-save','click', async ()=>{
+  const errEl = document.getElementById('ev-err');
+  const fail = (msg)=>{ errEl.textContent = msg; errEl.style.display = 'block'; };
+  errEl.style.display = 'none';
+
+  const name = document.getElementById('ev-name').value.trim();
+  const prefix = document.getElementById('ev-prefix').value.trim().toUpperCase();
+  const tz = document.getElementById('ev-tz').value.trim() || activeEvent().timeZone;
+  const courseLabel = document.getElementById('ev-course').value.trim();
+  const regClose = document.getElementById('ev-regclose').value.trim();
+  const species = document.getElementById('ev-species').value;
+  const parsed = parseDateLines(document.getElementById('ev-dates').value);
+
+  if(!name) return fail('Give the tournament a name.');
+  if(!prefix) return fail('Set an entry ID prefix — this is what makes an entry ID unique across years.');
+  if(!/^[A-Z0-9-]{2,12}$/.test(prefix)){
+    return fail('The prefix should be 2–12 characters, letters, digits and dashes only.');
+  }
+  // Unique prefix, or two events both hand out an entry 001 that reads the same.
+  const clash = allEvents().find(e=>
+    e.id !== evEditing && String(e.prefix||'').toUpperCase() === prefix);
+  if(clash) return fail('"'+prefix+'" is already used by '+clash.name+' ('+eventDateRangeText(clash)+'). Pick another.');
+
+  const bad = parsed.find(p=> p.bad);
+  if(bad) return fail('"'+bad.bad+'" is not a date I can read. Use YYYY-MM-DD, one per line.');
+  const dates = parsed.map(p=> p.key).sort();
+  if(dates.length === 0) return fail('Add at least one event day.');
+  if(dates.length > 7) return fail('That is more than seven days — check the dates.');
+  if(new Set(dates).size !== dates.length) return fail('One of those days is listed twice.');
+
+  if(!isValidTimeZone(tz)){
+    return fail('"'+tz+'" is not a time zone I recognise. Use an IANA name like America/Denver.');
+  }
+  const closeIso = registrationCloseFromDate(regClose || dates[0], tz);
+  if(!closeIso) return fail('Registration close should be a date, YYYY-MM-DD.');
+
+  const record = {
+    name,
+    nameHtml: escapeHtml(name),
+    presenter: (eventById(evEditing) || activeEvent()).presenter || '',
+    prefix,
+    dates,
+    timeZone: tz,
+    courseLabel: toEntities(courseLabel || 'Course not set'),
+    courseLabelLong: toEntities(courseLabel || 'the tournament water'),
+    registrationClose: closeIso
+  };
+  const preset = speciesPreset(species);
+  record.targetSpecies = species;
+  record.recordInches = preset ? preset.inches : 0;
+
+  const isNew = !evEditing;
+  const id = evEditing || slugifyEventId(name, dates[0].slice(0,4));
+
+  if(isNew){
+    // Same water next year is the common case, so offer the boundary as a
+    // starting point rather than making them redraw it.
+    const copy = document.getElementById('ev-copy-course');
+    record.course = (copy && copy.checked)
+      ? deepClone(courseBoundary() || { kind:'none' })
+      : { kind:'none' };
+  }
+
+  if(!await saveEventRecord(id, record)){
+    return fail('Could not save that on this device. Check your storage and try again.');
+  }
+  resetEventForm();
+  renderAdmin();
+  const note = document.getElementById('bnd-saved-note');
+  if(note && isNew) setText('bnd-saved-note',
+    'Added ' + name + '. It is not live yet — pick it in the switcher above when you are ready.');
+});
+
+function countsSentence(c){
+  return 'It holds ' + c.anglers + ' angler' + (c.anglers===1?'':'s') + ', ' +
+         c.catches + ' catch' + (c.catches===1?'':'es') + ' and ' +
+         c.donations + ' donation' + (c.donations===1?'':'s') + '.';
+}
+
+// Typing the name, not clicking OK. These wipe a season's records and cannot be
+// undone, and a confirm dialog on a phone is one tap away from the button that
+// opened it - which is exactly the mis-tap this has to survive.
+function confirmByName(evt, verb, detail){
+  const typed = window.prompt(
+    verb + ' "' + evt.name + '" — this cannot be undone.\n\n' + detail +
+    '\n\nType the event name exactly to confirm:', '');
+  if(typed === null) return false;
+  if(typed.trim().toLowerCase() !== String(evt.name || '').trim().toLowerCase()){
+    window.alert('That did not match "' + evt.name + '". Nothing has been changed.');
+    return false;
+  }
+  return true;
+}
+
+// Removes every record belonging to one event, across every shared collection,
+// and the catch photos with them. Used by both Clear data and Delete.
+//
+// saveCollection cannot do this: it is scoped to the live event by design, so
+// it would read another event's rows as nothing to delete. These ops are built
+// directly and the cache is trimmed to match.
+async function wipeEventData(id){
+  const doomed = {};
+  const ops = [];
+  for(const coll of SHARED_COLLECTIONS){
+    const rows = allRows(coll).filter(r=> rowEventId(r) === id);
+    doomed[coll] = new Set(rows.map(r=> r.id));
+    rows.forEach(r=> ops.push({ kind:'delete', coll:coll, id:r.id }));
+  }
+  if(ops.length === 0) return true;
+  if(!await runOps(ops)) return false;
+
+  for(const coll of SHARED_COLLECTIONS){
+    const gone = doomed[coll] || new Set();   // never crash mid-wipe: the rows are already deleted
+    liveCache[coll] = (liveCache[coll] || []).filter(r=> !gone.has(r.id));
+    localSet(coll, JSON.stringify(liveCache[coll]));
+    // Otherwise the next save would read these ids as rows the user just
+    // deleted from the LIVE event and try to delete them a second time.
+    if(loadedIds[coll]) gone.forEach(x=> loadedIds[coll].delete(x));
+  }
+  (doomed.catches || new Set()).forEach(cid=> deletePhoto(cid));
+  onStoreChanged();
+  return true;
+}
+
+// Row actions on the event list.
+function wireEventListActions(){
+  document.querySelectorAll('#event-list [data-ev-act]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = btn.dataset.evId;
+      const act = btn.dataset.evAct;
+      const evt = eventById(id);
+      if(!evt) return;
+
+      if(act === 'edit'){
+        evEditing = id;
+        renderEventForm();
+        document.getElementById('event-form-title').scrollIntoView({ behavior:'smooth', block:'start' });
+        return;
+      }
+      if(act === 'archive'){
+        if(id === activeEventId()) return;   // guarded in the UI too
+        if(!window.confirm('Archive "'+evt.name+' · '+eventDateRangeText(evt)+'"?\n\n'+
+          'It comes out of the event switcher. Every angler, catch and donation it holds '+
+          'stays exactly where it is, and restoring brings it all back.')) return;
+        await saveEventRecord(id, { archived:true });
+        renderAdmin();
+        return;
+      }
+      if(act === 'restore'){
+        await saveEventRecord(id, { archived:false });
+        renderAdmin();
+        return;
+      }
+      if(act === 'clear'){
+        const c = eventRowCounts(id);
+        if(!confirmByName(evt, 'Clear every record in', countsSentence(c) +
+          '\n\nThe event itself stays, with its dates, species and boundary. ' +
+          'Everything anyone logged in it goes, including catch photos.')) return;
+        if(!await wipeEventData(id)){
+          window.alert('Could not clear that event. Check the connection and try again — nothing partial is left behind that a retry will not finish.');
+        }
+        renderAdmin();
+        return;
+      }
+      if(act === 'delete'){
+        if(evt.builtIn){
+          window.alert('That event ships with the app and would reappear on the next load. Archive it instead.');
+          return;
+        }
+        const c = eventRowCounts(id);
+        const total = c.anglers + c.catches + c.donations;
+        if(!confirmByName(evt, 'Delete', total === 0
+          ? 'It holds no records.'
+          : countsSentence(c) + '\n\nAll of it goes with the event, including catch photos.')) return;
+        // Records first. Deleting the event definition while its rows survive
+        // would strand them: nothing lists them, and nothing can reach them to
+        // clean them up afterwards.
+        if(total > 0 && !await wipeEventData(id)){
+          window.alert('Could not clear that event\'s records, so the event has been left alone. Try again.');
+          renderAdmin();
+          return;
+        }
+        await deleteEventRecord(id);
+        if(evEditing === id) resetEventForm();
+        renderAdmin();
+      }
+    });
+  });
+}
+
+// ---- boundary editor (director) ----
+// bndDraft is a scratch copy. Nothing reaches the shared config, and so nothing
+// reaches an angler's phone, until Save.
+let bndDraft = null;
+let bndFitted = false;
+let bndDragging = false;
+// Where the radius handle sits around the circle, in radians from north. Kept
+// so it stays where the director last dragged it instead of snapping back east.
+let bndRadiusBearing = Math.PI / 2;
+
+function ensureBndDraft(){
+  if(!bndDraft){
+    bndDraft = deepClone(courseBoundary() || { kind:'none' });
+    if(!bndDraft.kind) bndDraft.kind = 'none';
+  }
+  return bndDraft;
+}
+function parsePointLines(text){
+  const pts = [];
+  String(text||'').split('\n').forEach(line=>{
+    const parts = line.trim().split(/[\s,]+/).filter(Boolean);
+    if(parts.length < 2) return;
+    const lat = parseFloat(parts[0]), lng = parseFloat(parts[1]);
+    if(isFinite(lat) && isFinite(lng)) pts.push({ lat, lng });
+  });
+  return pts;
+}
+function formatPointLines(pts){
+  return (pts||[]).map(p=> p.lat.toFixed(5)+', '+p.lng.toFixed(5)).join('\n');
+}
+
+const BND_HELP = {
+  circle:  'Tap the map to drop the launch point. Drag + to move the whole circle, or drag ↔ on the edge to grow and shrink it. Typing the numbers does the same thing.',
+  polygon: 'Tap the map to drop each corner, going around the course. Drag any numbered corner to move it. Three or more corners make the shape; the last joins back to the first.',
+  none:    'No boundary. Catches still record where they were taken, but nothing is judged in or out.'
+};
+
+function renderBoundaryEditor(opts){
+  const skipInputs = !!(opts && opts.skipInputs);
+  const d = ensureBndDraft();
+
+  document.querySelectorAll('#bnd-modes [data-bmode]').forEach(b=>
+    b.classList.toggle('active', b.dataset.bmode === d.kind));
+  document.getElementById('bnd-circle-fields').style.display = d.kind === 'circle' ? 'block' : 'none';
+  document.getElementById('bnd-poly-fields').style.display   = d.kind === 'polygon' ? 'block' : 'none';
+  setText('bnd-help', BND_HELP[d.kind] || '');
+
+  const undo = document.getElementById('bnd-undo');
+  if(undo) undo.style.display = d.kind === 'polygon' ? 'inline-block' : 'none';
+
+  if(!skipInputs){
+    const latEl = document.getElementById('bnd-lat');
+    const lngEl = document.getElementById('bnd-lng');
+    const radEl = document.getElementById('bnd-radius');
+    const ptsEl = document.getElementById('bnd-points');
+    if(latEl && document.activeElement !== latEl) latEl.value = (d.center && isFinite(d.center.lat)) ? d.center.lat : '';
+    if(lngEl && document.activeElement !== lngEl) lngEl.value = (d.center && isFinite(d.center.lng)) ? d.center.lng : '';
+    if(radEl && document.activeElement !== radEl) radEl.value = d.radiusMiles || '';
+    if(ptsEl && document.activeElement !== ptsEl) ptsEl.value = formatPointLines(d.points);
+  }
+
+  const saved = courseBoundary();
+  setText('bnd-saved-note', 'In force now: ' + describeBoundary(saved) +
+    (JSON.stringify(normalizeBoundary(d)) === JSON.stringify(normalizeBoundary(saved)) ? '' : ' — unsaved changes above.'));
+
+  const entry = ensureMap('boundary-map', boundaryCenter(d));
+  if(entry){
+    if(!entry.wiredBoundary){
+      entry.wiredBoundary = true;
+      entry.map.on('click', (e)=>{
+        const draft = ensureBndDraft();
+        const lat = Number(e.latlng.lat.toFixed(5)), lng = Number(e.latlng.lng.toFixed(5));
+        if(draft.kind === 'circle'){
+          draft.center = { lat, lng };
+          if(!(draft.radiusMiles > 0)) draft.radiusMiles = 1;
+        } else if(draft.kind === 'polygon'){
+          if(!Array.isArray(draft.points)) draft.points = [];
+          draft.points.push({ lat, lng });
+        } else {
+          return;   // 'none' - the map is just a picture
+        }
+        renderBoundaryEditor();
+      });
+    }
+    drawBoundary(entry, d, DRAFT_STYLE);
+    // Rebuilding the handles mid-drag would destroy the one under the finger,
+    // and a sync tick can call this at any moment. The shape above still
+    // follows, so the drag stays live.
+    if(!bndDragging) buildBoundaryHandles(entry, d);
+    // Frame it once on open, then leave the director's panning alone.
+    if(!bndFitted && !bndDragging && boundaryIsUsable(d)){ bndFitted = true; fitToBoundary(entry, d); }
+    refreshMapSize(entry);
+  }
+}
+
+// The draggable bits: a numbered handle per corner of an outline, or a centre
+// and a radius handle for a circle.
+function buildBoundaryHandles(entry, d){
+  entry.pins.clearLayers();
+
+  const startDrag = ()=>{ bndDragging = true; };
+  // Deferred by a tick: rebuilding the handles destroys the very marker whose
+  // dragend is still running, and Leaflet keeps touching its element after the
+  // event fires.
+  const endDrag = ()=>{ bndDragging = false; setTimeout(()=> renderBoundaryEditor(), 0); };
+  // While bndDragging is set this redraws the shape and the coordinate boxes
+  // but leaves the handles alone, so the numbers track the drag in real time.
+  const live = ()=> renderBoundaryEditor();
+
+  if(d.kind === 'polygon' && Array.isArray(d.points)){
+    d.points.forEach((p,i)=>{
+      const m = L.marker([p.lat, p.lng], {
+        draggable:true, icon:handleIcon(String(i+1)), zIndexOffset:1000,
+        keyboard:false, title:'Corner '+(i+1)+' — drag to move'
+      });
+      m.on('dragstart', startDrag);
+      m.on('drag', (e)=>{
+        const ll = e.target.getLatLng();
+        d.points[i] = { lat: Number(ll.lat.toFixed(5)), lng: Number(ll.lng.toFixed(5)) };
+        live();
+      });
+      m.on('dragend', endDrag);
+      m.addTo(entry.pins);
+    });
+    return;
+  }
+
+  if(d.kind === 'circle' && d.center && isFinite(d.center.lat) && isFinite(d.center.lng)){
+    const centre = L.marker([d.center.lat, d.center.lng], {
+      draggable:true, icon:handleIcon('+', 'centre'), zIndexOffset:1000,
+      keyboard:false, title:'Launch point — drag to move the whole circle'
+    });
+    centre.on('dragstart', startDrag);
+    centre.on('drag', (e)=>{
+      const ll = e.target.getLatLng();
+      d.center = { lat: Number(ll.lat.toFixed(5)), lng: Number(ll.lng.toFixed(5)) };
+      // Carry the radius handle along with the circle it belongs to.
+      const hp = offsetLatLng(d.center, d.radiusMiles || 1, bndRadiusBearing);
+      if(entry.radiusHandle) entry.radiusHandle.setLatLng([hp.lat, hp.lng]);
+      live();
+    });
+    centre.on('dragend', endDrag);
+    centre.addTo(entry.pins);
+
+    if(d.radiusMiles > 0){
+      const hp = offsetLatLng(d.center, d.radiusMiles, bndRadiusBearing);
+      const rim = L.marker([hp.lat, hp.lng], {
+        draggable:true, icon:handleIcon('↔', 'radius'), zIndexOffset:1000,
+        keyboard:false, title:'Drag to grow or shrink the circle'
+      });
+      rim.on('dragstart', startDrag);
+      rim.on('drag', (e)=>{
+        const ll = e.target.getLatLng();
+        // Radius is simply how far the handle now sits from the centre, and the
+        // handle keeps whatever bearing it was dragged to rather than snapping
+        // back to due east on the next redraw.
+        const miles = milesBetween(d.center.lat, d.center.lng, ll.lat, ll.lng);
+        d.radiusMiles = Number(Math.max(0.05, miles).toFixed(3));
+        bndRadiusBearing = bearingFrom(d.center, { lat: ll.lat, lng: ll.lng });
+        live();
+      });
+      rim.on('dragend', endDrag);
+      rim.addTo(entry.pins);
+      entry.radiusHandle = rim;
+    } else {
+      entry.radiusHandle = null;
+    }
+  }
+}
+
+// Strip a draft down to exactly what the boundary kind needs, so a circle never
+// carries stale polygon points around in the shared config.
+function normalizeBoundary(b){
+  if(!b || b.kind === 'none' || !b.kind) return { kind:'none' };
+  if(b.kind === 'circle'){
+    return { kind:'circle',
+      center: { lat: Number(b.center && b.center.lat), lng: Number(b.center && b.center.lng) },
+      radiusMiles: Number(b.radiusMiles) };
+  }
+  return { kind:'polygon', points: (b.points||[]).map(p=>({ lat:Number(p.lat), lng:Number(p.lng) })) };
+}
+function describeBoundary(b){
+  if(!boundaryIsUsable(b)) return 'no boundary';
+  if(b.kind === 'circle') return b.radiusMiles + ' mile circle around ' +
+    b.center.lat.toFixed(4) + ', ' + b.center.lng.toFixed(4);
+  return b.points.length + '-point outline';
+}
+
+document.querySelectorAll('#bnd-modes [data-bmode]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const d = ensureBndDraft();
+    if(d.kind === btn.dataset.bmode) return;
+    d.kind = btn.dataset.bmode;
+    if(d.kind === 'circle' && !(d.radiusMiles > 0)) d.radiusMiles = 1;
+    if(d.kind === 'polygon' && !Array.isArray(d.points)) d.points = [];
+    bndFitted = false;
+    renderBoundaryEditor();
+  });
+});
+
+['bnd-lat','bnd-lng','bnd-radius'].forEach(id=> bindEl(id,'input', ()=>{
+  const d = ensureBndDraft();
+  const lat = parseFloat(document.getElementById('bnd-lat').value);
+  const lng = parseFloat(document.getElementById('bnd-lng').value);
+  const rad = parseFloat(document.getElementById('bnd-radius').value);
+  d.center = { lat, lng };
+  d.radiusMiles = rad;
+  renderBoundaryEditor({ skipInputs:true });
+}));
+bindEl('bnd-points','input', ()=>{
+  ensureBndDraft().points = parsePointLines(document.getElementById('bnd-points').value);
+  renderBoundaryEditor({ skipInputs:true });
+});
+
+bindEl('bnd-undo','click', ()=>{
+  const d = ensureBndDraft();
+  if(d.kind === 'polygon' && Array.isArray(d.points) && d.points.length){
+    d.points.pop();
+    renderBoundaryEditor();
+  }
+});
+bindEl('bnd-clear','click', ()=>{
+  const d = ensureBndDraft();
+  if(d.kind === 'polygon') d.points = [];
+  else { d.center = null; d.radiusMiles = 0; }
+  renderBoundaryEditor();
+});
+
+bindEl('bnd-locate','click', async (e)=>{
+  const errEl = document.getElementById('bnd-err');
+  const btn = e.currentTarget;
+  errEl.style.display = 'none';
+  const was = btn.textContent;
+  btn.textContent = 'Finding…'; btn.disabled = true;
+  try{
+    const pos = await currentPosition();
+    const d = ensureBndDraft();
+    if(d.kind === 'circle'){
+      d.center = { lat: Number(pos.lat.toFixed(5)), lng: Number(pos.lng.toFixed(5)) };
+      if(!(d.radiusMiles > 0)) d.radiusMiles = 1;
+    } else if(d.kind === 'polygon'){
+      if(!Array.isArray(d.points)) d.points = [];
+      d.points.push({ lat: Number(pos.lat.toFixed(5)), lng: Number(pos.lng.toFixed(5)) });
+    }
+    bndFitted = false;
+    renderBoundaryEditor();
+    const entry = ensureMap('boundary-map', boundaryCenter(d));
+    if(entry) entry.map.setView([pos.lat, pos.lng], 14);
+  }catch(err){
+    errEl.textContent = err.message;
+    errEl.style.display = 'block';
+  }finally{
+    btn.textContent = was; btn.disabled = false;
+  }
+});
+
+bindEl('bnd-save','click', async ()=>{
+  const errEl = document.getElementById('bnd-err');
+  errEl.style.display = 'none';
+  const d = ensureBndDraft();
+  const clean = normalizeBoundary(d);
+
+  if(clean.kind === 'circle'){
+    if(!isFinite(clean.center.lat) || !isFinite(clean.center.lng)){
+      errEl.textContent = 'Set a centre first — tap the map, use your location, or type a latitude and longitude.';
+      errEl.style.display = 'block'; return;
+    }
+    if(Math.abs(clean.center.lat) > 90 || Math.abs(clean.center.lng) > 180){
+      errEl.textContent = 'That is not a real position. Latitude runs -90 to 90, longitude -180 to 180.';
+      errEl.style.display = 'block'; return;
+    }
+    if(!(clean.radiusMiles > 0)){
+      errEl.textContent = 'Give the circle a radius in miles.';
+      errEl.style.display = 'block'; return;
+    }
+  } else if(clean.kind === 'polygon'){
+    const bad = clean.points.some(p=> !isFinite(p.lat) || !isFinite(p.lng) ||
+      Math.abs(p.lat) > 90 || Math.abs(p.lng) > 180);
+    if(bad){
+      errEl.textContent = 'One of those points is not a real position. Latitude runs -90 to 90, longitude -180 to 180.';
+      errEl.style.display = 'block'; return;
+    }
+    if(clean.points.length < 3){
+      errEl.textContent = 'An outline needs at least three corners. Tap the map to add them.';
+      errEl.style.display = 'block'; return;
+    }
+  }
+
+  const ok = await saveEventSettings({ course: clean });
+  if(!ok){
+    errEl.textContent = 'Could not save that on this device. Check your storage and try again.';
+    errEl.style.display = 'block'; return;
+  }
+  bndDraft = deepClone(clean);
+  refreshActiveScreen();
+});
+
+// Re-runs the boundary test over positions already stored on each catch. The
+// catch itself - status, length, photo - is never touched.
+bindEl('bnd-recheck','click', async ()=>{
+  const noteEl = document.getElementById('bnd-recheck-note');
+  const catches = await loadCatches();
+  const located = catches.filter(c=> c.location && isFinite(c.location.lat) && isFinite(c.location.lng));
+  if(located.length === 0){
+    noteEl.innerHTML = '<p class="hint">No catch has a stored position to re-check.</p>';
+    return;
+  }
+  let changed = 0;
+  located.forEach(c=>{
+    const before = c.location.withinBounds;
+    c.location = Object.assign({ lat:c.location.lat, lng:c.location.lng },
+      evaluateBoundary(c.location.lat, c.location.lng));
+    if(c.location.withinBounds !== before) changed++;
+  });
+  if(changed === 0){
+    noteEl.innerHTML = '<p class="hint">Re-checked '+located.length+' catch'+(located.length===1?'':'es')+
+      ' — every in/out reading already matched the current boundary.</p>';
+    return;
+  }
+  if(!window.confirm('Re-checking against the current boundary changes the in/out reading on '+
+      changed+' of '+located.length+' catch'+(located.length===1?'':'es')+'.\n\n'+
+      'Nothing is approved, rejected or deleted. Apply?')){
+    return;
+  }
+  const ok = await saveCatches(catches);
+  noteEl.innerHTML = ok
+    ? '<p class="hint">Updated '+changed+' catch'+(changed===1?'':'es')+' against the current boundary.</p>'
+    : '<div class="err" style="display:block;">Could not save the updated readings.</div>';
+  renderAdmin();
+});
+
+// ---- positions (director) ----
+// The director sees everyone. This is the safety and headcount view, and it is
+// the reason positions are collected at all - anglers never see this.
+async function renderPositionsAdmin(){
+  const signals = await loadSignals();
+  const anglers = await loadAnglers();
+  const byId = {};
+  anglers.forEach(a=>{ byId[a.id] = a; });
+
+  const beacons = signals.filter(s=> s.beacon === true);
+  const fresh = signals.filter(s=> !s.beacon && signalIsFresh(s));
+  setText('positions-tool-summary', beacons.length
+    ? beacons.length + ' beacon' + (beacons.length===1?'':'s') + ' raised'
+    : (signals.length === 0 ? 'No positions yet'
+        : fresh.length + ' recent of ' + signals.length));
+
+  // Beacons first and loudest.
+  const alerts = document.getElementById('positions-alerts');
+  if(alerts){
+    alerts.innerHTML = beacons.length === 0 ? '' : beacons.map(b=>{
+      const a = byId[b.anglerId];
+      // The director is the one place a real name belongs - if someone is in
+      // trouble, that is who they will be calling about.
+      const who = a ? (a.name + ' · ' + displayHandle(a)) : (b.handle || 'Unknown angler');
+      return '<div class="beacon-card"><div class="beacon-title">' +
+        '<span class="beacon-pulse"></span>Beacon raised</div>' +
+        '<div class="beacon-row"><span class="beacon-who">' + escapeHtml(who) + '</span>' +
+        '<span class="beacon-dist">' + escapeHtml(signalAgeText({ at: b.beaconAt })) + '</span></div>' +
+        (b.note ? '<div class="beacon-note">&ldquo;' + escapeHtml(b.note) + '&rdquo;</div>' : '') +
+        '<div class="beacon-note" style="font-style:normal;">' +
+        escapeHtml(b.lat.toFixed(5) + ', ' + b.lng.toFixed(5) + ' · position ' + signalAgeText(b)) +
+        (a && a.phone ? ' · ' + escapeHtml(a.phone) : '') +
+        '</div></div>';
+    }).join('');
+  }
+
+  // Beacons at the top of the list too, then most recent first.
+  const sorted = signals.slice().sort((x, y)=>{
+    if(!!x.beacon !== !!y.beacon) return x.beacon ? -1 : 1;
+    return (y.at || 0) - (x.at || 0);
+  });
+  const body = document.getElementById('positions-body');
+  if(body){
+    body.innerHTML = sorted.length === 0
+      ? '<p class="empty">No angler has reported a position yet. One is recorded the first time somebody submits a catch or checks themselves against the boundary.</p>'
+      : sorted.map(s=>{
+          const a = byId[s.anglerId];
+          const stale = !signalIsFresh(s);
+          const cls = 'pos-row' + (s.beacon ? ' beacon' : (stale ? ' stale' : ''));
+          const who = a ? (a.name + ' · ' + displayHandle(a)) : (s.handle || 'Unknown angler');
+          const acc = isFinite(s.accuracyMiles) && s.accuracyMiles
+            ? ' · ±' + Math.round(s.accuracyMiles * 5280) + ' ft' : '';
+          const v = evaluateBoundary(s.lat, s.lng);
+          const bounds = v.withinBounds === null ? ''
+            : (v.withinBounds ? ' · in bounds'
+                : ' · ' + v.outsideMiles.toFixed(2) + ' mi outside');
+          return '<div class="' + cls + '"><div class="pos-top">' +
+            '<span class="pos-who">' + escapeHtml(who) + (s.beacon ? ' — BEACON' : '') + '</span>' +
+            '<span class="pos-age">' + escapeHtml(signalAgeText(s)) + '</span></div>' +
+            '<div class="pos-meta">' + escapeHtml(s.lat.toFixed(5) + ', ' + s.lng.toFixed(5) + acc + bounds) + '</div>' +
+            (stale && !s.beacon ? '<div class="pos-meta">Older than ' + SIGNAL_STALE_MINUTES + ' minutes — treat as history.</div>' : '') +
+            '</div>';
+        }).join('');
+  }
+
+  // Map
+  const b = courseBoundary();
+  const entry = ensureMap('positions-map', boundaryCenter(b));
+  if(!entry) return;
+  drawBoundary(entry, b, BOUNDARY_STYLE);
+  entry.pins.clearLayers();
+  sorted.forEach(s=>{
+    if(!isFinite(s.lat) || !isFinite(s.lng)) return;
+    const a = byId[s.anglerId];
+    const label = (a ? a.name : (s.handle || 'Angler')) + ' · ' + signalAgeText(s);
+    if(s.beacon){
+      L.marker([s.lat, s.lng], {
+        icon: L.divIcon({ className:'', html:'<div class="beacon-marker"></div>',
+                          iconSize:[22,22], iconAnchor:[11,11] }),
+        zIndexOffset: 2000, keyboard: false
+      }).bindTooltip(escapeHtml(label) + ' — BEACON', { permanent:false }).addTo(entry.pins);
+      return;
+    }
+    const stale = !signalIsFresh(s);
+    L.circleMarker([s.lat, s.lng], {
+      radius: 6, weight: 2,
+      color: stale ? '#857E70' : '#24404D',
+      fillColor: stale ? '#E4E1D8' : '#4FD2E8',
+      fillOpacity: 1
+    }).bindTooltip(escapeHtml(label), { permanent:false }).addTo(entry.pins);
+  });
+  if(!entry.fittedPositions){
+    entry.fittedPositions = true;
+    if(boundaryIsUsable(b)) fitToBoundary(entry, b);
+  }
+  refreshMapSize(entry);
+}
+
+// ---- judging a fish at full size ----
+// The review lists show a 64px thumbnail, which is enough to tell a walleye
+// from a pike and nothing like enough to judge one: whether the tail is
+// pinched, whether the mouth is closed, where the nose actually sits on the
+// tape. Tapping the photo opens it here at full size, with the same approve
+// and reject on it, so the decision is made looking at the evidence rather
+// than at a stamp-sized version of it.
+
+// One place the three review actions are applied, used by the list buttons and
+// by the lightbox, so the two can never disagree about what "reject" does.
+async function reviewCatch(id, action){
+  const catches = await loadCatches();
+  const idx = catches.findIndex(c=> c.id === id);
+  if(idx === -1) return false;
+  if(action === 'approve') catches[idx].status = 'approved';
+  else if(action === 'reject') catches[idx].status = 'rejected';
+  else if(action === 'delete') catches.splice(idx, 1);
+  else return false;
+  await saveCatches(catches);
+  return true;
+}
+
+// WHOSE PANEL THIS IS. Two very different screens open it: the director's
+// review lists, and the public gallery. They are NOT allowed to show the same
+// thing. Real names, the boundary verdict and the clock-skew flags are the
+// director's business - the gallery is the whole field, and there an angler is
+// their handle and nothing else. The mode is what keeps those apart, so it is
+// read on every paint rather than assumed.
+const LIGHTBOX_DIRECTOR = 'director';
+const LIGHTBOX_PUBLIC = 'public';
+let lightboxCatchId = null;
+let lightboxMode = LIGHTBOX_PUBLIC;
+// The ids the arrows walk, in the order the screen behind is showing them.
+let lightboxSequence = [];
+// Whether the panel put an entry on the history stack when it opened.
+let lightboxPushed = false;
+
+// The panel takes a history entry of its own, so Back closes the photo instead
+// of leaving the screen behind it - which is what a phone gallery does, and
+// what someone who opened a fish full-screen means by "back".
+function hideLightbox(){
+  const box = document.getElementById('photo-lightbox');
+  if(!box) return;
+  box.hidden = true;
+  box.classList.remove('zoomed');
+  lightboxCatchId = null;
+  lightboxSequence = [];
+  lightboxPushed = false;
+  // Drop the image so a big photo is not held in memory behind a closed panel.
+  const img = document.getElementById('lightbox-img');
+  if(img) img.removeAttribute('src');
+}
+
+// Closing on purpose - the Close button, Escape, or a verdict. Where the panel
+// owns a history entry, going back is what closes it, so the button and the
+// Back button are the same single action and cannot drift apart. Without this
+// the entry would outlive the panel and the next Back would appear to do
+// nothing at all.
+function closeLightbox(){
+  if(lightboxPushed){
+    lightboxPushed = false;
+    const h = historyApi();
+    if(h && typeof h.back === 'function'){
+      try{ h.back(); return; }catch(e){}
+    }
+  }
+  hideLightbox();
+}
+
+// Where the current fish sits in the sequence, or -1 when it was opened alone.
+function lightboxIndex(){
+  return lightboxSequence.indexOf(lightboxCatchId);
+}
+function lightboxStep(delta){
+  const i = lightboxIndex();
+  if(i === -1) return;
+  const next = lightboxSequence[i + delta];
+  if(next) openLightbox(next, { mode: lightboxMode, sequence: lightboxSequence });
+}
+
+async function openLightbox(catchId, opts){
+  const box = document.getElementById('photo-lightbox');
+  if(!box) return;
+  const o = opts || {};
+  const c = (await loadCatches()).find(x=> x.id === catchId);
+  if(!c) return;
+  // One entry for the panel, not one per fish: walking the arrows should not
+  // leave a trail of entries to press Back through afterwards.
+  if(!lightboxCatchId && !lightboxPushed){
+    const h = historyApi();
+    if(h){
+      try{ h.pushState({ screen: currentScreen, lightbox: true }, ''); lightboxPushed = true; }
+      catch(e){}
+    }
+  }
+  lightboxCatchId = catchId;
+  lightboxMode = o.mode === LIGHTBOX_DIRECTOR ? LIGHTBOX_DIRECTOR : LIGHTBOX_PUBLIC;
+  lightboxSequence = Array.isArray(o.sequence) ? o.sequence.slice() : [];
+  box.classList.remove('zoomed');
+  box.hidden = false;
+  const tamperEl = document.getElementById('lightbox-tamper');
+  if(tamperEl){ tamperEl.innerHTML = ''; tamperEl.hidden = true; }
+
+  const director = lightboxMode === LIGHTBOX_DIRECTOR;
+  // The line where the two modes differ most: a real name, or a handle.
+  setText('lightbox-title',
+    (director ? c.anglerName : displayHandle(anglerById(c.anglerId))) +
+    ' · ' + Number(c.length).toFixed(2) + '"');
+
+  const meta = document.getElementById('lightbox-meta');
+  if(meta){
+    const head = escapeHtml(c.species) + ' &middot; ' +
+      (c.division === 'team' ? 'Team' : 'Solo');
+    meta.innerHTML = director
+      ? head + ' &middot; ' + statusHtml(c.status) +
+        '<div style="margin-top:6px;">' + boundaryBadgeHtml(c) + captureBadgeHtml(c) + filedByBadgeHtml(c) + '</div>'
+      // Publicly: what it is, and when it was caught. The boundary verdict and
+      // the capture flags are review notes on a fish already judged, and
+      // publishing them would reopen a decision that has been made.
+      : head + (c.timestamp ? ' &middot; ' + escapeHtml(chatWhen(c.timestamp)) : '');
+  }
+
+  const img = document.getElementById('lightbox-img');
+  if(img){
+    img.style.display = 'none';
+    setLightboxMissing(false);
+    loadPhoto(catchId).then(url=>{
+      // The panel may have been closed, or moved on to another fish, while the
+      // photo was still resolving.
+      if(lightboxCatchId !== catchId) return;
+      if(!url){ setLightboxMissing(true); return; }
+      img.onerror = ()=>{ if(lightboxCatchId === catchId) setLightboxMissing(true); };
+      img.onload = ()=>{
+        if(lightboxCatchId !== catchId) return;
+        img.style.display = 'block';
+        // The judging moment. The list says to open the photo full size and
+        // decide here, so this is where it has to be said.
+        const el = document.getElementById('lightbox-tamper');
+        if(el){
+          let html = '';
+          if(director){
+            try{ html = photoTamperHtml(photoIntegrity(c, dHashOf(img))); }
+            catch(e){ console.error(e); }
+          }
+          el.innerHTML = html;
+          el.hidden = !html;
+        }
+      };
+      img.src = url;
+    }).catch(e=>{
+      console.error(e);
+      if(lightboxCatchId === catchId) setLightboxMissing(true);
+    });
+  }
+
+  // Arrows only when there is a sequence to walk, and only towards a fish that
+  // is actually there - a dead arrow at the end of a gallery reads as broken.
+  const i = lightboxIndex();
+  const nav = document.getElementById('lightbox-nav');
+  if(nav){
+    nav.hidden = i === -1 || lightboxSequence.length < 2;
+    const prev = document.getElementById('lightbox-prev');
+    const next = document.getElementById('lightbox-next');
+    if(prev) prev.disabled = i <= 0;
+    if(next) next.disabled = i === -1 || i >= lightboxSequence.length - 1;
+    setText('lightbox-count', i === -1 ? '' : (i + 1) + ' of ' + lightboxSequence.length);
+  }
+
+  const acts = document.getElementById('lightbox-actions');
+  if(acts){
+    // Your own fish can be saved to the phone. Somebody else's cannot: it is
+    // on a wall inside the app because the field agreed to a tournament, which
+    // is not the same as handing their photo out as a file.
+    const isMine = myAnglerIds(await loadAnglers()).indexOf(c.anglerId) !== -1;
+    const save = isMine
+      ? '<button class="small" data-lb-act="save">Save photo</button>' : '';
+    acts.innerHTML = (director && c.status === 'pending')
+      ? '<button class="small" data-lb-act="approve">Approve</button>' +
+        '<button class="small danger" data-lb-act="reject">Reject</button>'
+      : save + '<button class="secondary" data-lb-act="close">Done</button>';
+  }
+}
+
+// An object-storage URL can 404 while an upload is still queued on a phone with
+// no signal, which is a normal state here rather than an error.
+function setLightboxMissing(missing){
+  const note = document.getElementById('lightbox-missing');
+  if(note) note.hidden = !missing;
+  if(missing){
+    const img = document.getElementById('lightbox-img');
+    if(img) img.style.display = 'none';
+  }
+}
+
+// Bound once: every host below is in the static markup, so delegation survives
+// each repaint of the lists inside them. The mode travels with the host, which
+// is what stops a public grid ever opening a director's view of a fish.
+[['admin-pending', LIGHTBOX_DIRECTOR],
+ ['admin-all', LIGHTBOX_DIRECTOR],
+ ['gallery-grid', LIGHTBOX_PUBLIC]].forEach(pair=>{
+  const host = document.getElementById(pair[0]);
+  if(!host || !host.addEventListener) return;
+  host.addEventListener('click', (e)=>{
+    const slot = e.target && e.target.closest && e.target.closest('[data-photo-for]');
+    if(!slot) return;
+    const ids = [];
+    host.querySelectorAll('[data-photo-for]').forEach(el=> ids.push(el.dataset.photoFor));
+    openLightbox(slot.dataset.photoFor, { mode: pair[1], sequence: ids });
+  });
+});
+
+bindEl('lightbox-close','click', closeLightbox);
+bindEl('lightbox-prev','click', ()=> lightboxStep(-1));
+bindEl('lightbox-next','click', ()=> lightboxStep(1));
+// Tap the photo to switch between fit-to-screen and natural size. Fitted, a
+// long fish is a couple of hundred pixels wide and the tape is unreadable.
+bindEl('lightbox-img','click', ()=>{
+  const box = document.getElementById('photo-lightbox');
+  if(box) box.classList.toggle('zoomed');
+});
+bindEl('lightbox-actions','click', async (e)=>{
+  const btn = e.target && e.target.closest && e.target.closest('[data-lb-act]');
+  if(!btn) return;
+  const act = btn.dataset.lbAct;
+  if(act === 'close'){ closeLightbox(); return; }
+  if(act === 'save'){
+    const id = lightboxCatchId;
+    if(!id) return;
+    // Checked again here rather than trusted from the button, which is markup.
+    const c = (await loadCatches()).find(x=> x.id === id);
+    const mine = myAnglerIds(await loadAnglers());
+    if(!c || mine.indexOf(c.anglerId) === -1){
+      window.alert('That fish belongs to another angler.');
+      return;
+    }
+    btn.disabled = true;
+    const was = btn.textContent;
+    btn.textContent = 'Saving…';
+    const ok = await downloadCatchPhoto(id,
+      catchPhotoFileName(activeEvent(), c));
+    btn.textContent = ok ? 'Saved' : 'No photo';
+    setTimeout(()=>{ btn.disabled = false; btn.textContent = was; }, 1800);
+    return;
+  }
+  // A verdict is the director's alone. The buttons are only drawn in that mode,
+  // but the buttons are markup - so the mode is checked again before writing.
+  if(lightboxMode !== LIGHTBOX_DIRECTOR || !adminUnlocked){ closeLightbox(); return; }
+  const id = lightboxCatchId;
+  if(!id) return;
+  btn.disabled = true;
+  const ok = await reviewCatch(id, act);
+  closeLightbox();
+  if(ok) renderAdmin();
+});
+if(typeof document !== 'undefined' && document.addEventListener){
+  document.addEventListener('keydown', (e)=>{
+    if(!lightboxCatchId) return;
+    if(e.key === 'Escape') closeLightbox();
+    else if(e.key === 'ArrowLeft') lightboxStep(-1);
+    else if(e.key === 'ArrowRight') lightboxStep(1);
+  });
+}
+
+async function renderAdmin(){
+  renderOverdueAlert();   // fire and forget; it paints itself when it resolves
+  if(!adminUnlocked) return;
+  // First director to open the panel is what starts the Fish-I probe. See
+  // ensureFishI - it is not run on load any more.
+  ensureFishI();
+  await renderPositionsAdmin();
+  renderEventAdmin();
+  // The list is rebuilt above, so its buttons are new elements each time.
+  wireEventListActions();
+  renderEventForm();
+  renderSpeciesAdmin();
+  renderBoundaryEditor();
+  await renderPayoutCalculator();
+  await renderContestants();
+  await renderFwpReport();
+  const catches = await loadCatches();
+  // Loaded once for both lists below: the duplicate-photo check reaches across
+  // every event, everything else stays on the live one.
+  const dupCorpus = await loadCatchesAllEvents();
+  renderGpsCheck(catches);
+  const pending = catches.filter(c=>c.status==='pending').sort((a,b)=>a.timestamp-b.timestamp);
+  setText('review-tool-summary',
+    pending.length === 0 ? 'Nothing waiting' : pending.length + ' waiting');
+  const pendEl = document.getElementById('admin-pending');
+  pendEl.innerHTML = pending.length===0 ? '<p class="empty">Nothing pending review.</p>' :
+    pending.map(c=>{
+      const img = photoSlotHtml(c);
+      return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+lengthHtml(c.length)+'</span></div>'+
+        '<div class="name">'+escapeHtml(c.anglerName)+' &middot; '+escapeHtml(c.species)+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
+        '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+captureBadgeHtml(c)+filedByBadgeHtml(c)+'</div>'+
+        firstPassHtml(c, catches, dupCorpus)+
+        '<div class="actions"><button class="small" data-act="approve" data-id="'+c.id+'">Approve</button>'+
+        '<button class="small" data-act="reject" data-id="'+c.id+'">Reject</button></div></div></div>';
+    }).join('');
+
+  const allEl = document.getElementById('admin-all');
+  const all = catches.slice().sort((a,b)=>b.timestamp-a.timestamp);
+  allEl.innerHTML = all.length===0 ? '<p class="empty">No catches submitted yet.</p>' :
+    all.map(c=>{
+      const img = photoSlotHtml(c);
+      return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+lengthHtml(c.length)+'</span></div>'+
+        '<div class="name">'+escapeHtml(c.anglerName)+' &middot; '+escapeHtml(c.species)+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
+        statusHtml(c.status)+
+        '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+captureBadgeHtml(c)+filedByBadgeHtml(c)+'</div>'+
+        firstPassHtml(c, catches, dupCorpus)+
+        '<div class="actions"><button class="small" data-act="delete" data-id="'+c.id+'">Delete</button></div></div></div>';
+    }).join('');
+
+  // The review lists, and only these, re-check the stored photo as it loads.
+  hydratePhotos(pendEl, { verify: true });
+  hydratePhotos(allEl, { verify: true });
+
+  // Scoped to the two catch lists - a bare [data-act] selector would also grab
+  // the donation buttons in the payout tool.
+  document.querySelectorAll('#admin-pending [data-act], #admin-all [data-act]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(btn.dataset.act==='ai-review'){ runAiReview(btn.dataset.id, btn); return; }
+      if(btn.dataset.act==='fishi-retry'){
+        btn.disabled = true; btn.textContent = 'Checking\u2026';
+        fishIStarted = true;
+        initFishI().then(()=>renderAdmin());
+        return;
+      }
+      await reviewCatch(btn.dataset.id, btn.dataset.act);
+      renderAdmin();
+    });
+  });
+}
+
+// ---- first-pass review UI (director only) ----
+function firstPassHtml(c, allCatches, dupCorpus){
+  const verdict = evaluateFirstPass(c, allCatches, dupCorpus);
+  const labels = { clear:'Clear', review:'Look closer', flag:'Needs review' };
+
+  const items = verdict.checks.length===0
+    ? '<div class="fp-item"><span class="fp-dot level-info"></span><span>No issues found in the automatic checks.</span></div>'
+    : verdict.checks.map(x=>
+        '<div class="fp-item"><span class="fp-dot level-'+x.level+'"></span>'+
+        '<div><strong>'+escapeHtml(x.label)+'</strong><br><span>'+escapeHtml(x.detail)+'</span></div></div>'
+      ).join('');
+
+  let aiBlock;
+  if(c.aiReview){
+    const r = c.aiReview;
+    if(r.error){
+      aiBlock = '<div class="fp-ai-note">Fish-I vision check failed: '+escapeHtml(r.error)+'</div>'+
+        '<div class="actions" style="margin-top:6px;"><button class="small" data-act="ai-review" data-id="'+c.id+'">Try again</button></div>';
+    } else {
+      const conf = typeof r.speciesConfidence==='number' ? ' ('+Math.round(r.speciesConfidence*100)+'% confidence)' : '';
+      const mismatch = (r.matchesClaim === false)
+        ? '<div class="fp-item"><span class="fp-dot level-flag"></span><span>Does not look like the '+escapeHtml(c.species)+' the angler entered.</span></div>'
+        : '';
+      const framing = [];
+      if(r.boardVisible === false) framing.push('No bump board with a readable scale in frame.');
+      if(r.fishFlat === false)     framing.push('Fish is not lying flat along the board.');
+      if(r.noseAtStop === false)   framing.push('Nose does not appear to be against the zero stop.');
+      if(r.tailInFrame === false)  framing.push('Tail or the scale beneath it is not fully visible.');
+      if(r.handBlocking === true)  framing.push('A hand is covering the nose, tail or the markings.');
+      const framingHtml = framing.map(t=>
+        '<div class="fp-item"><span class="fp-dot level-review"></span><span>'+escapeHtml(t)+'</span></div>').join('');
+      const concerns = (r.concerns && r.concerns.length)
+        ? r.concerns.map(t=>'<div class="fp-item"><span class="fp-dot level-review"></span><span>'+escapeHtml(String(t))+'</span></div>').join('')
+        : '';
+      const allClear = !mismatch && !framingHtml && !concerns
+        ? '<div class="fp-item"><span class="fp-dot level-info"></span><span>No species, framing or integrity concerns raised.</span></div>'
+        : '';
+      aiBlock = '<div class="fp-ai-note"><strong>Fish-I vision:</strong> reads as '+escapeHtml(r.species||'unknown')+conf+
+        (r.notes ? ' &middot; '+escapeHtml(r.notes) : '')+'</div>'+
+        mismatch + framingHtml + concerns + allClear +
+        '<div class="actions" style="margin-top:6px;"><button class="small" data-act="ai-review" data-id="'+c.id+'">Re-run</button></div>';
+    }
+  } else if(fishIVisionAvailable()){
+    aiBlock = '<button class="small" data-act="ai-review" data-id="'+c.id+'">Run Fish-I vision check</button>';
+  } else {
+    aiBlock = '<div class="fp-ai-note">Fish-I vision not ready &mdash; '+escapeHtml(fishIStatusText())+
+      '<br><span style="opacity:.75;">status: '+escapeHtml(fishIStatus)+'</span></div>'+
+      '<div class="actions" style="margin-top:6px;"><button class="small" data-act="fishi-retry" data-id="'+c.id+'">Retry Fish-I</button></div>';
+  }
+
+  return '<div class="fp level-'+verdict.level+'">'+
+    '<div class="fp-head"><span class="fp-title">Fish-I first pass</span>'+
+    '<span class="fp-verdict level-'+verdict.level+'">'+labels[verdict.level]+'</span></div>'+
+    items+
+    '<div class="fp-ai">'+aiBlock+'</div>'+
+  '</div>';
+}
+
+async function runAiReview(catchId, btn){
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  // The default tier thinks before it writes, so this is a 5-60s wait.
+  btn.textContent = 'Fish-I is looking…';
+  const catches = await loadCatches();
+  const idx = catches.findIndex(c=>c.id===catchId);
+  // Catch was deleted from another view mid-check - restore the button
+  // instead of leaving it dead and reading "Fish-I is looking".
+  if(idx===-1){ btn.disabled = false; btn.textContent = originalLabel; return; }
+  try{
+    const photo = await loadPhoto(catchId);
+    if(!photo) throw new Error('No photo is stored with this catch.');
+    const result = await requestAiVisionReview(catches[idx], photo);
+    catches[idx].aiReview = Object.assign({ reviewedAt: Date.now() }, result);
+  }catch(e){
+    console.error(e);
+    catches[idx].aiReview = { error: fishIErrorCopy(e), reviewedAt: Date.now() };
+  }
+  await saveCatches(catches);
+  renderAdmin();
+}
+
+// ---- contestants (director) ----
+let contestantFilter = 'all';
+let expandedContestantId = null;
+let dqConfirmId = null;
+// Only one of these is ever set: editing and removing are mutually exclusive,
+// and neither survives collapsing the row.
+let editContestantId = null;
+let removeContestantId = null;
+
+document.querySelectorAll('#contestant-filters button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('#contestant-filters button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    contestantFilter = btn.dataset.cfilter;
+    renderContestants();
+  });
+});
+
+async function renderContestants(){
+  const anglers = await loadAnglers();
+  const catches = await loadCatches();
+  const el = document.getElementById('contestants-body');
+  if(!el) return;
+
+  const dqCount = anglers.filter(a=>a.disqualified).length;
+  const waiting = anglers.filter(a=>!feePaid(a)).length;   // fees, not eligibility
+  document.getElementById('contestants-tool-summary').textContent = anglers.length===0
+    ? 'No anglers yet'
+    : anglers.length+' angler'+(anglers.length===1?'':'s')+
+      (waiting?' \u00b7 '+waiting+' fee outstanding':'')+(dqCount?' \u00b7 '+dqCount+' DQ':'');
+
+  // Anyone who registered before board codes existed has none. Offered rather
+  // than done silently: it is a write to every one of those records, and the
+  // director should be the one who decides when that happens.
+  const missing = anglers.filter(a=> !a.anglerCode);
+  // Reconciling PayPal is desk work, done once when registration closes - not
+  // something to be doing in a queue at the ramp on tournament morning. So the
+  // whole outstanding list is one line and one button, and the per-angler tick
+  // below is for the stragglers.
+  const owed = outstandingFees(anglers);
+  const feeBanner = owed.entries === 0
+    ? ''
+    : '<div class="fp level-review" style="margin-bottom:12px;">'+
+        '<div class="fp-head"><span class="fp-title">Entry fees outstanding &middot; $'+
+          owed.total.toFixed(2)+'</span></div>'+
+        '<div class="fp-item"><span class="fp-dot level-review"></span><span>'+
+          owed.entries+' '+(owed.entries===1?'entry has':'entries have')+' no payment matched to '+
+          (owed.entries===1?'it':'them')+'. They still score and place &mdash; this only affects '+
+          'the payout total and the state contest report.<br>'+
+          escapeHtml(owed.anglers.filter(a=> a.role!=='partner').map(a=> a.name).join(', '))+
+        '</span></div>'+
+        '<div class="actions" style="margin-top:8px;">'+
+          '<button class="small" data-act="fees-all">Mark all '+owed.entries+' received</button>'+
+        '</div>'+
+      '</div>';
+
+  const banner = feeBanner + (missing.length
+    ? '<div class="fp level-review" style="margin-bottom:12px;">'+
+        '<div class="fp-head"><span class="fp-title">Board codes missing</span></div>'+
+        '<div class="fp-item"><span class="fp-dot level-review"></span><span>'+
+          missing.length+' angler'+(missing.length===1?' has':'s have')+' no board code. '+
+          'They registered before codes existed, and cannot write one on a bump board until they have it.'+
+        '</span></div>'+
+        '<div class="actions" style="margin-top:8px;">'+
+          '<button class="small" data-act="assign-codes">Issue codes to '+missing.length+' angler'+(missing.length===1?'':'s')+'</button>'+
+        '</div>'+
+      '</div>'
+    : '');
+
+  let list = anglers.slice();
+  if(contestantFilter==='solo') list = list.filter(a=>a.division==='solo');
+  else if(contestantFilter==='team') list = list.filter(a=>a.division==='team');
+  else if(contestantFilter==='dq') list = list.filter(a=>a.disqualified);
+  else if(contestantFilter==='unpaid') list = list.filter(a=>!feePaid(a));
+
+  if(list.length===0){
+    el.innerHTML = banner + '<p class="empty">'+(anglers.length===0
+      ? 'No anglers registered yet.'
+      : 'No anglers match this filter.')+'</p>';
+    return;
+  }
+
+  // Rank first, then fall back to alphabetical for the unranked.
+  const decorated = list.map(a=>{
+    const mine = catches.filter(c=>c.anglerId===a.id);
+    const approved = mine.filter(c=>c.status==='approved' && isScoringSpecies(c.species));
+    const best = approved.length ? Math.max.apply(null, approved.map(c=>c.length)) : 0;
+    return {
+      angler: a,
+      mine,
+      approved: mine.filter(c=>c.status==='approved').length,
+      pending: mine.filter(c=>c.status==='pending').length,
+      rejected: mine.filter(c=>c.status==='rejected').length,
+      best,
+      rank: a.disqualified ? 0 : rankOf(a, catches, anglers)
+    };
+  }).sort((x,y)=>{
+    if(x.rank && y.rank) return x.rank - y.rank;
+    if(x.rank) return -1;
+    if(y.rank) return 1;
+    return x.angler.name.localeCompare(y.angler.name);
+  });
+
+  el.innerHTML = banner + decorated.map(d=>contestantRowHtml(d, catches)).join('');
+  wireContestantRows();
+}
+
+function contestantRowHtml(d, catches){
+  const a = d.angler;
+  const open = a.id === expandedContestantId;
+  // Rank still wins over an unmatched fee here: they are on the board, so the
+  // leader stripe belongs to whoever is leading.
+  const cls = 'crow' + (a.disqualified ? ' dq' : (d.rank===1 ? ' leader' : (!feePaid(a) ? ' unpaid' : '')));
+
+  const teamLabel = a.division==='team'
+    ? 'Team with '+escapeHtml(a.partner || '\u2014')+(a.role==='partner' ? ' (partner)' : '')
+    : 'Solo';
+  const checked = ['day1','day2'].map((k,i)=>{
+    const r = (a.checkins && a.checkins[k]) || {};
+    if(r.in && r.out) return 'D'+(i+1)+' complete';
+    if(r.in) return 'D'+(i+1)+' on water';
+    return 'D'+(i+1)+' not in';
+  }).join(' \u00b7 ');
+
+  const head =
+    '<div class="crow-head" data-act="c-toggle" data-id="'+a.id+'">'+
+      '<div class="crow-rank">'+(a.disqualified ? '\u2014' : (d.rank || '\u2014'))+'</div>'+
+      '<div class="crow-id">'+
+        '<div class="crow-name">'+escapeHtml(a.name)+
+          (a.disqualified ? '<span class="dqtag">DQ</span>' : '')+
+          (feePaid(a) ? '' : '<span class="pendtag">Fee outstanding</span>')+'</div>'+
+        '<div class="crow-sub">'+a.tournamentId+' \u00b7 '+teamLabel+
+          (a.bigfish ? ' \u00b7 Big Fish' : '')+'</div>'+
+        // The codes are how you match a number on a board in a photo back to a
+        // person, so they belong on the row you are already looking at.
+        '<div class="crow-sub">'+
+          (a.teamCode ? 'Team '+escapeHtml(a.teamCode)+' \u00b7 ' : '')+
+          (a.anglerCode
+            ? 'ID '+escapeHtml(a.anglerCode)
+            : '<strong style="color:var(--danger);">no board code</strong>')+
+        '</div>'+
+        '<div class="crow-sub">'+checked+'</div>'+
+      '</div>'+
+      '<div class="crow-best">'+
+        '<strong>'+(d.best ? d.best.toFixed(2)+'"' : '\u2014')+'</strong>'+
+        '<span>best</span>'+
+      '</div>'+
+    '</div>';
+
+  if(!open) return '<div class="'+cls+'">'+head+
+    (a.disqualified && a.dqReason ? '<div class="crow-body"><div class="crow-note">Disqualified: '+escapeHtml(a.dqReason)+'</div></div>' : '')+
+    '</div>';
+
+  const stats =
+    '<div class="cstats">'+
+      '<div class="cstat"><strong>'+d.approved+'</strong><span>Approved</span></div>'+
+      '<div class="cstat"><strong>'+d.pending+'</strong><span>Pending</span></div>'+
+      '<div class="cstat"><strong>'+d.rejected+'</strong><span>Rejected</span></div>'+
+      '<div class="cstat"><strong>'+(a.disqualified ? 'DQ' : (d.rank || '\u2014'))+'</strong><span>Standing</span></div>'+
+    '</div>';
+
+  const fish = d.mine.length===0
+    ? '<p class="hint" style="margin:0;">No catches submitted.</p>'
+    : d.mine.slice().sort((x,y)=>y.timestamp-x.timestamp).map(c=>
+        '<div class="cfish"><span>'+escapeHtml(c.species)+' \u00b7 '+Number(c.length).toFixed(2)+'"</span>'+
+        '<span class="st">'+escapeHtml(c.status)+' \u00b7 '+
+        new Date(c.timestamp).toLocaleDateString([], {month:'short',day:'numeric'})+'</span></div>'
+      ).join('');
+
+  // Money, and only money. It sits above the DQ controls because it is the
+  // question asked far more often, not because it decides anything about
+  // whether this angler competes - see feePaid().
+  let confirmArea;
+  if(!feePaid(a)){
+    confirmArea =
+      '<div class="cdq">'+
+        '<div class="cdq-warn">No entry fee matched to '+escapeHtml(a.name)+' yet.<br>'+
+          'They score and place normally. This only affects the payout total and the ' +
+          'state contest report.' +
+          (a.phone ? '<br>Phone on file: '+escapeHtml(a.phone) : '') +
+        '</div>'+
+        '<div class="cdq-actions">'+
+          '<button class="small" data-act="c-confirm" data-id="'+a.id+'">Fee received</button>'+
+        '</div>'+
+      '</div>';
+  } else {
+    confirmArea =
+      '<div class="actions" style="margin-top:8px;">'+
+        '<button class="small" data-act="c-unconfirm" data-id="'+a.id+'">Mark fee outstanding</button>'+
+      '</div>';
+  }
+
+  let dqArea;
+  if(dqConfirmId === a.id){
+    dqArea =
+      '<div class="cdq">'+
+        '<div class="cdq-warn">Disqualify '+escapeHtml(a.name)+'?<br>'+
+          'This removes them from the standings, the Big Fish pot, and payout placements. '+
+          'Their entry fee stays in the pool. Their catches are kept on record and this can be undone.</div>'+
+        '<input type="text" id="dq-reason" placeholder="Reason (optional, kept on record)">'+
+        '<div class="cdq-actions">'+
+          '<button class="small danger" data-act="c-dq-confirm" data-id="'+a.id+'">Yes, disqualify</button>'+
+          '<button class="small" data-act="c-dq-cancel" data-id="'+a.id+'">Cancel</button>'+
+        '</div>'+
+      '</div>';
+  } else if(a.disqualified){
+    dqArea =
+      '<div class="crow-note">Disqualified'+(a.dqReason ? ': '+escapeHtml(a.dqReason) : '')+
+        (a.dqAt ? ' \u00b7 '+new Date(a.dqAt).toLocaleDateString([], {month:'short',day:'numeric'}) : '')+'</div>'+
+      '<div class="actions" style="margin-top:8px;">'+
+        '<button class="small" data-act="c-reinstate" data-id="'+a.id+'">Reinstate</button>'+
+      '</div>';
+  } else {
+    dqArea =
+      '<div class="actions" style="margin-top:8px;">'+
+        '<button class="small danger" data-act="c-dq" data-id="'+a.id+'">Disqualify</button>'+
+      '</div>';
+  }
+
+  // ---- edit ----
+  // Name, phone and Big Fish are freely correctable. The handle is editable
+  // ONLY here: an angler cannot change theirs once chosen, but the director
+  // needs a way to deal with one that turns out to be a problem.
+  //
+  // Division is deliberately absent. Moving solo <-> team means creating or
+  // destroying a partner record and re-pricing the entry, which would quietly
+  // corrupt the pools and the payout split. Remove the entry and re-enter it.
+  let editArea = '';
+  if(editContestantId === a.id){
+    editArea =
+      '<div class="cdq">'+
+        '<div class="field"><label for="ce-name">Real name</label>'+
+          '<input type="text" id="ce-name" value="'+escapeHtml(a.name || '')+'"></div>'+
+        '<div class="field"><label for="ce-phone">Phone</label>'+
+          '<input type="tel" id="ce-phone" value="'+escapeHtml(a.phone || '')+'"></div>'+
+        '<div class="field"><label for="ce-handle">Handle</label>'+
+          '<input type="text" id="ce-handle" value="'+escapeHtml(a.handle || '')+'"></div>'+
+        '<div class="field"><label style="display:flex;align-items:center;gap:8px;font-weight:400;">'+
+          '<input type="checkbox" id="ce-bigfish" style="width:auto;"'+(a.bigfish?' checked':'')+'>'+
+          'In the Big Fish pot</label></div>'+
+        '<div class="err" id="ce-err" style="display:none;"></div>'+
+        '<div class="cdq-actions">'+
+          '<button class="small" data-act="c-edit-save" data-id="'+a.id+'">Save</button>'+
+          '<button class="small" data-act="c-edit-cancel" data-id="'+a.id+'">Cancel</button>'+
+        '</div>'+
+      '</div>';
+  }
+
+  // ---- remove ----
+  // Deleting an angler takes their catches, photos and chat posts with them.
+  // Anything else orphans records that still count toward standings and pools
+  // but belong to nobody. The confirmation names the exact damage first.
+  let removeArea = '';
+  if(removeContestantId === a.id){
+    const msgCount = (liveCache.messages || []).filter(m=>
+      isActiveEventRow(m) && m.anglerId === a.id).length;
+    const mateNote = a.teamId
+      ? '<br><strong>This is a team entry.</strong> Their partner stays registered but will be '+
+        'left without a teammate, so the team can no longer place. Remove both, or disqualify instead.'
+      : '';
+    removeArea =
+      '<div class="cdq">'+
+        '<div class="cdq-warn">Remove '+escapeHtml(a.name)+' completely?<br>'+
+          'This permanently deletes their entry, '+d.mine.length+' catch'+(d.mine.length===1?'':'es')+
+          ' with '+(d.mine.length===1?'its photo':'their photos')+', and '+msgCount+
+          ' chat post'+(msgCount===1?'':'s')+'. It cannot be undone and it changes the pools.'+
+          mateNote+'<br><br>'+
+          'To take someone out of the standings while keeping their record and their entry fee, '+
+          'disqualify them instead.</div>'+
+        '<div class="cdq-actions">'+
+          '<button class="small danger" data-act="c-remove-confirm" data-id="'+a.id+'">Yes, remove permanently</button>'+
+          '<button class="small" data-act="c-remove-cancel" data-id="'+a.id+'">Cancel</button>'+
+        '</div>'+
+      '</div>';
+  }
+
+  const manageArea = (editContestantId === a.id || removeContestantId === a.id) ? '' :
+    '<div class="actions" style="margin-top:8px;">'+
+      '<button class="small" data-act="c-edit" data-id="'+a.id+'">Edit profile</button>'+
+      '<button class="small danger" data-act="c-remove" data-id="'+a.id+'">Remove</button>'+
+    '</div>';
+
+  return '<div class="'+cls+'">'+head+'<div class="crow-body">'+
+    stats+fish+confirmArea+dqArea+manageArea+editArea+removeArea+'</div></div>';
+}
+
+function wireContestantRows(){
+  const el = document.getElementById('contestants-body');
+
+  // Issues a code to everyone who lacks one. Teammates are given a SHARED team
+  // code, matched on teamId, or two people on one entry would end up with two
+  // different team numbers on their boards.
+  el.querySelectorAll('[data-act="fees-all"]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const owed = outstandingFees(await loadAnglers());
+      // Confirmed because it is a write to every outstanding record at once,
+      // and the number is the thing worth reading twice before saying yes.
+      if(!confirm('Mark all ' + owed.entries + ' outstanding ' +
+                  (owed.entries === 1 ? 'entry' : 'entries') + ' as paid?\n\n' +
+                  'That is $' + owed.total.toFixed(2) + ' added to the pools. ' +
+                  'Only do this once the money is actually in the account.')) return;
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      const anglers = await loadAnglers();
+      // Absence IS paid - see feePaid(). Deleting the flag rather than setting
+      // it false keeps every record in the one shape the reader expects.
+      anglers.forEach(a=>{ delete a.pending; });
+      if(!await saveAnglers(anglers)){
+        btn.disabled = false;
+        btn.textContent = 'Could not save — try again';
+        return;
+      }
+      renderAdmin();
+    });
+  });
+
+  el.querySelectorAll('[data-act="assign-codes"]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      btn.disabled = true;
+      btn.textContent = 'Issuing…';
+      const anglers = await loadAnglers();
+      const pool = takenCodes();
+      const teamCodes = {};
+      // Seed from any team code already issued, so a half-filled team keeps
+      // the number its other half is already carrying.
+      for(const a of anglers){ if(a.teamId && a.teamCode) teamCodes[a.teamId] = a.teamCode; }
+      for(const a of anglers){
+        if(!a.anglerCode) a.anglerCode = makeCode(pool);
+        if(a.teamId && !a.teamCode){
+          if(!teamCodes[a.teamId]) teamCodes[a.teamId] = makeCode(pool);
+          a.teamCode = teamCodes[a.teamId];
+        }
+      }
+      await saveAnglers(anglers);
+      renderContestants();
+    });
+  });
+
+  el.querySelectorAll('[data-act="c-toggle"]').forEach(node=>{
+    node.addEventListener('click', ()=>{
+      const id = node.dataset.id;
+      expandedContestantId = (expandedContestantId === id) ? null : id;
+      // Never leave a confirm or an edit armed across rows.
+      dqConfirmId = null;
+      editContestantId = null;
+      removeContestantId = null;
+      renderContestants();
+    });
+  });
+
+  // ---- edit / remove ----
+  const arm = (act, onArm)=>{
+    el.querySelectorAll('[data-act="'+act+'"]').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        editContestantId = null;
+        removeContestantId = null;
+        dqConfirmId = null;
+        if(onArm) onArm(btn.dataset.id);
+        renderContestants();
+      });
+    });
+  };
+  // Confirming and un-confirming are one-tap and reversible either way, so
+  // neither needs an armed confirmation step the way a DQ or a removal does.
+  el.querySelectorAll('[data-act="c-confirm"],[data-act="c-unconfirm"]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const confirming = btn.dataset.act === 'c-confirm';
+      const anglers = await loadAnglers();
+      const a = anglers.find(x=> x.id === btn.dataset.id);
+      if(!a) return;
+      // A team paid one fee, so both halves of it move together - confirming
+      // only the captain would leave the partner unable to score.
+      const group = a.teamId ? anglers.filter(x=> x.teamId === a.teamId) : [a];
+      group.forEach(x=>{
+        if(confirming) delete x.pending;      // absence IS confirmed - see feePaid()
+        else x.pending = true;
+      });
+      await saveAnglers(anglers);
+      renderContestants();
+    });
+  });
+
+  arm('c-edit',          (id)=>{ editContestantId = id; });
+  arm('c-edit-cancel',   null);
+  arm('c-remove',        (id)=>{ removeContestantId = id; });
+  arm('c-remove-cancel', null);
+
+  el.querySelectorAll('[data-act="c-edit-save"]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const errEl = document.getElementById('ce-err');
+      const showErr = (m)=>{ if(errEl){ errEl.textContent = m; errEl.style.display = 'block'; } };
+      if(errEl) errEl.style.display = 'none';
+
+      const name = (document.getElementById('ce-name').value || '').trim();
+      const phone = (document.getElementById('ce-phone').value || '').trim();
+      const handle = (document.getElementById('ce-handle').value || '').trim();
+      const bigfish = document.getElementById('ce-bigfish').checked;
+      if(!name) return showErr('An angler needs a real name on record.');
+      if(!handle) return showErr('An angler needs a handle — that is how they show up publicly.');
+
+      const anglers = await loadAnglers();
+      const idx = anglers.findIndex(a=> a.id === btn.dataset.id);
+      if(idx === -1) return showErr('That angler is no longer on the roster.');
+
+      const norm = (v)=> String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      // Same one-per-person rule the registration form enforces, minus this
+      // angler themselves.
+      if(anglers.some(a=> a.id !== btn.dataset.id && norm(a.name) === norm(name))){
+        return showErr(name + ' is already on the roster under another entry.');
+      }
+      if(anglers.some(a=> a.id !== btn.dataset.id && norm(a.handle) === norm(handle))){
+        return showErr('That handle is already taken. Two anglers sharing one makes the chat unreadable.');
+      }
+
+      anglers[idx].name = name;
+      anglers[idx].phone = phone;
+      anglers[idx].handle = handle;
+      anglers[idx].bigfish = bigfish;
+      // The partner field on the OTHER record carries this angler's name, so a
+      // rename has to fix both or the team reads inconsistently.
+      if(anglers[idx].teamId){
+        const mateIdx = anglers.findIndex(a=> a.teamId === anglers[idx].teamId && a.id !== anglers[idx].id);
+        if(mateIdx !== -1) anglers[mateIdx].partner = name;
+      }
+      if(!await saveAnglers(anglers)) return showErr('That did not save. Check your storage and try again.');
+      editContestantId = null;
+      renderAdmin();
+    });
+  });
+
+  el.querySelectorAll('[data-act="c-remove-confirm"]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const id = btn.dataset.id;
+
+      // Catches first, so their photos go with them. saveCatches() deletes the
+      // photo of any catch that disappears from the list.
+      const catches = await loadCatches();
+      const keptCatches = catches.filter(c=> c.anglerId !== id);
+      if(keptCatches.length !== catches.length) await saveCatches(keptCatches);
+
+      // Then their chat, including replies left under their posts.
+      const messages = await loadMessages();
+      const theirs = new Set(messages.filter(m=> m.anglerId === id).map(m=> m.id));
+      const keptMessages = messages.filter(m=> !theirs.has(m.id) && !theirs.has(m.replyTo));
+      if(keptMessages.length !== messages.length) await saveMessages(keptMessages);
+
+      // The angler last, so a failure part-way through never leaves a roster
+      // entry pointing at records that are already gone.
+      const anglers = await loadAnglers();
+      await saveAnglers(anglers.filter(a=> a.id !== id));
+
+      // If this device was that angler, it is now unregistered.
+      if(getMyAnglerId() === id) setMyAnglerId('');
+      removeContestantId = null;
+      expandedContestantId = null;
+      renderAdmin();
+    });
+  });
+
+  // First click only arms the confirmation - it never disqualifies anyone.
+  el.querySelectorAll('[data-act="c-dq"]').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      dqConfirmId = btn.dataset.id;
+      renderContestants();
+    });
+  });
+  el.querySelectorAll('[data-act="c-dq-cancel"]').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      dqConfirmId = null;
+      renderContestants();
+    });
+  });
+
+  // Second, deliberate click is the one that acts.
+  el.querySelectorAll('[data-act="c-dq-confirm"]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const reasonEl = document.getElementById('dq-reason');
+      const reason = reasonEl ? reasonEl.value.trim() : '';
+      const anglers = await loadAnglers();
+      const idx = anglers.findIndex(a=>a.id===btn.dataset.id);
+      if(idx===-1) return;
+      anglers[idx].disqualified = true;
+      anglers[idx].dqReason = reason;
+      anglers[idx].dqAt = Date.now();
+      await saveAnglers(anglers);
+      dqConfirmId = null;
+      renderAdmin();
+    });
+  });
+
+  el.querySelectorAll('[data-act="c-reinstate"]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      if(!window.confirm('Reinstate this angler? They return to the standings immediately.')) return;
+      const anglers = await loadAnglers();
+      const idx = anglers.findIndex(a=>a.id===btn.dataset.id);
+      if(idx===-1) return;
+      anglers[idx].disqualified = false;
+      anglers[idx].dqReason = '';
+      anglers[idx].dqAt = null;
+      await saveAnglers(anglers);
+      renderAdmin();
+    });
+  });
+}
+
+// ---- offline shell ----
+// Registers sw.js, which is what lets the installed app open with no signal at
+// all. Guarded three ways because none of this exists on a page opened straight
+// off the disk, and a throw here would take the whole startup with it.
+function registerServiceWorker(){
+  try{
+    if(!('serviceWorker' in navigator)) return;
+    const proto = window.location && window.location.protocol;
+    if(proto !== 'https:' && (window.location || {}).hostname !== 'localhost') return;
+
+    navigator.serviceWorker.register('sw.js').then(reg=>{
+      // A new version downloaded while the app was open. Saying so beats
+      // swapping the page out underneath somebody mid-catch.
+      reg.addEventListener('updatefound', ()=>{
+        const sw = reg.installing;
+        if(!sw) return;
+        sw.addEventListener('statechange', ()=>{
+          if(sw.state === 'installed' && navigator.serviceWorker.controller){
+            showUpdateBanner(sw);
+          }
+        });
+      });
+    }).catch(e=> console.error(e));
+
+    // The new worker took over - reload once, and only once, or a controller
+    // change during startup would loop.
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+      if(reloading) return;
+      reloading = true;
+      window.location.reload();
+    });
+  }catch(e){ console.error(e); }
+}
+
+function showUpdateBanner(worker){
+  if(document.getElementById('sw-update')) return;
+  const bar = document.createElement('div');
+  bar.id = 'sw-update';
+  bar.className = 'sw-update';
+  bar.innerHTML = '<span>A newer version of LiveWire is ready.</span>' +
+    '<button type="button" id="sw-update-go">Update</button>';
+  document.body.appendChild(bar);
+  const go = document.getElementById('sw-update-go');
+  if(go) go.addEventListener('click', ()=>{
+    bar.remove();
+    worker.postMessage('skip-waiting');
+  });
+}
+
+// ---- keeping the tab bar above the browser's own toolbar ----
+// A phone browser's bottom toolbar covers the bottom of the layout viewport,
+// and no CSS unit tracks it while it animates in and out on scroll - which is
+// why the nav looked stuck and half-hidden on the web but fine once installed
+// to the home screen, where there is no toolbar at all.
+//
+// visualViewport is the only thing that knows. The difference between the
+// layout viewport and the visible one IS the covered strip, so the nav is
+// pushed up by exactly that much.
+const KEYBOARD_INSET = 160;   // more than a toolbar; this is a keyboard
+
+function syncViewportInset(){
+  const vv = window.visualViewport;
+  const root = document.documentElement;
+  if(!vv || !root) return;
+  const covered = Math.max(0, root.clientHeight - vv.height - vv.offsetTop);
+  const nav = document.querySelector('nav.tabbar');
+  // A keyboard is not a toolbar. Floating the nav on top of an open keyboard
+  // would put it over the very field being typed into, so it stands down
+  // instead and comes back when the keyboard closes.
+  if(nav) nav.style.visibility = covered > KEYBOARD_INSET ? 'hidden' : '';
+  root.style.setProperty('--vv-bottom', (covered > KEYBOARD_INSET ? 0 : Math.round(covered)) + 'px');
+}
+
+if(window.visualViewport){
+  window.visualViewport.addEventListener('resize', syncViewportInset);
+  window.visualViewport.addEventListener('scroll', syncViewportInset);
+}
+
+// ---- init ----
+(async ()=>{
+  try{
+    const app = document.getElementById('app');
+    if(app) app.dataset.theme = 'home';
+    syncViewportInset();
+    registerServiceWorker();
+    await loadMyAnglerId();
+    // Paint the event's own name, dates and species before anything else, so the
+    // first frame is not last year's copy waiting to be corrected by the sync.
+    renderEventCopy();
+    updateSyncUi();
+    initStore();          // resolves later; the UI lights up when it does
+    startEventClock();
+    resumeBeaconTracking();
+    await renderRoster();
+    await renderHome();
+    // Last, so a deep link paints onto an app that is already awake.
+    initHistory();
+  }catch(e){
+    console.error(e);
+    const b = document.createElement('div');
+    b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#A3372A;color:#fff;'
+      + 'font:12px/1.45 system-ui,sans-serif;padding:10px 12px;white-space:pre-wrap;';
+    b.textContent = 'LiveWire startup error \u2014 screenshot this:\n' + (e && e.message ? e.message : e);
+    document.body.appendChild(b);
+  }
+})();

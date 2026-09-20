@@ -23,6 +23,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { loadSource } from './source.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const HTML = process.argv[2] || path.join(HERE, '..', 'index.html');
@@ -30,12 +31,15 @@ if (!fs.existsSync(HTML)) {
   console.error('Cannot find ' + HTML + '\nRun this from the project root, or pass the path to index.html.');
   process.exit(1);
 }
-const src = fs.readFileSync(HTML, 'utf8');
-const m = src.match(/<script>([\s\S]*)<\/script>/);
-if (!m) { console.error('no inline script found'); process.exit(1); }
+// The application used to be an inline <script> in index.html and was pulled
+// out of it with a regex right here. It is /app/livewire.js now - the policy
+// stopped allowing it inline - and test/source.mjs is what knows that.
+let source;
+try { source = loadSource(HTML); }
+catch (e) { console.error(e.message); process.exit(1); }
 
 // Force device-only mode at load; individual tests install a fake backend.
-let code = m[1].replace(/const SUPABASE_URL = '[^']*'/, "const SUPABASE_URL = ''");
+let code = source.script.replace(/const SUPABASE_URL = '[^']*'/, "const SUPABASE_URL = ''");
 if (!/const SUPABASE_URL = ''/.test(code)) { console.error('could not neutralise SUPABASE_URL'); process.exit(1); }
 
 code += `
@@ -2939,7 +2943,10 @@ section('34. handles are fixed once chosen');
 // There is no angler-facing path that writes a handle after registration -
 // the only writer is the director's edit form. If that ever changes, this
 // count goes up and someone has to justify it.
-const appSrc = fs.readFileSync(HTML, 'utf8');
+// Counted across index.html when the application lived inside it. Pointed at
+// the page alone now it would find nothing, and both of these would pass for
+// the wrong reason - the application is the thing being checked, so read that.
+const appSrc = source.script;
 const handleWrites = (appSrc.match(/\.handle\s*=/g) || []).length;
 check('exactly one place assigns a handle after the fact', handleWrites, 1);
 check('and it is the director edit form',

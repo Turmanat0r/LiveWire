@@ -1,0 +1,1678 @@
+
+
+  :root{
+    --ink:#16201F;
+    --paper:#F1ECE0;
+    --paper-2:#E7E0CF;
+    --deep:#24404D;
+    --steel:#3D5A66;
+    --gold:#C98A2C;
+    --gold-deep:#8F5F16;
+    --olive:#5C6B4F;
+    --line:#C9C0A9;
+    --danger:#A3372A;
+    --white:#FBF9F3;
+  }
+  *{box-sizing:border-box;}
+  html{
+    /* Stops Safari inflating text by itself on rotate, which reflows the page
+       to a width it then has to be zoomed out of. */
+    -webkit-text-size-adjust:100%;
+    text-size-adjust:100%;
+  }
+  body{
+    margin:0;background:var(--paper);color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;
+    /* A safety net, not a fix: one element wider than the screen makes the
+       whole page horizontally scrollable and the zoom feel broken everywhere.
+       Anything genuinely wide - a table, a code block - scrolls inside its own
+       container instead. */
+    overflow-x:hidden;
+    max-width:100%;
+  }
+  /* Long unbroken text - a pasted link in the chat, a handle with no spaces -
+     is the usual thing that pushes a card past the screen edge. */
+  body, input, select, textarea, button{ overflow-wrap:anywhere; }
+  img, canvas, svg, video{ max-width:100%; }
+  /* 100vh on a mobile browser is the height with the toolbars HIDDEN, so the
+     page is always taller than what you can see and the bottom of it sits
+     under the browser chrome. dvh is that same measurement done honestly;
+     the vh line stays as the fallback for anything too old to know it. */
+  #app{
+    max-width:520px;margin:0 auto;background:var(--paper);
+    min-height:100vh;
+    min-height:100dvh;
+    padding-bottom:calc(96px + env(safe-area-inset-bottom, 0px));
+    padding-top:env(safe-area-inset-top, 0px);
+    padding-left:env(safe-area-inset-left, 0px);
+    padding-right:env(safe-area-inset-right, 0px);
+  }
+
+  header.hero{
+    background:var(--deep);
+    color:var(--white);
+    padding:28px 20px 22px;
+    border-bottom:3px solid var(--gold);
+  }
+  header.hero .kicker{font-size:12px;letter-spacing:0.02em;color:#B9CBD1;margin:0 0 4px;}
+  header.hero h1{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:26px;
+    line-height:1.15;
+    margin:0 0 8px;
+  }
+  header.hero .meta{font-size:13px;color:#CFDBDE;line-height:1.5;margin:0;}
+
+  main{padding:18px 18px 8px;}
+
+  .card{
+    background:var(--white);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:16px 16px 18px;
+    margin-bottom:16px;
+  }
+  .card h2{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:18px;
+    margin:0 0 12px;
+    color:var(--deep);
+  }
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:12px;color:var(--steel);margin-bottom:5px;font-weight:500;}
+  .field input[type=text],
+  .field input[type=tel],
+  .field input[type=email],
+  .field input[type=password],
+  .field input[type=number],
+  .field textarea,
+  .field select{
+    width:100%;
+    padding:10px 11px;
+    border:1px solid var(--line);
+    border-radius:4px;
+    /* 16px is not a style choice. iOS Safari zooms the whole page in whenever
+       a focused field's text is smaller than this, and nothing zooms it back -
+       the reader has to pinch out, and until they do, scrolling and the fixed
+       nav are both wrong. Every field in this file is 16px for that reason. */
+    font-size:16px;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:inherit;
+  }
+  .field input:focus,.field select:focus,.field textarea:focus{outline:2px solid var(--gold);outline-offset:1px;}
+  .field textarea{resize:vertical;font-family:'Space Mono',monospace;font-size:16px;line-height:1.5;}
+  .row2{display:flex;gap:10px;}
+  .row2 > div{flex:1;}
+
+  .radiogroup{display:flex;gap:8px;}
+  .radiogroup label{
+    flex:1;
+    text-align:center;
+    border:1px solid var(--line);
+    border-radius:4px;
+    padding:9px 6px;
+    font-size:13px;
+    cursor:pointer;
+    background:var(--paper);
+  }
+  .radiogroup input{display:none;}
+  .radiogroup label.active{background:var(--deep);color:var(--white);border-color:var(--deep);}
+
+  button.primary{
+    width:100%;
+    background:var(--gold-deep);
+    color:var(--white);
+    border:none;
+    border-radius:4px;
+    padding:13px;
+    font-size:15px;
+    font-weight:600;
+    font-family:inherit;
+    cursor:pointer;
+    margin-top:4px;
+  }
+  button.primary:active{transform:scale(0.99);}
+  button.primary:disabled{opacity:0.5;}
+  button.secondary{
+    width:100%;
+    background:transparent;
+    color:var(--deep);
+    border:1px solid var(--deep);
+    border-radius:4px;
+    padding:10px;
+    font-size:14px;
+    font-family:inherit;
+    cursor:pointer;
+  }
+  button.small{
+    background:transparent;
+    border:1px solid var(--line);
+    border-radius:4px;
+    padding:6px 10px;
+    font-size:12px;
+    cursor:pointer;
+    color:var(--steel);
+  }
+  button.small.danger{color:var(--danger);border-color:#D9B7B0;}
+  .err{color:var(--danger);font-size:12px;margin-top:4px;}
+  .hint{color:var(--steel);font-size:12px;margin-top:6px;line-height:1.5;}
+
+  /* ---- FWP contest report ----
+     The sheet is a rebuild of the state's paper form, not a styled summary of
+     it, so it deliberately drops out of the app's palette: black on white,
+     Arial, ruled boxes.
+
+     PAPER IS THE BASE HERE, and the compact screen sizes below are the opt-out.
+     That is deliberate: the printed copy and the on-screen page view then share
+     one definition of what the form measures, and cannot drift apart. If they
+     drifted, the page view would stop predicting where the pages break, which
+     is the only reason it exists. */
+  #report-sheet{
+    --fwp-base:10pt;
+    --fwp-grid:9pt;
+    --fwp-size:6.5pt;
+    --fwp-title:14pt;
+    --fwp-head:9pt;
+    --fwp-foot:7.5pt;
+    --fwp-cell-pad:3px 4px;
+    --fwp-size-pad:2px 1px;
+    background:#fff;color:#000;padding:14px;
+    font-family:Arial,Helvetica,sans-serif;font-size:var(--fwp-base);line-height:1.35;
+    border:1px solid var(--line);
+  }
+  /* Readable on a phone. Only on screen, and only when the page view is off -
+     the page view wants the paper's own measurements. */
+  @media screen{
+    #report-sheet:not(.pageview){
+      --fwp-base:12px;
+      --fwp-grid:12px;
+      --fwp-size:11px;
+      --fwp-title:17px;
+      --fwp-head:12px;
+      --fwp-foot:10px;
+      --fwp-cell-pad:5px 6px;
+      --fwp-size-pad:3px 2px;
+    }
+  }
+  .fwp-page + .fwp-page{margin-top:24px;padding-top:20px;border-top:2px dashed var(--line);}
+  .fwp-region{text-align:right;font-weight:700;margin-bottom:8px;}
+  .fwp-title{
+    text-align:center;font-size:var(--fwp-title);font-weight:700;text-decoration:underline;
+    margin:0 0 14px;color:#000;
+  }
+  .fwp-return{font-weight:700;margin:0 0 8px;}
+  .fwp-address{margin:0 0 16px 30px;line-height:1.5;}
+  .fwp-head{
+    text-align:center;font-size:var(--fwp-head);font-weight:700;text-decoration:underline;
+    color:#000;margin:18px 0 6px;border:none;padding:0;letter-spacing:0;text-transform:none;
+  }
+  .fwp-head-note{font-weight:700;}
+  .fwp-sub{text-align:center;font-weight:700;margin:0 0 6px;}
+  .fwp-sub.em{font-style:italic;}
+  /* The label/value grids at the head of page 1. Fixed layout so a long
+     waterbody name wraps inside its box instead of widening the column. */
+  .fwp-grid,.fwp-table{
+    border-collapse:collapse;width:100%;margin-bottom:14px;
+    table-layout:fixed;font-size:var(--fwp-grid);
+  }
+  .fwp-grid th,.fwp-grid td,.fwp-table th,.fwp-table td{
+    border:1px solid #000;padding:var(--fwp-cell-pad);vertical-align:top;
+    overflow-wrap:anywhere;word-break:normal;
+  }
+  .fwp-grid th{background:#D9D9D9;text-align:center;font-weight:700;}
+  .fwp-table th{background:#fff;text-align:center;font-weight:700;}
+  .fwp-table td{height:22px;}
+  .fwp-grid td,.fwp-table td{text-align:left;}
+  #report-sheet td.num,#report-sheet th.num{text-align:center;}
+  /* Twenty inch columns will never fit a phone. Scrolling the table beats
+     scrolling the page sideways, which breaks the fixed nav. */
+  .rscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .fwp-size{table-layout:auto;font-size:var(--fwp-size);}
+  .fwp-size th,.fwp-size td{padding:var(--fwp-size-pad);white-space:nowrap;}
+  .fwp-species-col{width:130px;text-align:center;}
+  /* Page 2's fill-in-the-blank lines. */
+  .fwp-line{margin:0 0 12px;}
+  .fwp-fill{
+    display:inline-block;min-width:150px;border-bottom:1px solid #000;
+    padding:0 4px;text-align:center;
+  }
+  .fwp-fill.wide{min-width:60%;}
+  .fwp-box{
+    display:inline-block;min-width:52px;border-bottom:1px solid #000;
+    padding:0 4px;text-align:center;font-weight:700;
+  }
+  .fwp-line .fwp-box{margin-left:14px;}
+  .fwp-gap{display:inline-block;width:36px;}
+  .fwp-box-area{border:1px solid #000;min-height:70px;padding:7px 8px;margin-bottom:14px;}
+  .fwp-foot{
+    display:flex;justify-content:space-between;gap:12px;
+    font-size:var(--fwp-foot);font-weight:700;margin-top:16px;
+  }
+
+  /* ---- page view ----
+     US Letter at 96dpi, with the print stylesheet's own margins and type, laid
+     out full size and then scaled down to the screen by scaleReportPages().
+     Scaling rather than reflowing is the point: a reflowed preview would break
+     its pages somewhere the printer never will.
+
+     min-height, not height. A printer does not clip an over-long page, it
+     spills it onto another sheet - so this shows the spill and marks where the
+     paper actually ends. */
+  #report-frame{overflow:hidden;}
+  #report-sheet.pageview{
+    width:8.5in;border:none;padding:0;background:none;
+    transform-origin:top left;
+  }
+  #report-sheet.pageview .fwp-page{
+    width:8.5in;min-height:11in;padding:0.5in;
+    box-sizing:border-box;background:#fff;position:relative;
+    box-shadow:0 1px 8px rgba(0,0,0,.3);
+    margin:0 0 20px;border-top:none;
+  }
+  #report-sheet.pageview .fwp-page + .fwp-page{margin-top:0;padding-top:0.5in;border-top:none;}
+  #report-sheet.pageview .rscroll{overflow:visible;}
+  #report-sheet.pageview .fwp-page.overflowing::after{
+    content:'\2191 fits on the sheet   \2193 spills onto another one';
+    position:absolute;left:0;right:0;top:11in;
+    border-top:2px dashed var(--danger);
+    color:var(--danger);font-size:8pt;font-weight:700;padding:3px 0.5in 0;
+  }
+  .rspill{
+    border-left:3px solid var(--danger);background:#F1D6D0;color:#7A2018;
+    padding:9px 11px;margin-bottom:8px;font-size:13px;line-height:1.5;
+  }
+  .rday{border:1px solid var(--line);padding:10px;margin-bottom:8px;background:var(--white);}
+  .rday-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;}
+  .rday-name{font-weight:600;}
+
+  .divtabs{display:flex;gap:8px;margin-bottom:14px;}
+  .divtabs button{
+    flex:1;
+    padding:9px;
+    font-size:13px;
+    border:1px solid var(--line);
+    background:var(--paper);
+    border-radius:4px;
+    cursor:pointer;
+    color:var(--ink);
+    font-family:inherit;
+  }
+  .divtabs button.active{background:var(--olive);color:var(--white);border-color:var(--olive);}
+
+  .lbrow{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:10px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .lbrow:last-child{border-bottom:none;}
+  .lbrow .rank{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:17px;
+    color:var(--gold-deep);
+    width:22px;
+    text-align:center;
+  }
+  .lbrow .who{flex:1;min-width:0;}
+  .lbrow .who .name{font-size:14px;font-weight:500;}
+  .lbrow .who .sub{font-size:12px;color:var(--steel);}
+  .lbrow .len{font-family:'Fraunces',serif;font-size:16px;font-weight:600;color:var(--deep);}
+
+  .empty{
+    text-align:center;
+    padding:26px 10px;
+    color:var(--steel);
+    font-size:14px;
+  }
+
+  .catchcard{
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:12px;
+    margin-bottom:10px;
+    display:flex;
+    gap:10px;
+  }
+  .catchcard.best{border-color:var(--gold);background:#FCF6E9;}
+  .catchcard img{width:64px;height:64px;object-fit:cover;border-radius:4px;background:var(--paper-2);flex-shrink:0;}
+  .catchcard .noimg{width:64px;height:64px;border-radius:4px;background:var(--paper-2);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--steel);}
+  .catchcard .info{flex:1;min-width:0;}
+  .catchcard .info .top{display:flex;justify-content:space-between;gap:8px;align-items:center;}
+  .catchcard .info .len{font-weight:600;font-family:'Fraunces',serif;font-size:16px;}
+  .catchcard .info .name{font-size:13px;color:var(--steel);}
+  .catchcard .info .status{font-size:11px;margin-top:4px;display:inline-block;padding:2px 7px;border-radius:3px;}
+  .badge{font-size:11px;display:inline-block;padding:2px 7px;border-radius:3px;background:#F3E4C4;color:var(--gold-deep);}
+  .catchcard .info .badge{margin-top:4px;margin-left:6px;}
+  .status.pending{background:#F3E4C4;color:var(--gold-deep);}
+  .status.approved{background:#DDE6D5;color:var(--olive);}
+  .status.rejected{background:#F1D6D0;color:var(--danger);}
+  .actions{display:flex;gap:6px;margin-top:6px;}
+  /* 16px like every other field - see .field input. Wider to match, since a
+     bigger glyph in the same 70px box would clip a three-digit length. */
+  .catchcard .edit-len{width:84px;padding:6px 8px;font-size:16px;border:1px solid var(--line);border-radius:4px;background:var(--paper);}
+
+  nav.tabbar{
+    position:fixed;
+    /* Above Leaflet, whose controls sit as high as 1000. Without this the map's
+       zoom buttons scroll out over the top of the bottom nav. */
+    z-index:1200;
+    /* Three things stack up here:
+         14px      the gap it floats at
+         safe-area the home indicator on a notched phone
+         --vv-bottom  however much of the layout viewport the browser's own
+                   toolbar is currently covering, measured in JS below. This
+                   is the one that fixes the nav hiding behind Safari's bar,
+                   because no CSS unit tracks a toolbar that animates. */
+    bottom:calc(14px + env(safe-area-inset-bottom, 0px) + var(--vv-bottom, 0px));
+    left:0;right:0;
+    transition:bottom .12s ease-out;
+    max-width:480px;
+    margin:0 auto;
+    background:var(--deep);
+    display:flex;
+    gap:2px;
+    border-radius:20px;
+    padding:6px;
+    box-shadow:0 8px 24px rgba(0,0,0,0.28), 0 2px 6px rgba(0,0,0,0.15);
+  }
+  nav.tabbar button{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:3px;
+    background:none;
+    border:none;
+    border-radius:14px;
+    color:#8CA3AA;
+    font-size:10.5px;
+    font-weight:500;
+    font-family:inherit;
+    padding:9px 4px 8px;
+    cursor:pointer;
+    transition:background-color .18s ease, color .18s ease;
+  }
+  nav.tabbar button.active{
+    color:var(--white);
+    font-weight:600;
+    background:rgba(255,255,255,0.12);
+  }
+  nav.tabbar button .ico{display:block;width:20px;height:20px;}
+  nav.tabbar button .ico svg{width:100%;height:100%;display:block;}
+  nav.tabbar button .ico svg{stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+
+  .screen{display:none;}
+  .screen.active{display:block;}
+
+  .lockrow{display:flex;gap:8px;}
+  .lockrow input{
+    flex:1;
+    padding:10px 11px;
+    border:1px solid var(--line);
+    border-radius:4px;
+    font-size:16px;   /* see .field input - anything less zooms iOS in */
+    background:var(--paper);
+    color:var(--ink);
+    font-family:inherit;
+  }
+  .lockrow input:focus{outline:2px solid var(--gold);outline-offset:1px;}
+
+  .divider{border:none;border-top:1px solid var(--line);margin:14px 0;}
+
+  .backlink{
+    display:inline-block;
+    color:var(--steel);
+    font-size:13px;
+    margin-bottom:12px;
+    cursor:pointer;
+    text-decoration:none;
+  }
+
+  .profilecard{
+    background:var(--deep);
+    color:var(--white);
+    border-radius:6px;
+    padding:16px;
+    margin-bottom:16px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+  .profilecard .avatar{
+    width:46px;height:46px;border-radius:50%;
+    background:var(--gold);color:var(--deep);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Fraunces',serif;font-weight:600;font-size:16px;
+    flex-shrink:0;
+  }
+  .profilecard .name{font-size:16px;font-weight:600;}
+  .profilecard .sub{font-size:12px;color:#CFDBDE;margin-top:2px;}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .tile{
+    background:var(--white);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:16px 10px;
+    text-align:center;
+    cursor:pointer;
+  }
+  .tile .ticon{font-size:24px;display:block;margin-bottom:8px;}
+  .tile .tlabel{font-size:13px;font-weight:500;}
+  .tile .tsub{font-size:11px;color:var(--steel);margin-top:2px;}
+
+  .checkrow{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:14px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .checkrow:last-child{border-bottom:none;}
+  .checkrow .day{font-size:14px;font-weight:500;}
+  .checkrow .status-text{font-size:12px;color:var(--steel);margin-top:2px;}
+  .checkbtn{
+    padding:9px 14px;
+    border-radius:4px;
+    border:none;
+    font-size:13px;
+    font-weight:600;
+    font-family:inherit;
+    cursor:pointer;
+  }
+  .checkbtn.in{background:var(--olive);color:var(--white);}
+  .checkbtn.out{background:var(--deep);color:var(--white);}
+  .checkbtn.done{background:var(--paper-2);color:var(--steel);}
+
+  #app, #app *{transition:background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;}
+
+  #app[data-theme="home"]{
+    --deep:#07090A;--gold:#E03725;--gold-deep:#A52216;--paper:#07090A;
+    --paper-2:#181C1F;--line:#30363A;--steel:#A5ADB1;--white:#F4F1E9;
+    height:100svh;min-height:100svh;overflow-y:auto;padding-bottom:70px;
+    background:linear-gradient(155deg,rgba(224,55,37,.08),transparent 34%),var(--deep);
+    color:var(--white);
+  }
+  #app[data-theme="home"] main{padding:0 12px 6px;}
+  #app[data-theme="home"] header.hero{display:none;}
+  #app[data-theme="home"] #screen-home{height:100%;}
+
+  .home-topbar{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:9px 2px 8px;border-bottom:1px solid var(--line);
+  }
+  .home-brand{display:flex;align-items:center;gap:9px;min-width:0;}
+  .home-monogram{
+    display:grid;place-items:center;width:35px;height:35px;flex-shrink:0;
+    background:var(--gold);color:var(--white);font-family:'Oswald',sans-serif;
+    font-weight:700;letter-spacing:.03em;
+    clip-path:polygon(0 0,86% 0,100% 28%,100% 100%,14% 100%,0 72%);
+  }
+  .home-brand-copy{display:flex;flex-direction:column;min-width:0;}
+  .home-brand-copy strong{
+    font-family:'Oswald',sans-serif;font-size:17px;line-height:1.05;
+    letter-spacing:.04em;text-transform:uppercase;
+  }
+  .home-brand-copy small{
+    margin-top:2px;color:var(--steel);font-family:'Space Mono',monospace;
+    font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+  }
+  .home-signal{
+    display:grid;place-items:center;width:38px;height:38px;flex-shrink:0;
+    border:1px solid var(--line);background:#111416;color:var(--gold);
+  }
+  .home-signal svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+
+  .home-event{
+    position:relative;isolation:isolate;overflow:hidden;margin-top:8px;padding:11px 13px 12px;
+    border:1px solid var(--line);border-left:5px solid var(--gold);
+    background:repeating-linear-gradient(135deg,transparent 0 12px,rgba(255,255,255,.025) 12px 13px),linear-gradient(140deg,#1C2428 0%,#101416 60%,#090B0C 100%);
+    clip-path:polygon(0 0,95% 0,100% 8%,100% 100%,0 100%);
+  }
+  .home-event::after{
+    content:'';position:absolute;z-index:-2;right:-42px;bottom:-74px;width:180px;height:180px;
+    border:1px solid rgba(224,55,37,.34);border-radius:50%;
+    box-shadow:0 0 0 20px rgba(224,55,37,.045),0 0 0 42px rgba(224,55,37,.025);
+  }
+  .home-event-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;}
+  .home-live{
+    display:inline-flex;align-items:center;gap:6px;padding:4px 7px;
+    border:1px solid rgba(224,55,37,.65);background:rgba(224,55,37,.12);
+    font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.04em;text-transform:uppercase;
+  }
+  .home-live-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(224,55,37,.14);}
+  .home-live.closed{border-color:var(--line);background:rgba(255,255,255,.04);}
+  .home-live.closed .home-live-dot{background:var(--steel);box-shadow:none;}
+  .home-event-date{color:var(--steel);font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;}
+  .home-fishmark{position:absolute;z-index:-1;top:26px;right:-21px;width:154px;height:96px;color:rgba(244,241,233,.075);transform:rotate(-8deg);}
+  .home-fishmark path,.home-fishmark line{stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+  .home-kicker{margin:0 0 3px;color:var(--steel);font-family:'Space Mono',monospace;font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;}
+  .home-event h1{
+    max-width:300px;margin:0;color:var(--white);font-family:'Oswald',sans-serif;
+    font-size:25px;line-height:1.03;letter-spacing:.025em;text-transform:uppercase;
+  }
+  .home-location{display:flex;align-items:center;gap:5px;margin:6px 0 8px;color:var(--steel);font-size:10.5px;}
+  .home-location svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+  .home-register{
+    width:100%;height:38px;border:0;background:var(--gold);color:var(--white);
+    font-family:'Oswald',sans-serif;font-size:13px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;cursor:pointer;
+    clip-path:polygon(0 0,97% 0,100% 28%,100% 100%,3% 100%,0 72%);
+  }
+
+  .home-profilecard{
+    display:flex;align-items:center;gap:9px;min-height:50px;margin-top:7px;padding:7px 9px;
+    border:1px solid var(--line);background:#111416;
+  }
+  .home-avatar{
+    display:grid;place-items:center;width:36px;height:36px;flex-shrink:0;
+    background:#26363D;border-bottom:3px solid #D5A33A;color:var(--white);
+    font-family:'Oswald',sans-serif;font-weight:600;
+  }
+  .home-profile-copy{display:flex;flex:1;min-width:0;flex-direction:column;}
+  .home-profile-label{color:var(--gold);font-family:'Space Mono',monospace;font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;}
+  .home-profile-name{overflow:hidden;color:var(--white);font-family:'Oswald',sans-serif;font-size:14px;font-weight:600;letter-spacing:.03em;text-overflow:ellipsis;text-transform:uppercase;white-space:nowrap;}
+  .home-profile-sub{overflow:hidden;color:var(--steel);font-family:'Space Mono',monospace;font-size:9px;text-overflow:ellipsis;white-space:nowrap;}
+
+  .event-countdown{
+    display:grid;grid-template-columns:auto 1fr 1fr;align-items:stretch;gap:0;
+    min-height:55px;margin-top:6px;border:1px solid var(--line);border-left:5px solid var(--gold);
+    background:#111416;color:var(--white);
+  }
+  .event-countdown[hidden]{display:none;}
+  .countdown-status{
+    display:flex;align-items:center;justify-content:center;flex-direction:column;
+    min-width:62px;padding:5px 7px;background:rgba(224,55,37,.12);text-align:center;
+  }
+  .countdown-status strong{font-family:'Oswald',sans-serif;font-size:12px;letter-spacing:.06em;text-transform:uppercase;}
+  .countdown-status span{color:var(--gold);font-family:'Space Mono',monospace;font-size:8px;letter-spacing:.08em;text-transform:uppercase;}
+  .countdown-block{
+    display:flex;align-items:center;justify-content:center;flex-direction:column;
+    padding:5px 6px;border-left:1px solid var(--line);text-align:center;
+  }
+  .countdown-label{color:var(--steel);font-family:'Space Mono',monospace;font-size:8px;letter-spacing:.08em;text-transform:uppercase;}
+  .countdown-value{margin-top:1px;font-family:'Oswald',sans-serif;font-size:17px;font-weight:700;letter-spacing:.05em;}
+  .countdown-time{color:var(--gold);font-family:'Space Mono',monospace;font-size:8px;letter-spacing:.06em;}
+  .event-countdown.phase-checkin{border-left-color:#D5A33A;}
+  .event-countdown.phase-checkin .countdown-status{background:rgba(213,163,58,.10);}
+  .event-countdown.phase-complete{border-left-color:#5FAE85;}
+  .event-countdown.phase-complete .countdown-status{background:rgba(95,174,133,.10);}
+
+  .home-sectionhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 2px 6px;}
+  .home-sectionhead h2{margin:0;color:var(--white);font-family:'Oswald',sans-serif;font-size:14px;letter-spacing:.05em;text-transform:uppercase;}
+  .home-sectionhead span{color:var(--gold);font-family:'Space Mono',monospace;font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;}
+  .home-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;}
+  .home-tile{
+    position:relative;display:flex;align-items:flex-start;flex-direction:column;justify-content:space-between;
+    min-height:78px;padding:9px 10px;border:1px solid var(--line);background:#181C1F;
+    color:var(--white);cursor:pointer;text-align:left;
+  }
+  /* The fallback is the old near-invisible slate: if the script has not run
+     yet the bar is still there, just quiet, rather than missing and then
+     appearing. */
+  .home-tile::after{content:'';position:absolute;right:0;bottom:0;width:22px;height:3px;background:var(--tile-accent,#26363D);}
+  .home-tile:active{transform:translateY(1px);border-color:var(--gold);}
+  .home-tile-icon{width:18px;height:18px;color:var(--white);}
+  .home-tile-icon svg{width:100%;height:100%;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+  .home-tile-copy{display:flex;flex-direction:column;min-width:0;}
+  .home-tile-label{color:var(--white);font-family:'Oswald',sans-serif;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;}
+  .home-tile-sub{color:var(--steel);font-family:'Space Mono',monospace;font-size:8.5px;}
+  .home-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:7px;}
+  .home-info-tile{
+    position:relative;
+    display:flex;align-items:center;gap:8px;min-height:78px;padding:9px 10px;
+    border:1px solid var(--line);background:#111416;color:var(--white);cursor:pointer;text-align:left;
+  }
+  .home-info-tile::after{content:'';position:absolute;right:0;bottom:0;width:22px;height:3px;background:var(--tile-accent,#26363D);}
+  .home-info-tile:active{transform:translateY(1px);border-color:var(--gold);}
+  .home-info-tile svg{width:17px;height:17px;flex-shrink:0;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+  .home-info-copy{display:flex;flex-direction:column;min-width:0;}
+  .home-info-copy strong{font-family:'Oswald',sans-serif;font-size:11px;letter-spacing:.04em;text-transform:uppercase;}
+  .home-info-copy span{color:var(--steel);font-family:'Space Mono',monospace;font-size:8px;text-transform:uppercase;}
+
+  #app[data-theme="home"] nav.tabbar{
+    bottom:max(7px,env(safe-area-inset-bottom));max-width:496px;border:1px solid var(--line);
+    border-radius:0;padding:4px;background:#0B0D0E;box-shadow:0 8px 24px rgba(0,0,0,.38);
+  }
+  #app[data-theme="home"] nav.tabbar button{min-height:48px;padding:4px;border-top:2px solid transparent;border-radius:0;color:var(--steel);}
+  #app[data-theme="home"] nav.tabbar button.active{border-top-color:var(--gold);background:transparent;color:var(--white);}
+
+  .director-tools{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;}
+  .director-tool{
+    display:flex;align-items:flex-start;justify-content:space-between;flex-direction:column;
+    min-height:104px;padding:13px;border:2px solid var(--deep);border-left:5px solid var(--gold);
+    background:var(--white);color:var(--deep);cursor:pointer;text-align:left;
+  }
+  .director-tool.active{background:var(--deep);color:var(--white);border-color:var(--deep);border-left-color:var(--gold);}
+  .director-tool svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+  .director-tool-copy{display:flex;flex-direction:column;gap:2px;}
+  .director-tool strong{font-family:'Oswald',sans-serif;font-size:14px;letter-spacing:.04em;text-transform:uppercase;}
+  .director-tool span{font-size:11px;color:var(--steel);}
+  .director-tool.active span{color:#D2D0CA;}
+  /* justify-content:space-between from .director-tool stacks icon-over-copy in
+     the two-up tiles, but in the wide row it shoved the label to the far right,
+     away from its own icon - hence the gap below never showing. */
+  .director-tool.wide{grid-column:1 / -1;flex-direction:row;align-items:center;justify-content:flex-start;gap:12px;min-height:64px;}
+  .director-tool.wide svg{flex-shrink:0;}
+
+  .contestant-filters{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;}
+  .contestant-filters button{
+    flex:1;min-width:64px;padding:7px 6px;font-size:12px;font-family:inherit;
+    border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:4px;cursor:pointer;
+  }
+  .contestant-filters button.active{background:var(--deep);color:var(--white);border-color:var(--deep);}
+
+  .crow{border:1px solid var(--line);border-left:3px solid var(--line);background:var(--paper);margin-bottom:8px;}
+  .crow.dq{border-left-color:var(--danger);background:#F7EFEC;}
+  .crow.leader{border-left-color:var(--gold);}
+  .crow-head{display:flex;align-items:center;gap:10px;padding:10px;cursor:pointer;}
+  .crow-rank{
+    flex-shrink:0;width:26px;text-align:center;font-family:'Fraunces',serif;
+    font-weight:600;font-size:15px;color:var(--gold-deep);
+  }
+  .crow-id{flex:1;min-width:0;}
+  .crow-name{font-size:14px;font-weight:600;}
+  .crow-name .dqtag{
+    margin-left:6px;font-size:9px;font-weight:700;letter-spacing:.06em;
+    background:#F1D6D0;color:var(--danger);padding:2px 5px;border-radius:3px;vertical-align:middle;
+  }
+  /* Amber, not red: an unmatched fee is bookkeeping, which is a different thing
+     from disqualified and must not read like a punishment. */
+  .crow.unpaid{border-left-color:var(--gold);background:#F7F1E4;}
+  .crow-name .pendtag{
+    margin-left:6px;font-size:9px;font-weight:700;letter-spacing:.06em;
+    background:#F3E3C4;color:var(--gold-deep);padding:2px 5px;border-radius:3px;vertical-align:middle;
+  }
+  /* Below the register button and visually separate from it: this is the road
+     NOT to take unless you have already registered somewhere else. */
+  .claim-block{
+    margin-top:18px;padding-top:14px;border-top:1px solid var(--line);
+  }
+  .claim-block #claim-code{
+    font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
+    font-size:20px;letter-spacing:.14em;text-transform:uppercase;
+  }
+  /* Loud on purpose. This only ever appears when somebody who launched has
+     not come back, and it should not be possible to scroll past it. */
+  .overdue{
+    border:2px solid var(--danger);border-radius:5px;background:#F7EFEC;
+    padding:14px;margin-bottom:14px;
+  }
+  .overdue-head{
+    font-weight:700;font-size:16px;color:var(--danger);
+    letter-spacing:.01em;margin-bottom:2px;
+  }
+  .overdue-sub{font-size:12px;color:var(--steel);margin-bottom:10px;}
+  .od-row{
+    border-top:1px solid #E2CFC9;padding:9px 0 8px;
+  }
+  .od-name{font-weight:600;font-size:15px;}
+  .od-id{font-weight:400;font-size:12px;color:var(--steel);}
+  .od-line{font-size:13px;margin-top:2px;}
+  .od-line a, .od-ice a{color:var(--danger);font-weight:600;}
+  .od-ice{font-size:12px;color:var(--steel);margin-top:3px;}
+  .overdue-foot{
+    font-size:11px;color:var(--steel);border-top:1px solid #E2CFC9;
+    margin-top:8px;padding-top:8px;line-height:1.5;
+  }
+  /* Above the tab bar, and it has to survive being the only thing the reader
+     notices - an app running a stale shell mid-tournament is a real problem. */
+  .sw-update{
+    position:fixed;left:8px;right:8px;z-index:1300;
+    bottom:calc(74px + env(safe-area-inset-bottom, 0px) + var(--vv-bottom, 0px));
+    max-width:480px;margin:0 auto;
+    display:flex;align-items:center;gap:10px;justify-content:space-between;
+    background:var(--deep);color:var(--white);
+    border-radius:8px;padding:10px 12px;font-size:13px;
+    box-shadow:0 8px 24px rgba(0,0,0,0.28);
+  }
+  .sw-update button{
+    width:auto;flex-shrink:0;padding:7px 13px;font-size:13px;
+    background:var(--gold);color:#241703;border:none;border-radius:5px;font-weight:600;
+  }
+  .pending-notice{
+    border:1px solid var(--gold);border-left-width:4px;background:#F9F3E6;
+    border-radius:4px;padding:12px;margin-bottom:14px;
+  }
+  .pending-notice strong{display:block;color:var(--gold-deep);margin-bottom:4px;}
+  .crow-sub{font-size:11px;color:var(--steel);margin-top:2px;}
+  .crow-best{text-align:right;flex-shrink:0;}
+  .crow-best strong{display:block;font-family:'Fraunces',serif;font-size:15px;color:var(--deep);}
+  .crow-best span{font-size:10px;color:var(--steel);text-transform:uppercase;}
+  .crow-body{padding:0 10px 10px;border-top:1px solid var(--line);}
+  .cstats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0;}
+  .cstat{padding:7px 4px;border:1px solid var(--line);background:var(--white);text-align:center;}
+  .cstat strong{display:block;font-family:'Fraunces',serif;font-size:15px;color:var(--deep);}
+  .cstat span{font-size:9px;color:var(--steel);text-transform:uppercase;letter-spacing:.03em;}
+  .cfish{display:flex;justify-content:space-between;gap:8px;font-size:11px;padding:5px 0;border-bottom:1px solid var(--line);}
+  .cfish:last-child{border-bottom:0;}
+  .cfish .st{color:var(--steel);}
+  .cdq{margin-top:10px;padding:10px;border:1px solid var(--danger);background:#F9EEEB;}
+  .cdq-warn{font-size:11px;color:var(--danger);font-weight:600;line-height:1.45;margin-bottom:8px;}
+  .cdq input[type=text]{
+    width:100%;padding:8px;font-size:16px;font-family:inherit;margin-bottom:8px;
+    border:1px solid var(--line);border-radius:4px;background:var(--white);color:var(--ink);
+  }
+  .cdq-actions{display:flex;gap:6px;}
+  .cdq-actions button{flex:1;}
+  .crow-note{font-size:11px;color:var(--danger);margin-top:6px;line-height:1.4;}
+  .gps-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;}
+  .gps-stat{padding:10px;border:1px solid var(--line);background:var(--paper-2);text-align:center;}
+  .gps-stat strong{display:block;font-family:'Fraunces',serif;font-size:18px;color:var(--deep);}
+  .gps-stat span{font-size:10px;color:var(--steel);text-transform:uppercase;}
+  .gps-row{padding:9px 0;border-bottom:1px solid var(--line);}
+  .gps-row:last-child{border-bottom:0;}
+  .gps-row-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;}
+  .gps-row-name{font-size:13px;font-weight:600;}
+  .gps-row-meta{font-size:11px;color:var(--steel);}
+
+  /* ---- handle + chat ---- */
+  /* Sits directly above Complete Registration, so it has to read as a choice
+     rather than as one more label on the way to the button. */
+  .handle-field{
+    border:2px solid var(--deep);border-radius:5px;padding:12px;
+    background:var(--paper-2);margin-bottom:16px;
+  }
+  .handle-field label{color:var(--deep);letter-spacing:.06em;text-transform:uppercase;}
+  .handle-pick{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:12px;border:1px solid var(--line);background:var(--paper);border-radius:4px;
+  }
+  .handle-pick span{font-family:'Fraunces',serif;font-size:19px;color:var(--deep);line-height:1.25;}
+  .handle-pick button{flex-shrink:0;}
+
+  /* Board codes. Monospaced and wide-tracked because these get copied onto a
+     bump board with a marker, and 0/O and 1/7 are what get miscopied. */
+  .codebox{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 0;}
+  .codechip{
+    flex:1 1 90px;border:1px solid var(--line);border-radius:4px;
+    padding:8px 10px;background:var(--paper-2);
+  }
+  .codechip .k{
+    display:block;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--steel);margin-bottom:2px;
+  }
+  .codechip .v{
+    display:block;font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
+    font-size:20px;font-weight:600;letter-spacing:.08em;color:var(--deep);
+  }
+  .codechip.team .v{color:var(--olive);}
+  /* Over the live camera, so it has to survive a bright sky behind it.
+     Top RIGHT: the auto-capture badge already owns the top left corner. */
+  .vf-codes{
+    position:absolute;top:8px;right:8px;z-index:3;max-width:58%;
+    display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;pointer-events:none;
+  }
+  .vf-codes span{
+    background:rgba(10,26,32,0.72);color:#fff;border-radius:3px;
+    padding:3px 8px;font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
+    font-size:12px;letter-spacing:.08em;
+  }
+  .vf-codes span b{color:#4FD2E8;font-weight:600;}
+  .chat-compose{display:flex;gap:8px;align-items:flex-end;margin-bottom:14px;}
+  .chat-compose textarea{
+    flex:1;min-height:44px;max-height:120px;padding:10px 11px;border:1px solid var(--line);
+    border-radius:4px;font-family:inherit;font-size:16px;background:var(--paper);
+    color:var(--ink);resize:vertical;
+  }
+  .chat-compose button{width:auto;flex-shrink:0;padding:11px 16px;}
+  .chat-count{font-size:11px;color:var(--steel);text-align:right;margin:-8px 0 12px;}
+  .chat-item{padding:12px 0;border-bottom:1px solid var(--line);}
+  .chat-item:last-child{border-bottom:0;}
+  .chat-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;}
+  .chat-handle{font-family:'Fraunces',serif;font-size:14px;color:var(--deep);font-weight:600;}
+  .chat-when{font-size:10px;color:var(--steel);flex-shrink:0;}
+  .chat-text{font-size:14px;line-height:1.5;margin-top:4px;white-space:pre-wrap;word-break:break-word;}
+  .chat-brag{
+    margin-top:6px;padding:9px 11px;border-left:3px solid var(--gold);
+    background:var(--paper-2);font-size:13px;
+  }
+  .chat-brag strong{font-family:'Fraunces',serif;font-size:15px;color:var(--deep);}
+  .chat-replies{margin:8px 0 0 14px;padding-left:12px;border-left:1px solid var(--line);}
+  .chat-reply{padding:7px 0;}
+  .chat-reply .chat-text{font-size:13px;}
+  .chat-actions{display:flex;gap:6px;margin-top:7px;}
+  .chat-mine .chat-handle{color:var(--gold-deep);}
+  .chat-unread{
+    position:absolute;top:2px;right:6px;min-width:16px;height:16px;padding:0 4px;
+    border-radius:8px;background:var(--danger);color:#fff;
+    font-family:'Inter',system-ui,sans-serif;font-size:10px;font-weight:600;
+    line-height:16px;text-align:center;
+  }
+  nav.tabbar button{position:relative;}
+
+  /* ---- disqualification notice ---- */
+  .dq-notice{
+    border:2px solid var(--danger);background:#F1D6D0;
+    padding:13px;border-radius:4px;margin-bottom:12px;
+  }
+  .dq-notice-title{
+    font-family:'Oswald',sans-serif;font-size:15px;font-weight:600;
+    letter-spacing:0.04em;text-transform:uppercase;color:var(--danger);
+  }
+  .dq-notice-reason{
+    font-size:14px;font-style:italic;color:var(--ink);margin-top:6px;
+    padding-left:10px;border-left:3px solid rgba(163,55,42,0.45);
+  }
+  .dq-notice-note{font-size:12px;line-height:1.5;color:var(--ink);margin-top:8px;}
+  .home-profilecard.dq{border-color:var(--danger);}
+  .home-profile-dq{
+    display:inline-block;margin-left:7px;padding:1px 6px;border-radius:3px;
+    background:var(--danger);color:#fff;font-size:9px;font-weight:700;
+    letter-spacing:0.06em;text-transform:uppercase;vertical-align:middle;
+  }
+
+  /* ---- side bets ---- */
+  .bet{padding:12px 0;border-bottom:1px solid var(--line);}
+  .bet:last-child{border-bottom:0;}
+  .bet-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;}
+  .bet-title{font-family:'Fraunces',serif;font-size:15px;color:var(--deep);}
+  .bet-stake{
+    font-family:'Space Mono',monospace;font-size:11px;color:var(--gold-deep);
+    flex-shrink:0;
+  }
+  .bet-meta{font-size:11px;color:var(--steel);margin-top:3px;}
+  .bet-standing{
+    margin-top:8px;padding:8px 10px;background:var(--paper-2);
+    border-left:3px solid var(--olive);font-size:13px;
+  }
+  .bet-standing.settled{border-left-color:var(--gold);}
+  .bet-standing strong{font-family:'Fraunces',serif;color:var(--deep);}
+  .bet-in{
+    display:inline-block;margin-left:6px;padding:1px 6px;border-radius:3px;
+    background:#DDE6D5;color:var(--olive);font-size:9px;font-weight:700;
+    letter-spacing:0.06em;text-transform:uppercase;vertical-align:middle;
+  }
+  .bet-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+
+  /* ---- beacons ----
+     A raised beacon has to read as urgent at a glance, in sunlight, on a
+     phone held at arm's length in a moving kayak. */
+  .beacon-card{
+    border:2px solid var(--danger);background:#F1D6D0;
+    padding:12px;margin-bottom:12px;border-radius:4px;
+  }
+  .beacon-card.mine{border-color:#D5A33A;background:#F3E4C4;}
+  .beacon-title{
+    display:flex;align-items:center;gap:8px;
+    font-family:'Oswald',sans-serif;font-size:14px;font-weight:600;
+    letter-spacing:0.04em;text-transform:uppercase;color:var(--danger);
+  }
+  .beacon-card.mine .beacon-title{color:#7A5410;}
+  .beacon-row{
+    display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+    padding:7px 0;border-bottom:1px solid rgba(163,55,42,0.25);
+  }
+  .beacon-row:last-child{border-bottom:0;}
+  .beacon-who{font-family:'Fraunces',serif;font-size:14px;color:var(--ink);}
+  .beacon-dist{font-family:'Space Mono',monospace;font-size:12px;color:var(--danger);flex-shrink:0;}
+  .beacon-note{font-size:12px;color:var(--ink);margin-top:3px;font-style:italic;}
+  .beacon-pulse{
+    width:12px;height:12px;border-radius:50%;background:var(--danger);
+    box-shadow:0 0 0 0 rgba(224,55,37,0.7);animation:beaconPulse 1.8s infinite;
+    flex-shrink:0;
+  }
+  .beacon-card.mine .beacon-pulse{background:#D5A33A;box-shadow:0 0 0 0 rgba(213,163,58,0.7);}
+  @keyframes beaconPulse{
+    0%   { box-shadow:0 0 0 0   rgba(224,55,37,0.7); }
+    70%  { box-shadow:0 0 0 14px rgba(224,55,37,0); }
+    100% { box-shadow:0 0 0 0   rgba(224,55,37,0); }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .beacon-pulse{animation:none;}
+  }
+  /* The map marker. Leaflet divIcons get no styling of their own. */
+  .beacon-marker{
+    width:22px;height:22px;border-radius:50%;
+    background:var(--danger);border:3px solid #fff;
+    box-shadow:0 0 0 0 rgba(224,55,37,0.8);animation:beaconPulse 1.8s infinite;
+  }
+  .beacon-btn{background:var(--danger)!important;color:#fff!important;border-color:var(--danger)!important;}
+  .pos-row{padding:9px 0;border-bottom:1px solid var(--line);}
+  .pos-row:last-child{border-bottom:0;}
+  .pos-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;}
+  .pos-who{font-family:'Fraunces',serif;font-size:14px;color:var(--deep);}
+  .pos-age{font-size:11px;color:var(--steel);flex-shrink:0;}
+  .pos-meta{font-family:'Space Mono',monospace;font-size:11px;color:var(--steel);margin-top:3px;}
+  .pos-row.stale .pos-who{color:var(--steel);}
+  .pos-row.beacon .pos-who{color:var(--danger);font-weight:600;}
+
+  /* ---- course map ----
+     Leaflet and its tiles both need a network. Everything that decides whether
+     a position is in bounds is local maths, so the map is an enhancement laid
+     over a readout that still works with no signal at all. */
+  /* position + z-index makes this a stacking context, so Leaflet's internal
+     z-indexes stay inside the map instead of climbing over the page. */
+  .lw-map{height:280px;border:1px solid var(--line);background:var(--paper-2);position:relative;z-index:0;}
+  .lw-map.tall{height:340px;}
+  .lw-map-fallback{
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    height:100%;padding:16px;font-size:12px;color:var(--steel);
+  }
+  .lw-map-tools{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;}
+  .lw-map-tools button{width:auto;padding:7px 11px;font-size:11px;margin:0;}
+  .lw-map-tools button.active{background:var(--deep);color:var(--paper);border-color:var(--deep);}
+  .lw-readout{
+    display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+    padding:10px;border:1px solid var(--line);background:var(--paper-2);margin-bottom:10px;
+  }
+  .lw-readout strong{font-family:'Fraunces',serif;font-size:16px;color:var(--deep);}
+  .lw-readout.in strong{color:var(--olive);}
+  .lw-readout.out strong{color:var(--danger);}
+  .lw-readout span{font-size:11px;color:var(--steel);text-align:right;}
+  .lw-coordrow{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .lw-vertex{
+    font-family:'Space Mono',monospace;font-size:11px;color:var(--steel);
+    max-height:96px;overflow:auto;padding:6px 0;
+  }
+  /* Drag handles on the boundary editor. Sized for a fingertip, not a mouse
+     pointer - these get used on a tablet at the ramp. */
+  .lw-handle-wrap{background:none;border:none;}
+  .lw-handle{
+    width:26px;height:26px;border-radius:50%;
+    background:var(--paper);border:2px solid var(--gold-deep);color:var(--gold-deep);
+    font-family:'Inter',system-ui,sans-serif;font-size:11px;font-weight:600;
+    line-height:22px;text-align:center;
+    box-shadow:0 1px 4px rgba(0,0,0,0.35);cursor:grab;
+  }
+  .lw-handle.centre{border-color:var(--deep);color:var(--deep);border-width:3px;line-height:20px;}
+  .lw-handle.radius{border-color:var(--deep);color:var(--deep);background:var(--white);}
+
+  .fp{margin-top:8px;border:1px solid var(--line);border-left:3px solid var(--line);background:var(--paper);padding:8px 9px;}
+  .fp.level-clear{border-left-color:#5FAE85;}
+  .fp.level-review{border-left-color:#D5A33A;}
+  .fp.level-flag{border-left-color:var(--danger);}
+  .fp-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .fp-title{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--steel);font-weight:600;}
+  .fp-verdict{font-size:10px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;padding:2px 6px;border-radius:3px;}
+  .fp-verdict.level-clear{background:#DDE6D5;color:#3D6A50;}
+  .fp-verdict.level-review{background:#F3E4C4;color:var(--gold-deep);}
+  .fp-verdict.level-flag{background:#F1D6D0;color:var(--danger);}
+  .fp-item{display:flex;gap:6px;margin-top:6px;font-size:11px;line-height:1.4;}
+  .fp-dot{flex-shrink:0;width:6px;height:6px;border-radius:50%;margin-top:4px;}
+  .fp-dot.level-review{background:#D5A33A;}
+  .fp-dot.level-flag{background:var(--danger);}
+  .fp-dot.level-info{background:var(--steel);}
+  .fp-item strong{font-weight:600;}
+  .fp-item span{color:var(--steel);}
+  .fp-ai{margin-top:8px;padding-top:7px;border-top:1px dashed var(--line);}
+  .fp-ai-note{font-size:11px;color:var(--steel);line-height:1.4;}
+
+  @media (max-height:700px){
+    .home-topbar{padding-top:6px;padding-bottom:6px;}
+    .home-event{margin-top:6px;padding-top:8px;padding-bottom:9px;}
+    .home-event-top{margin-bottom:5px;}
+    .home-event h1{font-size:22px;}
+    .home-profilecard{min-height:46px;margin-top:5px;padding-top:5px;padding-bottom:5px;}
+    .home-sectionhead{margin-top:7px;}
+    .home-tile{min-height:69px;padding-top:7px;padding-bottom:7px;}
+    .home-info-tile{min-height:69px;padding-top:7px;padding-bottom:7px;}
+  }
+  @media (max-height:620px){
+    .home-brand-copy small,.home-kicker{display:none;}
+    .home-monogram{width:31px;height:31px;}
+    .home-signal{width:33px;height:33px;}
+    .home-event{padding-top:6px;padding-bottom:7px;}
+    .home-event-top{margin-bottom:3px;}
+    .home-event h1{font-size:20px;}
+    .home-location{margin-top:4px;margin-bottom:5px;}
+    .home-register{height:33px;}
+    .home-profilecard{min-height:42px;}
+    .home-avatar{width:32px;height:32px;}
+    .event-countdown{min-height:47px;margin-top:4px;}
+    .countdown-value{font-size:15px;}
+    .home-sectionhead{margin-top:5px;margin-bottom:4px;}
+    .home-tile{min-height:58px;}
+    .home-info-tile{min-height:58px;padding-top:5px;padding-bottom:5px;}
+  }
+  #app[data-theme="checkin"]{--deep:#8C3B12;--gold:#F2A93B;--gold-deep:#B5651D;--paper:#FBF1E4;--paper-2:#F3DFC2;--line:#E3C69C;--steel:#9C6B3D;}
+  #app[data-theme="submit"]{--deep:#1E4C4F;--gold:#4FBAB8;--gold-deep:#2D7E7D;--paper:#EAF3F1;--paper-2:#D8E9E6;--line:#B9D6D1;--steel:#3F7472;}
+  #app[data-theme="manage"]{--deep:#3A3F44;--gold:#9C9284;--gold-deep:#6E6558;--paper:#EFEEEA;--paper-2:#DFDCD3;--line:#C8C4B8;--steel:#6C6A64;}
+  #app[data-theme="livewell"]{--deep:#123B34;--gold:#5FAE85;--gold-deep:#357657;--paper:#E9F2EA;--paper-2:#D5E7D9;--line:#B6D3BF;--steel:#3D6A50;}
+  #app[data-theme="gps"]{--deep:#183C43;--gold:#64B6B1;--gold-deep:#337B78;--paper:#EAF3F2;--paper-2:#D8E8E6;--line:#B9D3D0;--steel:#426E6B;}
+  #app[data-theme="payouts"]{--deep:#2B2116;--gold:#D4AF37;--gold-deep:#A3811F;--paper:#F7F0DC;--paper-2:#EEE1BC;--line:#DCC98C;--steel:#8A7440;}
+  #app[data-theme="leaderboard"]{--deep:#2B2116;--gold:#D4AF37;--gold-deep:#A3811F;--paper:#F7F0DC;--paper-2:#EEE1BC;--line:#DCC98C;--steel:#8A7440;}
+  #app[data-theme="bigfish"]{--deep:#3B1F2B;--gold:#C1672B;--gold-deep:#914D1F;--paper:#F6EBE5;--paper-2:#EAD3C6;--line:#D8B49E;--steel:#8A5B41;}
+  #app[data-theme="admin"]{--deep:#232323;--gold:#B0ADA6;--gold-deep:#7D7A73;--paper:#EDEDEA;--paper-2:#DCDAD4;--line:#C4C1B8;--steel:#6B6963;}
+
+  #app[data-theme="register"]{--deep:#0E0D0B;--gold:#C9982E;--gold-deep:#A67E24;--paper:#FEFEFE;--paper-2:#F4F2ED;--line:#0E0D0B;--steel:#55524C;}
+  #app[data-theme="register"] header.hero{background:var(--paper);color:var(--deep);border-bottom:none;padding:0 0 22px;}
+  #app[data-theme="register"] header.hero .kicker{font-family:'Space Mono',monospace;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);}
+  #app[data-theme="register"] header.hero .meta{color:var(--steel);}
+  #app[data-theme="register"] header.hero h1{font-family:'Oswald',sans-serif;font-weight:700;text-transform:uppercase;font-size:32px;letter-spacing:.01em;}
+  #app[data-theme="register"] .card{border:2px solid var(--deep);border-radius:0;position:relative;}
+  #app[data-theme="register"] .card h2{font-family:'Oswald',sans-serif;font-weight:600;text-transform:uppercase;letter-spacing:.04em;font-size:16px;}
+  #app[data-theme="register"] .field label{font-family:'Space Mono',monospace;text-transform:uppercase;letter-spacing:.1em;font-size:10.5px;color:var(--steel);}
+  #app[data-theme="register"] .field input,
+  #app[data-theme="register"] .field select{border-radius:0;border-color:var(--deep);background:var(--paper-2);}
+  #app[data-theme="register"] .radiogroup label{border-radius:0;border-color:var(--deep);font-family:'Space Mono',monospace;font-size:12px;}
+  #app[data-theme="register"] .radiogroup label.active{background:var(--deep);}
+  #app[data-theme="register"] button.primary{background:var(--deep);border-radius:0;font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:.04em;font-weight:600;}
+  #app[data-theme="register"] .lbrow{border-bottom-color:var(--deep);}
+  #app[data-theme="register"] .lbrow .name{font-family:'Oswald',sans-serif;font-weight:500;}
+
+  .vf-wrap{position:relative;background:#000;border-radius:6px;overflow:hidden;margin-bottom:10px;}
+  .vf-wrap video{width:100%;display:block;max-height:340px;object-fit:cover;background:#000;}
+  .vf-guide{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;}
+  .vf-controls{display:flex;gap:8px;margin-bottom:12px;}
+  .vf-controls button{flex:1;}
+  .vf-hint{position:absolute;bottom:8px;left:0;right:0;text-align:center;color:#fff;font-size:12px;background:rgba(0,0,0,0.45);padding:4px 8px;margin:0 8px;border-radius:4px;}
+  .vf-auto{
+    position:absolute;top:8px;left:8px;display:inline-flex;align-items:center;gap:6px;
+    padding:5px 9px;border-radius:20px;background:rgba(0,0,0,0.62);
+    color:#fff;font-size:11px;font-weight:600;letter-spacing:.02em;
+  }
+  .vf-auto-dot{width:8px;height:8px;border-radius:50%;background:#D5A33A;transition:background .2s ease;}
+  .vf-auto-dot.ready{background:#5FAE85;}
+  .vf-auto-dot.hold{background:#E03725;}
+  .vf-count{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    pointer-events:none;
+  }
+  .vf-count span{
+    display:grid;place-items:center;width:82px;height:82px;border-radius:50%;
+    border:4px solid #5FAE85;background:rgba(0,0,0,0.45);
+    color:#fff;font-family:'Oswald',sans-serif;font-size:40px;font-weight:700;
+  }
+  .vf-autotoggle{
+    display:flex;align-items:flex-start;gap:8px;margin:-4px 0 12px;
+    font-size:12px;color:var(--steel);line-height:1.4;cursor:pointer;
+  }
+  .vf-autotoggle input{width:auto;flex-shrink:0;margin-top:1px;}
+  .vf-preview{position:relative;margin-bottom:10px;}
+  .vf-preview img{width:100%;border-radius:6px;display:block;}
+  .vf-preview button{position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.55);color:#fff;border:none;border-radius:4px;padding:6px 10px;font-size:12px;cursor:pointer;}
+  .vf-err{font-size:12px;color:var(--danger);margin-bottom:10px;}
+
+  /* Photos load into their slot after the list has painted, so a page of
+     catches appears immediately instead of waiting on every image. */
+  .photoslot{
+    width:64px;height:64px;flex-shrink:0;border-radius:4px;overflow:hidden;
+    background:var(--paper-2);
+  }
+  .photoslot img{width:64px;height:64px;object-fit:cover;display:block;}
+
+  /* color:inherit matters - the home screen is a dark theme and var(--ink)
+     is the light-theme text colour, which would be black on black there. */
+  .syncbanner{
+    margin:0 0 10px;padding:8px 10px;border-radius:4px;
+    font-size:12px;line-height:1.45;
+    border:1px solid var(--line);background:var(--paper-2);color:inherit;
+  }
+  .syncbanner.level-warn{border-color:#D5A33A;background:#F3E4C4;color:#7A5410;}
+  .syncbanner.level-bad{border-color:#A3372A;background:#F1D6D0;color:#A3372A;}
+  #app[data-theme="home"] .syncbanner{margin:8px 0 0;}
+  .home-signal.sync-ok{color:var(--gold);}
+  .home-signal.sync-warn{color:#D5A33A;}
+  .home-signal.sync-bad{color:#E03725;}
+
+  /* Printing exists for one thing: the FWP contest report. Everything else on
+     the page is hidden by VISIBILITY rather than display, because the sheet is
+     nested deep inside the director panel and display:none on any ancestor
+     would take it with them. */
+
+  /* ---- the trophy case ---- */
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:8px;}
+  .stat{
+    border:1px solid var(--line);border-radius:5px;padding:9px 10px;background:var(--paper-2);
+  }
+  .stat .stat-val{display:block;font-size:19px;font-weight:700;line-height:1.15;font-variant-numeric:tabular-nums;}
+  .stat .stat-key{display:block;font-size:10px;color:var(--steel);margin-top:2px;letter-spacing:.02em;}
+  .stat .stat-sub{display:block;font-size:10px;color:var(--steel);margin-top:3px;}
+  .hist-row{
+    display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+    border:1px solid var(--line);border-radius:5px;padding:9px 10px;margin-bottom:6px;
+  }
+  .hist-main{min-width:0;}
+  .hist-name{display:block;font-weight:600;font-size:12.5px;}
+  .hist-sub{display:block;font-size:10.5px;color:var(--steel);margin-top:2px;}
+  .hist-place{flex:0 0 auto;text-align:right;font-variant-numeric:tabular-nums;}
+  .hist-place .pl{display:block;font-size:16px;font-weight:700;}
+  .hist-place .pl-sub{display:block;font-size:9.5px;color:var(--steel);}
+  .hist-row.won{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold);}
+  .hist-won{display:block;font-size:10.5px;color:var(--gold-deep);margin-top:3px;font-weight:600;}
+  .freeze-state{font-size:11px;color:var(--steel);margin:6px 0 0;}
+  .sp-row{
+    display:flex;align-items:center;gap:8px;padding:7px 9px;margin-bottom:6px;
+    border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:4px;
+    background:var(--paper-2);
+  }
+  .sp-row .sp-name{flex:1;min-width:0;font-weight:600;font-size:12px;}
+  .sp-row .sp-ceiling{font-size:10.5px;color:var(--steel);font-family:'Space Mono',monospace;}
+  .sp-row.primary .sp-name::after{
+    content:'primary';margin-left:7px;font-weight:400;font-size:9px;color:var(--steel);
+    letter-spacing:.06em;text-transform:uppercase;
+  }
+  .tamper-note{
+    margin:6px 0 0;padding:7px 9px;border-radius:4px;font-size:11px;font-weight:600;
+    background:#F6E3E0;border-left:3px solid #A3372A;color:#7E2B20;line-height:1.5;
+    width:100%;box-sizing:border-box;
+  }
+  .filing-note{
+    margin:6px 0 0;padding:7px 9px;border-radius:4px;font-size:11px;font-weight:600;
+    background:#F7F1E4;border-left:3px solid var(--gold);color:#7A5B14;line-height:1.5;
+  }
+  .todo{
+    border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:4px;
+    padding:9px 10px;margin-bottom:8px;background:var(--paper-2);
+  }
+  .todo.now{border-left-color:#A3372A;}
+  .todo-title{display:block;font-weight:600;font-size:12px;}
+  .todo-detail{display:block;font-size:10.5px;color:var(--steel);margin-top:3px;line-height:1.5;}
+  .todo-when{display:block;font-size:10px;color:var(--steel);margin-top:4px;font-weight:600;}
+  .badge-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:7px;}
+  .badge-tile{
+    border:1px solid var(--line);border-radius:5px;padding:9px 6px;text-align:center;
+    background:var(--paper-2);
+  }
+  .badge-tile .bi{display:block;font-size:21px;line-height:1.1;}
+  .badge-tile .bn{display:block;font-size:10px;font-weight:600;margin-top:4px;}
+  .badge-tile .bw{display:block;font-size:9px;color:var(--steel);margin-top:2px;line-height:1.35;}
+  /* Unearned badges stay on the wall, greyed, with what it takes to get one -
+     an empty space tells you nothing about what there is to aim at. */
+  .badge-tile.locked{opacity:.42;}
+  .badge-tile.locked .bi{filter:grayscale(1);}
+
+  /* ---- the fish gallery ----
+     Square tiles so a wall of fish reads as a wall of fish. The caption sits
+     ON the photo rather than under it, because a grid of cards with captions
+     underneath turns into a list at this size. */
+  .gallery-grid{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:6px;
+  }
+  .gallery-tile{
+    position:relative;aspect-ratio:1/1;overflow:hidden;border-radius:4px;
+    border:1px solid var(--line);background:var(--paper-2);
+    padding:0;cursor:zoom-in;display:block;width:100%;
+  }
+  /* Older Safari has no aspect-ratio; without this the tiles collapse to the
+     height of their caption. */
+  @supports not (aspect-ratio: 1 / 1){
+    .gallery-tile{height:0;padding-bottom:100%;}
+  }
+  .gallery-tile .photo-target{position:absolute;inset:0;display:block;}
+  .gallery-tile img{
+    position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;
+  }
+  .gallery-tile .noimg{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    color:var(--steel);font-size:10px;
+  }
+  .gallery-cap{
+    position:absolute;left:0;right:0;bottom:0;z-index:1;
+    padding:12px 6px 4px;text-align:left;
+    background:linear-gradient(to top,rgba(12,20,18,.82),rgba(12,20,18,0));
+    color:#F4F1E9;font-size:10px;line-height:1.35;
+  }
+  .gallery-cap .who{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .gallery-cap .len{display:block;font-variant-numeric:tabular-nums;opacity:.9;}
+  /* Your own fish, so you can find them in a wall of forty. */
+  .gallery-tile.mine{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold);}
+  .gallery-mine-tag{
+    position:absolute;top:4px;left:4px;z-index:1;
+    background:var(--gold);color:#0C1412;font-size:9px;font-weight:700;
+    padding:1px 5px;border-radius:3px;letter-spacing:.04em;
+  }
+
+  .reel-video{
+    display:block;width:100%;max-width:280px;margin:10px auto 0;
+    border-radius:6px;background:#0C1412;aspect-ratio:9/16;
+  }
+
+  /* ---- full-size catch photo ----
+     A 64px thumbnail cannot show whether a tail is pinched or where the nose
+     sits on the tape, and that is the whole of the judgement. Tapping a photo
+     in the director's lists opens it here, big, with the same approve and
+     reject actions on it. */
+  .lightbox{
+    position:fixed;inset:0;z-index:2000;background:#0C1412;
+    display:flex;flex-direction:column;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .lightbox[hidden]{display:none;}
+  .lightbox-bar{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:10px 12px;color:#F4F1E9;flex:0 0 auto;
+  }
+  .lightbox-title{font-weight:600;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto;}
+  .lightbox-nav{display:flex;align-items:center;gap:6px;flex:0 0 auto;}
+  .lightbox-nav[hidden]{display:none;}
+  .lightbox-count{color:#C8D3CC;font-size:11px;font-variant-numeric:tabular-nums;min-width:52px;text-align:center;}
+  .lightbox-nav button{min-width:38px;}
+  .lightbox-nav button:disabled{opacity:.35;}
+  /* The stage scrolls, so a zoomed photo can be dragged around rather than
+     cropped to whatever fits. */
+  .lightbox-stage{
+    flex:1 1 auto;min-height:0;overflow:auto;
+    display:flex;align-items:center;justify-content:center;
+    -webkit-overflow-scrolling:touch;
+  }
+  .lightbox-stage img{display:block;max-width:100%;max-height:100%;object-fit:contain;cursor:zoom-in;}
+  /* Natural size, so the tape can actually be read. */
+  .lightbox.zoomed .lightbox-stage{align-items:flex-start;justify-content:flex-start;}
+  .lightbox.zoomed .lightbox-stage img{max-width:none;max-height:none;width:auto;cursor:zoom-out;}
+  .lightbox-meta{flex:0 0 auto;padding:8px 12px;color:#C8D3CC;font-size:11.5px;line-height:1.5;}
+  #lightbox-tamper{flex:0 0 auto;padding:0 12px 8px;}
+  #lightbox-tamper[hidden]{display:none;}
+  .lightbox-meta .badge{vertical-align:middle;}
+  .lightbox-actions{
+    flex:0 0 auto;display:flex;gap:8px;padding:10px 12px;
+    padding-bottom:calc(10px + env(safe-area-inset-bottom));
+  }
+  .lightbox-actions button{flex:1 1 0;min-height:46px;font-size:14px;}
+  .lightbox-empty{color:#C8D3CC;font-size:12px;padding:20px;text-align:center;}
+  /* Only the director's lists open one, so only those look tappable. */
+  #admin-pending .photoslot,#admin-all .photoslot{cursor:zoom-in;}
+
+  /* ==================================================================
+     BREAKPOINTS
+
+     Everything above this line is written for a phone: one column, one
+     thumb, no hover. This section is the only place that says what to
+     do with a screen that is not one.
+
+     The ladder is Bootstrap's set of numbers, not because the framework
+     is here - it is not - but because 576/768/992/1200/1400 is what
+     every other tool in this stack already speaks, and a house set of
+     numbers would only be one more thing to have to look up.
+
+         sm    576px   big phones
+         md    768px   tablets held upright
+         lg    992px   tablets sideways, small laptops
+         xl   1200px   desktops
+         xxl  1400px   large desktops
+
+     They come in two families, and the split is the important part:
+
+       WIDTH tiers only ever spend HORIZONTAL room - how wide the column
+       may grow, how many columns a grid of tiles breaks into, how big a
+       photo in a wall of photos gets. Safe in any orientation, because
+       a screen that reports the width really does have the width.
+
+       COMFORT tiers spend VERTICAL room - type sizes, padding, the
+       height of the map. Those are gated on min-height as well, because
+       a phone lying on its side reports a tablet's WIDTH with a third
+       of its height. Without the gate, turning a phone over to look at
+       the map would inflate the header and push the map off the bottom
+       of the screen, which is the opposite of what the turn was for.
+       The max-height rules further up do the compressing; the gate is
+       what stops this section undoing them.
+     ================================================================== */
+
+  /* ---- below the ladder: small phones -------------------------------
+     A 320px-wide phone is still sold and still turns up at the ramp.
+     None of this is a different layout - it is the same one with the
+     padding and the type taken in far enough that four numbers still
+     fit across a card between the card's own edges. */
+  @media (max-width:359px){
+    main{padding:14px 12px 8px;}
+    #app[data-theme="home"] main{padding:0 9px 6px;}
+    .card{padding:13px 12px 15px;}
+    header.hero{padding:22px 15px 18px;}
+    header.hero h1{font-size:22px;}
+    .home-event h1{font-size:21px;}
+    .home-grid,.home-info-grid{gap:6px;}
+    .director-tools{gap:7px;}
+    /* Four columns of 15px figures across a ~270px card is 55px each,
+       and it was the uppercase labels under them that broke first. */
+    .cstats{grid-template-columns:repeat(2,1fr);}
+    nav.tabbar button{font-size:9.5px;}
+    nav.tabbar button .ico{width:18px;height:18px;}
+    .codechip .v{font-size:17px;}
+    .handle-pick span{font-size:17px;}
+  }
+
+  /* The Fold's cover screen, and nothing else. Two columns of anything
+     have stopped being two columns by this width - they are two
+     slivers - so the tile grids give up and stack. */
+  @media (max-width:319px){
+    .home-grid,.home-info-grid,.director-tools,
+    .lw-coordrow,.gps-summary{grid-template-columns:1fr;}
+    /* The children are .field, which brings its own bottom margin. */
+    .row2{flex-direction:column;gap:0;}
+    nav.tabbar button{font-size:9px;padding:8px 2px 7px;}
+  }
+
+  /* ---- sm 576: big phones -------------------------------------------
+     Barely a change, and deliberately so. The column grows by about a
+     thumb's width, which is enough that a full-width field stops
+     looking like it is touching both edges at once, and not enough to
+     change the shape of anything. */
+  @media (min-width:576px){
+    #app{max-width:552px;}
+    nav.tabbar,.sw-update{max-width:512px;}
+    #app[data-theme="home"] nav.tabbar{max-width:528px;}
+  }
+
+  /* ---- md 768: tablets, upright --------------------------------------
+     The first tier where the column stops pretending to be a phone.
+
+     It grows to 700px and stops. The things on it - a leaderboard row,
+     a line of chat, a hint under a field - are read left to right, and
+     a line of text run out to the full width of an iPad is slower to
+     read than the same line at half of it, not faster. So the extra
+     room goes to the TILE grids, which take it by gaining a column
+     rather than by stretching what they already have.
+
+     The frame around the column arrives here too. Until now the app
+     filled the glass and needed no edge. Centred on a tablet it is an
+     object sitting on a desk, and an object with no edge just reads as
+     text that failed to reach the sides. */
+  @media (min-width:768px){
+    body{background:var(--paper-2);}
+    #app{
+      max-width:700px;
+      /* var(--line) is redefined per theme on this same element, so the
+         frame follows the screen's palette instead of fighting it. */
+      border-left:1px solid var(--line);
+      border-right:1px solid var(--line);
+      box-shadow:0 0 44px rgba(22,32,31,.09);
+    }
+    main{padding-left:22px;padding-right:22px;}
+    #app[data-theme="home"] main{padding-left:16px;padding-right:16px;}
+    nav.tabbar,.sw-update{max-width:560px;}
+    #app[data-theme="home"] nav.tabbar{max-width:576px;}
+    /* Six tiles, so three across is two clean rows.
+
+       The pair below them stays at two columns at every width for the
+       arithmetic reason that there are exactly two of them: a third
+       column could only ever be an empty one. The director's grid stays
+       at two for the same reason - two tools sit above six full-width
+       rows, and widening that pair into a three-up row would leave a
+       hole where the third tool is not. */
+    .home-grid{grid-template-columns:repeat(3,1fr);}
+    .home-event h1{max-width:none;}
+    /* auto-fill adds its own columns as the container grows. Raising
+       the floor is what stops it spending the new room on MORE photos
+       rather than on BIGGER ones, which is the point of the room. */
+    .gallery-grid{grid-template-columns:repeat(auto-fill,minmax(136px,1fr));gap:8px;}
+    .badge-grid{grid-template-columns:repeat(auto-fill,minmax(112px,1fr));}
+    .stat-grid{grid-template-columns:repeat(auto-fit,minmax(152px,1fr));}
+    .reel-video{max-width:320px;}
+    /* The lightbox is the one thing still going full-screen up here, so
+       its furniture has to be reined in instead: a row of approve and
+       reject buttons a foot wide is a row nobody aims at. */
+    .lightbox-bar,.lightbox-meta,.lightbox-actions,#lightbox-tamper{
+      width:100%;max-width:760px;margin-left:auto;margin-right:auto;
+    }
+  }
+
+  /* ---- lg 992: tablets sideways, small laptops ---------------------- */
+  @media (min-width:992px){
+    #app{max-width:820px;}
+    nav.tabbar,.sw-update{max-width:600px;}
+    #app[data-theme="home"] nav.tabbar{max-width:616px;}
+    .gallery-grid{grid-template-columns:repeat(auto-fill,minmax(152px,1fr));}
+  }
+
+  /* ---- xl 1200, xxl 1400: desktops -----------------------------------
+     The column stops growing at 960. Past that the pixels go to the
+     desk around it rather than into the lines of text, which have been
+     as long as they usefully get since md. The wall of photos is the
+     exception - it is the one thing here that is looked at rather than
+     read, and it goes on taking the room. */
+  @media (min-width:1200px){
+    #app{max-width:900px;}
+    .gallery-grid{grid-template-columns:repeat(auto-fill,minmax(168px,1fr));}
+  }
+  @media (min-width:1400px){
+    #app{max-width:960px;}
+    .gallery-grid{grid-template-columns:repeat(auto-fill,minmax(184px,1fr));}
+  }
+
+  /* ---- comfort: room in BOTH directions -------------------------------
+     Vertical spend, gated on height as well as width - see the note at
+     the top. 640px of height is a phone standing up; anything with this
+     width AND that height is a real tablet or a real screen. */
+  @media (min-width:768px) and (min-height:640px){
+    header.hero{padding:34px 26px 26px;}
+    header.hero h1{font-size:30px;}
+    header.hero .meta{font-size:14px;}
+    main{padding-top:22px;}
+    .card{padding:19px 19px 21px;}
+    .card h2{font-size:20px;}
+    .home-grid,.home-info-grid{gap:9px;}
+    /* Grown in step with the width, so a tile that was roughly square
+       on a phone does not flatten into a bar on a tablet. */
+    .home-tile,.home-info-tile{min-height:92px;}
+    .home-event{padding:14px 16px 15px;}
+    .home-event h1{font-size:29px;}
+    .lw-map{height:360px;}
+    .lw-map.tall{height:430px;}
+    .vf-wrap video{max-height:430px;}
+    .lbrow{padding:13px 0;}
+    nav.tabbar{padding:7px;}
+    nav.tabbar button{font-size:11.5px;padding:11px 4px 10px;}
+    nav.tabbar button .ico{width:22px;height:22px;}
+    #app[data-theme="home"] nav.tabbar button{min-height:54px;}
+  }
+  @media (min-width:992px) and (min-height:700px){
+    .home-tile,.home-info-tile{min-height:104px;}
+    .lw-map{height:420px;}
+    .lw-map.tall{height:500px;}
+  }
+
+  /* ---- the desktop shell ----------------------------------------------
+     A bar floating along the bottom of a laptop screen is a phone idiom
+     wearing a coat. On a machine with a mouse the nav moves to a bar
+     across the top and the page takes the whole width beneath it.
+
+     Read the query. It is not just "a big screen":
+
+       min-width:992  a phone on its side tops out around 932, so it
+                      never reaches this.
+       hover + fine   and no touch screen reports either, so an iPad
+                      held sideways at the ramp - which IS wider than
+                      992 - keeps the bottom bar, where its thumbs are.
+
+     So this is mouse-driven machines and nothing else. Every rule for
+     the bottom bar is left exactly as it was, further up; nothing here
+     edits them, it only adds. Delete this block and the app is back to
+     a centred column with no other trace. */
+  @media (min-width:992px) and (hover:hover) and (pointer:fine){
+    /* One number, named once. The bar's height and the room the page
+       has to leave for it are the same measurement, and the two drifting
+       apart is how a fixed header ends up sitting on its own content. */
+    :root{--desk-nav:56px;}
+
+    nav.tabbar{
+      /* top and full width. The --vv-bottom offset the phone needs to
+         dodge a browser toolbar stops applying up here, because nothing
+         slides about at the top of a desktop window. */
+      top:0;bottom:auto;left:0;right:0;
+      width:auto;max-width:none;margin:0;
+      height:var(--desk-nav);
+      flex-direction:row;align-items:center;justify-content:center;
+      gap:4px;padding:0 18px;
+      border-radius:0;
+      box-shadow:0 1px 6px rgba(0,0,0,.22);
+      transition:none;
+    }
+    /* Icon beside the label rather than above it. Stacked pairs are how
+       you fit five targets across a phone; in a bar with room to spare
+       they just read as cramped. */
+    nav.tabbar button{
+      flex:0 0 auto;flex-direction:row;justify-content:center;
+      gap:9px;padding:9px 15px;font-size:13.5px;
+      border-radius:6px;
+    }
+    nav.tabbar button .ico{width:19px;height:19px;flex-shrink:0;}
+    /* The unread pip is absolutely positioned against the button, which
+       in a row put it out over the label. */
+    .chat-unread{position:static;margin-left:2px;flex-shrink:0;}
+    /* The home theme marks the active tab with a border along its TOP,
+       which under a top bar points at the ceiling. Underneath it reads
+       as a tab, which is what it now is. */
+    #app[data-theme="home"] nav.tabbar{
+      top:0;bottom:auto;max-width:none;border:none;
+      border-bottom:1px solid var(--line);padding:0 18px;
+    }
+    #app[data-theme="home"] nav.tabbar button{
+      min-height:0;border-top:2px solid transparent;
+      border-bottom:2px solid transparent;
+    }
+    #app[data-theme="home"] nav.tabbar button.active{
+      border-top-color:transparent;border-bottom-color:var(--gold);
+      background:rgba(255,255,255,.05);
+    }
+
+    #app{
+      max-width:none;margin:var(--desk-nav) 0 0;
+      border:none;box-shadow:none;
+      /* The 96px reserved for a floating bottom bar is dead space once
+         there is no floating bottom bar. */
+      padding-bottom:28px;
+      /* A full viewport height BELOW a 56px bar is 56px taller than the
+         window, and the page would scroll by exactly that with nothing
+         in the gap. */
+      min-height:calc(100vh - var(--desk-nav));
+      min-height:calc(100dvh - var(--desk-nav));
+    }
+    #app[data-theme="home"]{
+      height:calc(100svh - var(--desk-nav));
+      min-height:calc(100svh - var(--desk-nav));
+      padding-bottom:28px;
+    }
+    main{padding-left:28px;padding-right:28px;}
+    #app[data-theme="home"] main{padding-left:22px;padding-right:22px;}
+
+    /* Counted, not auto-filled. auto-fill sizes tracks to the room and
+       lets the count fall where it may, which at this width came out
+       at FIVE - so the sixth action tile sat alone on a row of its own
+       with four empty slots beside it. Six divides by three and by six
+       and by nothing else useful, so those are the only two counts the
+       row is allowed to take.
+
+       The info pair and the director's tools sit on the same tracks
+       rather than splitting the full width between two enormous tiles.
+       They fill two of the columns and leave the rest, which reads as
+       alignment with the row above instead of as a gap. */
+    .home-grid,.home-info-grid,
+    .director-tools{grid-template-columns:repeat(3,1fr);}
+    .director-tool.wide{grid-column:1 / -1;}
+
+    .sw-update{left:0;right:0;bottom:18px;max-width:520px;}
+  }
+
+  /* One clean row of six once there is room for it. Same gate as the
+     bar above - this is only ever the desktop shell. */
+  @media (min-width:1280px) and (hover:hover) and (pointer:fine){
+    .home-grid,.home-info-grid,
+    .director-tools{grid-template-columns:repeat(6,1fr);}
+  }
+
+  /* ---- a phone on its side --------------------------------------------
+     About 390px of height, most of it spent by a header and a floating
+     nav unless they are told not to. The max-height rules further up
+     already do this for the home screen; this does it for the rest of
+     the app, and for the two things sized in whole hundreds of pixels -
+     the map and the camera - which is where the height on a landscape
+     phone actually goes. */
+  @media (orientation:landscape) and (max-height:500px){
+    header.hero{padding:15px 20px 13px;}
+    header.hero h1{font-size:21px;}
+    #app{padding-bottom:calc(74px + env(safe-area-inset-bottom, 0px));}
+    #app[data-theme="home"]{padding-bottom:58px;}
+    nav.tabbar{padding:4px;}
+    nav.tabbar button{padding:6px 4px 5px;font-size:9.5px;}
+    nav.tabbar button .ico{width:17px;height:17px;}
+    #app[data-theme="home"] nav.tabbar button{min-height:40px;}
+    .lw-map{height:200px;}
+    .lw-map.tall{height:240px;}
+    .vf-wrap video{max-height:200px;}
+    .lightbox-actions button{min-height:40px;}
+  }
+
+  /* ---- what is on the other end of the pointer -------------------------
+     Hover is not something a touch screen has, and a :hover rule on one
+     STICKS: it fires on the tap and stays lit until something else is
+     tapped, so the last thing pressed goes on looking pressed. That is
+     why there was not a single hover state in this file. There is no
+     need to go without them on a machine that has a mouse, though -
+     they only have to sit behind the query that asks. */
+  @media (hover:hover) and (pointer:fine){
+    .tile:hover,.home-tile:hover,.home-info-tile:hover,
+    .director-tool:hover,.gallery-tile:hover{border-color:var(--gold);}
+    button.primary:hover:not(:disabled),
+    .home-register:hover,.checkbtn:hover{filter:brightness(1.08);}
+    button.secondary:hover,button.small:hover,
+    .radiogroup label:hover:not(.active),
+    .divtabs button:hover:not(.active),
+    .contestant-filters button:hover:not(.active),
+    .lw-map-tools button:hover:not(.active),
+    .crow-head:hover{background:var(--paper-2);}
+    .backlink:hover{color:var(--deep);text-decoration:underline;}
+    nav.tabbar button:hover{background:rgba(255,255,255,0.10);}
+    /* The home nav sets its own colours at a specificity this has to
+       match to say anything at all. */
+    #app[data-theme="home"] nav.tabbar button:hover{color:var(--white);}
+    /* Last, and on purpose: the lightbox is dark, and the light chip
+       the generic .small rule above would hand it is the one place
+       where a hover state would read as a bug rather than as feedback. */
+    .lightbox-bar button.small:hover,
+    .lightbox-nav button:hover:not(:disabled){
+      background:rgba(255,255,255,0.15);color:#F4F1E9;
+    }
+    .lw-handle:hover{border-color:var(--gold);}
+  }
+
+  /* Touch. 44px is Apple's minimum and 48dp is Google's, and the
+     controls below sat under both - a 13px label in 9px of padding is
+     about 35px of target. Only the ones that stand alone in a row of
+     their own are grown to it; the small buttons packed into a catch
+     card get a smaller lift, because taking those to 44 would push the
+     photo, the length and the actions apart into three rows. */
+  @media (pointer:coarse){
+    .divtabs button,.contestant-filters button,.checkbtn,
+    .lw-map-tools button,.lightbox-nav button{min-height:44px;}
+    /* Centred rather than merely taller: the label's text sits at the
+       top of the box otherwise, with all the new height under it. */
+    .radiogroup label{
+      display:flex;align-items:center;justify-content:center;min-height:44px;
+    }
+    button.small{min-height:36px;}
+  }
+
+  @media print{
+    /* Printing exists for one thing: the FWP contest report. Everything else
+       is hidden by VISIBILITY rather than display, because the sheet is nested
+       deep inside the director panel and display:none on any ancestor would
+       take it with them. */
+    body *{visibility:hidden !important;}
+    #report-sheet,#report-sheet *{visibility:visible !important;}
+    #report-sheet{
+      position:absolute;left:0;top:0;width:100% !important;
+      border:none;padding:0;background:#fff;color:#000;
+      /* The page view scales the sheet down to fit a screen. Paper has no such
+         constraint, and leaving the transform on would print it shrunk into
+         the top-left corner. */
+      transform:none !important;
+    }
+    #report-frame{height:auto !important;overflow:visible !important;}
+    /* Type sizes are NOT set here. They live on #report-sheet as the base, so
+       this and the page view cannot disagree about what fits. */
+    /* An unfilled box prints EMPTY, the way the paper form would have been
+       handed over. The words are for the director, not for the state. */
+    .rblank{display:none !important;}
+    /* Paper supplies its own edges and shadows. */
+    #report-sheet.pageview .fwp-page{
+      width:auto !important;min-height:0 !important;padding:0 !important;
+      box-shadow:none !important;margin:0 !important;
+    }
+    #report-sheet.pageview .fwp-page.overflowing::after{display:none !important;}
+    /* Two pages, and the form says which is which. */
+    .fwp-break{break-after:page;page-break-after:always;}
+    .fwp-page + .fwp-page{margin-top:0;padding-top:0;border-top:none;}
+    /* Nothing to scroll on paper, and a clipped table would lose columns. */
+    .rscroll{overflow:visible !important;}
+    .fwp-head,.fwp-sub{break-after:avoid;page-break-after:avoid;}
+    .fwp-grid,.fwp-table,.fwp-box-area{break-inside:avoid;page-break-inside:avoid;}
+    .tabbar{display:none !important;}
+    .lightbox{display:none !important;}
+    @page{margin:12mm;}
+  }

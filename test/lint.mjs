@@ -14,20 +14,26 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execFileSync } from 'child_process';
+import { loadSource } from './source.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const HTML = process.argv[2] || path.join(HERE, '..', 'index.html');
-const src = fs.readFileSync(HTML, 'utf8');
-const script = (src.match(/<script>([\s\S]*)<\/script>/) || [])[1];
-if (!script) { console.error('no inline script found'); process.exit(1); }
+// The page, the application and its stylesheet are three files now. Which
+// files those are is test/source.mjs's business, not this one's.
+let source;
+try { source = loadSource(HTML); }
+catch (e) { console.error(e.message); process.exit(1); }
+const { html, script, style, all } = source;
 
 const problems = [];
 const NL = String.fromCharCode(10);
 const note = (kind, msg) => problems.push({ kind, msg });
 
-// Markup only. Counting tags across the script block would score every
-// `<select>` written in a comment or assembled inside a JS string.
-const markup = src.replace(/<script>[\s\S]*<\/script>/, '');
+// Markup only. The application is its own file now, so there is nothing left
+// here to strip: counting tags across it would score every `<select>` written
+// in a comment or assembled inside a JS string.
+const markup = html;
 
 // Code with comments and string literals blanked out, so a word in prose is
 // never mistaken for an identifier. Lengths are preserved so line numbers and
@@ -205,14 +211,13 @@ for (const m of script.matchAll(/serviceWorker\.register\('([^']+)'\)/g)) {
 // and until they do, scrolling and the fixed nav are both wrong. It is a
 // platform rule with no warning attached, and it cost a round of "why do I
 // have to zoom out" before it was found, so it is checked here.
-const style = (src.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || '';
-if (!style) note('css', 'no <style> block found');
+// `style` arrives with the rest of the source at the top of this file.
 
 // Classes that sit on a real field somewhere in the file, markup or JS-built.
 // Without these, a rule like `.edit-len { font-size: 13px }` reads as ordinary
 // text styling because its selector never says "input".
 const fieldClasses = new Set();
-for (const m of src.matchAll(/<(?:input|select|textarea)\b[^>]*class="([^"]+)"/g)) {
+for (const m of all.matchAll(/<(?:input|select|textarea)\b[^>]*class="([^"]+)"/g)) {
   for (const c of m[1].split(/\s+/)) if (c) fieldClasses.add(c);
 }
 
@@ -280,6 +285,9 @@ for (const token of FWP_TOKENS) {
 // stops covering it, so this checks every external origin the page names is
 // actually allowed by the policy. JSON takes no comments, which is why the
 // reasoning lives here.
+// The policy as vercel.json sends it, kept where the <meta> comparison further
+// down can reach it.
+let headerPolicy = '';
 const VJ = path.join(HERE, '..', 'vercel.json');
 if (!fs.existsSync(VJ)) {
   note('hosting', 'vercel.json is missing - the deploy would go out with no ' +
@@ -326,6 +334,7 @@ if (!fs.existsSync(VJ)) {
     const enforced = setHeaders.get('Content-Security-Policy');
     const reportOnly = setHeaders.get('Content-Security-Policy-Report-Only');
     const policy = enforced || reportOnly || '';
+    headerPolicy = policy;
     // The rollout is finished: the walkthrough was done on a real browser,
     // every screen, and the only thing the console had to say was that
     // upgrade-insecure-requests does nothing in report-only mode - which was
@@ -345,7 +354,7 @@ if (!fs.existsSync(VJ)) {
       note('hosting', 'vercel.json carries no Content-Security-Policy');
     } else {
       const origins = new Set();
-      for (const m of src.matchAll(/https:\/\/([a-z0-9.-]+)/g)) origins.add(m[1]);
+      for (const m of all.matchAll(/https:\/\/([a-z0-9.-]+)/g)) origins.add(m[1]);
       for (const host of origins) {
         if (host.endsWith('.invalid') || host.includes('abcdefghijkl')) continue;  // examples
         if (host.endsWith('supabase.co') && policy.includes('*.supabase.co')) continue;
@@ -359,31 +368,173 @@ if (!fs.existsSync(VJ)) {
   }
 }
 
+// ---------------------------------------------------------- the policy, twice
+// The policy is sent as a header by vercel.json and repeated as a <meta> tag in
+// index.html. The entire point of repeating it is that one copy cannot quietly
+// stop matching the other, and nothing enforces that except this.
+//
+// The meta copy is not decoration. It is the only policy in force if the page
+// is ever served from somewhere that strips headers - and headers are exactly
+// what a hosting change drops silently.
+//
+// frame-ancestors is expected in the header and deliberately NOT in the meta
+// tag: a browser ignores it there and warns about it in the console, so
+// repeating it would add a line that reads like protection and blocks nothing.
+const IGNORED_IN_META = ['frame-ancestors', 'report-uri', 'sandbox'];
+const metaCsp = (markup.match(/<meta http-equiv="Content-Security-Policy" content="([^"]*)"/) || [])[1];
+
+if (!metaCsp) {
+  note('policy', 'index.html carries no <meta> Content-Security-Policy, so a host ' +
+    'that dropped the header would serve the app with no policy at all, and ' +
+    'nothing anywhere would say so');
+} else if (headerPolicy) {
+  const directives = (p) => new Map(p.split(';').map((d) => d.trim()).filter(Boolean)
+    .map((d) => [d.split(/\s+/)[0], d.split(/\s+/).slice(1).join(' ')]));
+  const head = directives(headerPolicy);
+  const meta = directives(metaCsp);
+
+  for (const [name, value] of head) {
+    if (IGNORED_IN_META.includes(name)) {
+      if (meta.has(name)) {
+        note('policy', `the <meta> policy repeats ${name}, which a browser ignores in ` +
+          `a meta tag and warns about - the header is the only place it does anything`);
+      }
+      continue;
+    }
+    if (!meta.has(name)) {
+      note('policy', `the header sets ${name} and the <meta> policy does not - the two ` +
+        `have drifted apart, and a host that strips headers would lose it entirely`);
+    } else if (meta.get(name) !== value) {
+      note('policy', `${name} does not match: the header says "${value}" and the ` +
+        `<meta> policy says "${meta.get(name)}"`);
+    }
+  }
+  for (const name of meta.keys()) {
+    if (!head.has(name) && !IGNORED_IN_META.includes(name)) {
+      note('policy', `the <meta> policy sets ${name} and the header does not`);
+    }
+  }
+}
+
+// The directives that carry the weight, checked for saying nothing.
+//
+// 'unsafe-inline' on script-src is the one that matters. With it the policy
+// cannot tell the application from a block injected through a chat message or
+// an angler's handle, which is the whole reason the script and the stylesheet
+// were moved out of index.html and into /app/. Putting it back would undo that
+// silently - everything would still work, which is the problem.
+if (headerPolicy) {
+  const scriptSrc = (headerPolicy.match(/script-src([^;]*)/) || ['', ''])[1];
+  const unsafe = scriptSrc.match(/'unsafe-[a-z-]+'/g);
+  if (unsafe) {
+    note('policy', `script-src allows ${unsafe.join(' and ')}, which is the difference ` +
+      `between a policy and a comment - an injected block would run with the ` +
+      `application's own privileges`);
+  }
+  for (const d of ['default-src', 'object-src', 'base-uri', 'form-action', 'font-src']) {
+    if (!new RegExp(d + '\\b').test(headerPolicy)) {
+      note('policy', `the CSP sets no ${d}, so that kind of load falls back to whatever ` +
+        `default-src happens to allow`);
+    }
+  }
+}
+
 // ------------------------------------------------------- external resources
-// Anything loaded off a CDN runs on every angler's phone with the same
-// privileges as the app itself, so it has to be pinned to an exact version AND
-// checked against a hash. A floating range like "@2" means the newest release
-// upstream reaches the field unread, and the first anyone knows of a bad one is
-// on the water.
-for (const m of src.matchAll(/<(script|link)\b[^>]*?(?:src|href)="(https:\/\/[^"]+)"[^>]*>/g)) {
+// Nothing that draws this page may come from another origin.
+//
+// This check used to be about pinning. Leaflet and the fonts came off a CDN, so
+// the most it could ask for was an exact version and an integrity hash - pin
+// what arrives, because it is arriving either way. They are served from this
+// repo now and the policy names no remote origin for a script, a style or a
+// font, so the rule is the stronger one: there should be no such tag at all.
+//
+// It is written round this way deliberately. Left as a version-and-hash check
+// it would run over a page with no remote tags left in it, find nothing to
+// object to, and report clean for ever while asserting nothing at all - which
+// is the shape of check this project has already been caught by once.
+for (const m of markup.matchAll(/<(script|link)\b[^>]*?(?:src|href)="(https?:\/\/[^"]+)"[^>]*>/g)) {
   const [tag, kind, url] = [m[0], m[1], m[2]];
-  // Connection hints fetch nothing, so there is nothing to pin or hash.
-  if (/rel="(preconnect|dns-prefetch|preload)"/.test(tag)) continue;
-  // Google Fonts serves CSS whose content is negotiated per browser, so it has
-  // no stable hash to pin. It ships no script, and the CSP confines it.
-  if (/fonts\.(googleapis|gstatic)\.com/.test(url)) continue;
-  const version = url.match(/@(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
-  if (!version || version[2] === undefined || version[3] === undefined) {
-    note('cdn', `${url} is not pinned to an exact version - a floating range ` +
-      `ships whatever upstream released last, to every phone, untested`);
+  const host = url.replace(/^https?:\/\//, '').split('/')[0];
+  if (/rel="(preconnect|dns-prefetch)"/.test(tag)) {
+    note('external', `index.html still opens a connection to ${host}, which nothing ` +
+      `loads from any more - a preconnect is a third party being told the app was opened`);
+    continue;
   }
-  if (!/\bintegrity="sha(256|384|512)-/.test(tag)) {
-    note('cdn', `${url} has no integrity hash, so a CDN serving different bytes ` +
-      `would be run rather than refused`);
+  note('external', `index.html loads a ${kind} from ${host}. Scripts, styles and fonts ` +
+    `are served from this repo so that a content blocker, a filtering DNS or a ` +
+    `captive portal at the ramp cannot take the app apart, and so that they exist ` +
+    `at all with no signal. Vendor it and add it to sw.js SHELL_FILES.`);
+}
+
+// ------------------------------------------------------------- local assets
+// Every local file the app loads has to be on disk AND in the repository.
+//
+// On disk is the weaker half, and on its own it is the check that lets a deploy
+// pass here and 404 for everybody else: a file that exists on the machine that
+// built it and in no commit. git ls-files is the half that catches that. The
+// service worker makes it worse than a missing image would be - install caches
+// the 404, and the phone then keeps serving it.
+const refs = [...markup.matchAll(/(?:src|href)="(\/(?:app|vendor)\/[^"]+)"/g)].map((r) => r[1]);
+const ROOT = path.join(HERE, '..');
+let tracked = null;
+try {
+  tracked = new Set(execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' })
+    .split(NL).filter(Boolean));
+} catch (e) {
+  note('assets', 'git ls-files would not run, so nothing here could tell a committed ' +
+    'file from one that exists only on this machine: ' + e.message);
+}
+
+// Assets named by a stylesheet rather than by the page - the font files, the
+// marker icons - are the easiest of all to leave uncommitted, because nothing
+// fails loudly when they go: the text simply renders in a fallback face.
+function assetsOf(cssRef) {
+  const dir = cssRef.slice(0, cssRef.lastIndexOf('/'));
+  const file = path.join(ROOT, cssRef.replace(/^\//, ''));
+  if (!fs.existsSync(file)) return [];
+  const out = [];
+  for (const u of fs.readFileSync(file, 'utf8').matchAll(/url\(([^)]+)\)/g)) {
+    const target = u[1].trim().replace(/^['"]|['"]$/g, '');
+    if (/^(data:|https?:|#)/.test(target)) continue;
+    out.push(dir + '/' + target.replace(/^\.\//, ''));
   }
-  if (!/\bcrossorigin=/.test(tag)) {
-    note('cdn', `${url} has an integrity hash but no crossorigin attribute - ` +
-      `the browser ignores the hash without it`);
+  return out;
+}
+
+const everyAsset = [...refs];
+for (const ref of refs) if (ref.endsWith('.css')) everyAsset.push(...assetsOf(ref));
+const allAssets = [...new Set(everyAsset)];
+
+for (const ref of allAssets) {
+  const rel = ref.replace(/^\//, '');
+  if (!fs.existsSync(path.join(ROOT, rel))) {
+    note('assets', `${ref} is loaded by the app and there is no such file`);
+  } else if (tracked && !tracked.has(rel)) {
+    note('assets', `${ref} is loaded by the app and exists here, but is not committed - ` +
+      `it would 404 for everybody else, and the service worker would cache that 404`);
+  }
+}
+
+// --------------------------------------------------------- the offline shell
+// The shell is a separate list in sw.js and nothing forces it to agree with the
+// page. A file the page loads and the shell leaves out is a file an angler does
+// not have out of range, which is the one place it matters.
+const SW = path.join(ROOT, 'sw.js');
+if (!fs.existsSync(SW)) {
+  note('offline', 'sw.js is missing, so the installed app has no offline copy at all');
+} else {
+  const sw = fs.readFileSync(SW, 'utf8');
+  const shell = new Set([...sw.matchAll(/'\.(\/[^']*)'/g)].map((r) => r[1]));
+  for (const ref of allAssets) {
+    // latin-ext is deliberately not shelled. A browser fetches a subset only
+    // when a character in its unicode-range is actually drawn, so shipping it
+    // would cost every phone bytes on install for an accent most fields will
+    // never contain. It stays on the server for the rare name that needs it.
+    if (/-latin-ext\.woff2$/.test(ref)) continue;
+    if (!shell.has(ref)) {
+      note('offline', `the app loads ${ref} but sw.js leaves it out of SHELL_FILES, ` +
+        `so out of range the app is missing it`);
+    }
   }
 }
 
@@ -842,7 +993,7 @@ for (const [needle, why] of [
   const accents = (script.match(/const TILE_ACCENTS = \[([^\]]*)\]/) || ['', ''])[1];
   for (const m of accents.matchAll(/'(#[0-9A-Fa-f]{3,8})'/g)) {
     const colour = m[1];
-    const uses = (src.match(new RegExp(colour.replace('#', '#'), 'gi')) || []).length;
+    const uses = (all.match(new RegExp(colour.replace('#', '#'), 'gi')) || []).length;
     if (uses < 2) {
       note('tiles', `the tile accent ${colour} appears nowhere else in the file - the ` +
         `home tiles are supposed to be coloured from the palette the rest of the site uses`);
@@ -927,7 +1078,7 @@ for (const [needle, why] of [
 
 // The lightbox is a flex column and its stage grows; every fixed bar in it has
 // to say so or it gets squeezed to nothing on a short screen.
-if (!/#lightbox-tamper\{[^}]*flex:0 0 auto/.test(src)) {
+if (!/#lightbox-tamper\{[^}]*flex:0 0 auto/.test(style)) {
   note('integrity', 'the lightbox photo warning no longer declares flex:0 0 auto, so ' +
     'the growing photo stage can squeeze it to nothing exactly when it matters');
 }
