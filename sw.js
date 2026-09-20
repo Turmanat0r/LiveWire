@@ -15,31 +15,77 @@
 // also drops the uncapped v1 cache on activate, which is the only way to clear
 // the tiles already sitting on phones from before that limit existed.
 // v3: the Supabase SDK joined the shell - see SHELL_FILES.
-const VERSION = 'livewire-v3';
+// v4: the page stopped being one file. Its stylesheet and its whole script
+//     are separate files now (the Content-Security-Policy no longer allows
+//     them inline), and the fonts and Leaflet are served from this repo
+//     instead of a CDN. All of it is shell, and /app/ is network-first -
+//     see isAppCode below for why that one is not optional.
+const VERSION = 'livewire-v4';
 const SHELL = VERSION + '-shell';
 const RUNTIME = VERSION + '-runtime';
 
-// Nearly one file, plus the one dependency an angler cannot fish without.
+// Everything needed to open the app and file a fish with no signal at all.
 //
-// The SDK holds this device's anonymous session, and with no session every
-// write policy in the database refuses the phone - it can read the tournament
-// and save nothing. It used to sit in the RUNTIME cache with the map tiles,
-// which was quietly the wrong place twice over: that cache is capped and
-// evicts oldest-first, and keys() returns insertion order, so the SDK loaded
-// on the first page view was near the FRONT of the queue to be thrown out by
-// an afternoon of panning the boundary editor. Evicted plus out of range
-// equals a phone that cannot file a fish.
+// This list used to be described as "nearly one file". It is not any more, and
+// the reason is worth keeping: index.html carried the entire stylesheet and the
+// entire application inline, and a Content-Security-Policy cannot tell an
+// inline block from one an attacker injected into a chat message or a handle.
+// Dropping 'unsafe-inline' meant moving both out to /app/, which is why they
+// are named here.
 //
-// In the shell it is fetched once on install, survives the tile churn, and is
-// there in a dead spot. Rename this when the version in index.html changes;
-// the filename carries the version so the two cannot silently disagree.
+// THE SDK is the one dependency an angler cannot fish without. It holds this
+// device's anonymous session, and with no session every write policy in the
+// database refuses the phone - it can read the tournament and save nothing. It
+// used to sit in the RUNTIME cache with the map tiles, which was quietly wrong
+// twice over: that cache is capped and evicts oldest-first, and keys() returns
+// insertion order, so the SDK loaded on the first page view was near the FRONT
+// of the queue to be thrown out by an afternoon of panning the boundary editor.
+// Evicted plus out of range equals a phone that cannot file a fish.
+//
+// THE FONTS AND LEAFLET are here for that same reason, found the same way.
+// Both used to come off a third party, so offline they simply never arrived:
+// the installed app opened out of range in system fallback fonts and had done
+// since the day it shipped. Nobody reported it, because it still worked.
+//
+// Only the latin subset of each font is listed. A browser fetches a subset only
+// when a character in its unicode-range is actually drawn, so latin-ext stays
+// on the server for the rare name that needs it rather than costing every
+// phone bytes it will never render.
+//
+// SIZE: about 1.6 MB installed, roughly 0.5 MB more than v3. That is a one-off
+// on the ramp's signal, and it buys an app that is legible and can draw a
+// boundary out of range. Each file is added on its own below, so one failure
+// costs that file rather than the whole install.
+//
+// Rename these whenever a version in a path changes; the paths carry the
+// versions so the two cannot silently disagree.
 const SHELL_FILES = [
   './',
   './index.html',
   './manifest.json',
+  './app/livewire.css',
+  './app/livewire.js',
   './vendor/supabase-js-2.115.0.min.js',
   './livewire-icon-192.png',
-  './livewire-icon-512.png'
+  './livewire-icon-512.png',
+  './vendor/leaflet-1.9.4/leaflet.css',
+  './vendor/leaflet-1.9.4/leaflet.js',
+  './vendor/leaflet-1.9.4/images/marker-icon.png',
+  './vendor/leaflet-1.9.4/images/marker-icon-2x.png',
+  './vendor/leaflet-1.9.4/images/marker-shadow.png',
+  './vendor/leaflet-1.9.4/images/layers.png',
+  './vendor/leaflet-1.9.4/images/layers-2x.png',
+  './vendor/fonts-v1/fonts.css',
+  './vendor/fonts-v1/fraunces-500-latin.woff2',
+  './vendor/fonts-v1/fraunces-600-latin.woff2',
+  './vendor/fonts-v1/inter-400-latin.woff2',
+  './vendor/fonts-v1/inter-500-latin.woff2',
+  './vendor/fonts-v1/inter-600-latin.woff2',
+  './vendor/fonts-v1/oswald-500-latin.woff2',
+  './vendor/fonts-v1/oswald-600-latin.woff2',
+  './vendor/fonts-v1/oswald-700-latin.woff2',
+  './vendor/fonts-v1/space-mono-400-latin.woff2',
+  './vendor/fonts-v1/space-mono-700-latin.woff2'
 ];
 
 self.addEventListener('install', (event) => {
@@ -72,6 +118,17 @@ function isLiveData(url) {
          url.hostname.endsWith('.googleapis.com');
 }
 
+// The application itself: the stylesheet and the script that used to be inline
+// in index.html. These CANNOT be cache-first, which is where they would land by
+// default, and getting it wrong is silent and total: unlike everything under
+// /vendor/, they carry no version in their names - they cannot, they change on
+// every deploy - so a phone would serve whichever build it installed first, for
+// ever, and a fix pushed on the morning of an event would reach nobody. Inline,
+// they inherited the page's network-first rule. This is that rule, kept.
+function isAppCode(url) {
+  return url.pathname.startsWith('/app/');
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
@@ -83,7 +140,7 @@ self.addEventListener('fetch', (event) => {
   const isPage = req.mode === 'navigate' ||
                  (req.headers.get('accept') || '').includes('text/html');
 
-  if (isPage) {
+  if (isPage || isAppCode(url)) {
     // Network first, so a deploy reaches a phone with signal on the next open
     // rather than whenever the cache happens to turn over. The cached copy is
     // the fallback, which is the whole point of being here.
@@ -91,10 +148,17 @@ self.addEventListener('fetch', (event) => {
       fetch(req)
         .then((res) => {
           const copy = res.clone();
-          caches.open(SHELL).then((c) => c.put('./index.html', copy)).catch(() => {});
+          // The page is kept under one fixed key so that opening a deep link
+          // refreshes the shell rather than filling it with a second copy under
+          // a different URL. App files are kept under their own.
+          const key = isPage ? './index.html' : req;
+          caches.open(SHELL).then((c) => c.put(key, copy)).catch(() => {});
           return res;
         })
-        .catch(() => caches.match('./index.html').then((hit) => hit || caches.match('./')))
+        .catch(() => {
+          if (isPage) return caches.match('./index.html').then((hit) => hit || caches.match('./'));
+          return caches.match(req);
+        })
     );
     return;
   }
