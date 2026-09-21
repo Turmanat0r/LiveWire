@@ -510,6 +510,11 @@ if (!metaCsp) {
 // an angler's handle, which is the whole reason the script and the stylesheet
 // were moved out of index.html and into /app/. Putting it back would undo that
 // silently - everything would still work, which is the problem.
+//
+// style-src is held to the same rule now. Injected CSS cannot run code, but it
+// can restyle the page - hide a warning, dress a link up as a button, read an
+// attribute out a character at a time through background images - and it was
+// the last 'unsafe-inline' in the policy.
 if (headerPolicy) {
   const scriptSrc = (headerPolicy.match(/script-src([^;]*)/) || ['', ''])[1];
   const unsafe = scriptSrc.match(/'unsafe-[a-z-]+'/g);
@@ -517,6 +522,12 @@ if (headerPolicy) {
     note('policy', `script-src allows ${unsafe.join(' and ')}, which is the difference ` +
       `between a policy and a comment - an injected block would run with the ` +
       `application's own privileges`);
+  }
+  const styleSrc = (headerPolicy.match(/style-src([^;]*)/) || ['', ''])[1];
+  const unsafeStyle = styleSrc.match(/'unsafe-[a-z-]+'/g);
+  if (unsafeStyle) {
+    note('policy', `style-src allows ${unsafeStyle.join(' and ')} - an injected style ` +
+      `attribute or <style> block would apply as if it were the page's own`);
   }
   for (const d of ['default-src', 'object-src', 'base-uri', 'form-action', 'font-src']) {
     if (!new RegExp(d + '\\b').test(headerPolicy)) {
@@ -1360,6 +1371,39 @@ for (const rel of typedFiles) {
     note('explicit-any', rel + ':' + (i + 1) + ' writes `any` by hand: ' + stmt.slice(0, 70) +
       ' - give it its shape, or if it comes from outside, add it to ANY_ALLOWED in test/lint.mjs');
   });
+}
+
+// ----------------------------------------------------------- inline styles
+// The policy's style-src has no 'unsafe-inline', so the browser drops a style
+// attribute - in the markup, or in HTML the app builds - and the only sign is
+// a line in the console of whichever phone it happened on. The page would just
+// look wrong. So one is a finding here: the declaration belongs in
+// app/livewire.css as a class, next to the others that moved there.
+//
+// Setting element.style from code is NOT this - that is the CSSOM, which the
+// policy allows, and it is how the app shows and hides things. Writing the
+// attribute with setAttribute('style', ...) is, and is caught too.
+{
+  const body = markup.slice(markup.indexOf('<body')).replace(/<!--[\s\S]*?-->/g, '');
+  const inMarkup = (body.match(/\sstyle\s*=/g) || []).length;
+  if (inMarkup) {
+    note('inline-style', `index.html has ${inMarkup} style attribute${inMarkup === 1 ? '' : 's'}, ` +
+      `which the policy drops - give each a class in app/livewire.css`);
+  }
+  for (const rel of typedFiles) {
+    const text = fs.readFileSync(path.join(ROOT_DIR, rel), 'utf8').split('\r\n').join(NL);
+    // Comments blanked; strings kept - HTML the app builds lives in strings.
+    const code = text.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' '))
+      .replace(/(^|[^:'"`\\])\/\/[^\n]*/g, (c, p) => p + ' '.repeat(c.length - p.length)).split(NL);
+    code.forEach((line, i) => {
+      if (/\sstyle\s*=\s*\\?["']|<style\b/.test(line)) {
+        note('inline-style', rel + ':' + (i + 1) + ' builds a style attribute, which the policy drops - use a class in app/livewire.css: ' + line.trim().slice(0, 70));
+      }
+      if (/setAttribute\(\s*['"]style['"]/.test(line)) {
+        note('inline-style', rel + ':' + (i + 1) + ' sets the style attribute, which the policy drops - set element.style.<property> instead, or use a class');
+      }
+    });
+  }
 }
 
 if (problems.length === 0) { console.log('lint: clean'); process.exit(0); }

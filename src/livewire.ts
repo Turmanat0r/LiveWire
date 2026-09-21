@@ -708,15 +708,17 @@ function captureBadges(c: Catch): CaptureBadge[] {
   return out;
 }
 
+// Each tone's colours are a class in app/livewire.css - the policy does not
+// allow a style attribute, and these used to be one.
 const CAPTURE_TONES: Record<CaptureBadge['tone'], string> = {
-  ok:    'background:#DCE7DA;color:#3B5A34;',
-  warn:  'background:#F3E4C4;color:var(--gold-deep);',
-  bad:   'background:#F1D6D0;color:var(--danger);',
-  plain: 'background:#E4E1D8;color:#6B6963;'
+  ok:    'tone-ok',
+  warn:  'tone-warn',
+  bad:   'tone-bad',
+  plain: 'tone-plain'
 };
 function captureBadgeHtml(c: Catch){
   return captureBadges(c).map(b=>
-    '<span class="badge" style="' + CAPTURE_TONES[b.tone] + '">' + escapeHtml(b.text) + '</span>'
+    '<span class="badge ' + CAPTURE_TONES[b.tone] + '">' + escapeHtml(b.text) + '</span>'
   ).join('');
 }
 
@@ -727,19 +729,19 @@ function captureBadgeHtml(c: Catch){
 function filedByBadgeHtml(c: Catch){
   const f = c && c.filedBy;
   if(!f) return '';
-  return '<span class="badge" style="background:#F1E3C6;color:#7A5B14;">Filed by ' +
+  return '<span class="badge tone-filed">Filed by ' +
     escapeHtml(f.name || 'another device') + (f.director ? ' (director)' : '') + '</span>';
 }
 
 function boundaryBadgeHtml(c: Catch){
   const loc = c.location;
   if(!loc){
-    return '<span class="badge" style="background:#E4E1D8;color:#6B6963;">Location unavailable</span>';
+    return '<span class="badge tone-plain">Location unavailable</span>';
   }
   // No boundary was set when this was logged - the position is on record, there
   // was simply nothing to judge it against.
   if(loc.withinBounds === null || loc.withinBounds === undefined){
-    return '<span class="badge" style="background:#E4E1D8;color:#6B6963;">Location recorded &middot; no boundary set</span>';
+    return '<span class="badge tone-plain">Location recorded &middot; no boundary set</span>';
   }
   // distanceMiles is only meaningful for a circle (distance from the launch).
   // Records from a polygon course, and any record at all written before
@@ -747,12 +749,12 @@ function boundaryBadgeHtml(c: Catch){
   const fromLaunch = typeof loc.distanceMiles === 'number'
     ? ' &middot; '+loc.distanceMiles.toFixed(1)+' mi from launch' : '';
   if(loc.withinBounds){
-    return '<span class="badge" style="background:#DDE6D5;color:#3D6A50;">In bounds'+fromLaunch+'</span>';
+    return '<span class="badge tone-good">In bounds'+fromLaunch+'</span>';
   }
   const out = typeof loc.outsideMiles === 'number' && loc.outsideMiles > 0
     ? ' &middot; '+loc.outsideMiles.toFixed(1)+' mi outside the line'
     : fromLaunch;
-  return '<span class="badge" style="background:#F1D6D0;color:#A3372A;">Outside course boundary'+out+'</span>';
+  return '<span class="badge tone-out">Outside course boundary'+out+'</span>';
 }
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -988,11 +990,11 @@ function pendingNoticeHtml(a: Angler){
 function codeNoteHtml(a: Angler){
   if(!a) return '';
   if(!a.anglerCode){
-    return '<p class="hint" style="margin:8px 0 0;">No board code has been issued yet &mdash; ask the director before you fish.</p>';
+    return '<p class="hint u-m-8-0-0">No board code has been issued yet &mdash; ask the director before you fish.</p>';
   }
   return a.teamCode
-    ? '<p class="hint" style="margin:8px 0 0;">Write <strong>both</strong> numbers on your bump board. The team code is shared with your partner; the Tournament ID is yours alone, and is what tells your fish apart from theirs.</p>'
-    : '<p class="hint" style="margin:8px 0 0;">Write this number on your bump board so it is readable in every catch photo.</p>';
+    ? '<p class="hint u-m-8-0-0">Write <strong>both</strong> numbers on your bump board. The team code is shared with your partner; the Tournament ID is yours alone, and is what tells your fish apart from theirs.</p>'
+    : '<p class="hint u-m-8-0-0">Write this number on your bump board so it is readable in every catch photo.</p>';
 }
 
 // The ONLY identity the field is shown: the handle. Anyone who registered
@@ -3809,7 +3811,7 @@ async function renderRegisteredCard(){
     pendingNoticeHtml(me) +
     rows.map(r=>
       '<div class="lbrow"><div class="who"><div class="name">'+escapeHtml(r[0])+'</div></div>'+
-      '<div class="len" style="font-size:13px;">'+escapeHtml(String(r[1]))+'</div></div>').join('') +
+      '<div class="len u-size-13">'+escapeHtml(String(r[1]))+'</div></div>').join('') +
     codeBoxHtml(me) + codeNoteHtml(me);
 }
 
@@ -4876,10 +4878,10 @@ async function renderManageList(){
     const editable = c.status==='pending';
     const actions = editable
       ? '<div class="actions"><input type="number" step="0.25" class="edit-len" value="'+c.length+'" data-id="'+c.id+'"><button class="small" data-act="savelen" data-id="'+c.id+'">Save</button><button class="small danger" data-act="withdraw" data-id="'+c.id+'">Withdraw</button></div>'
-      : '<div class="hint" style="margin-top:6px;">Locked &mdash; already reviewed by the director.</div>';
+      : '<div class="hint u-mt-6">Locked &mdash; already reviewed by the director.</div>';
     return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+lengthHtml(c.length)+'</span>'+statusHtml(c.status)+'</div>'+
       '<div class="name">'+escapeHtml(c.species)+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
-      '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+'</div>'+actions+'</div></div>';
+      '<div class="u-mt-4">'+boundaryBadgeHtml(c)+'</div>'+actions+'</div></div>';
   }).join('');
 
   hydratePhotos(el);
@@ -5136,7 +5138,7 @@ async function renderResultsAdmin(){
 
   const podium = (div: Division)=>{
     const rows = (view.divisions && view.divisions[div]) || [];
-    if(rows.length === 0) return '<p class="hint" style="margin:4px 0 0;">Nobody ranked.</p>';
+    if(rows.length === 0) return '<p class="hint u-m-4-0-0">Nobody ranked.</p>';
     return rows.slice(0, 3).map((r, i)=>
       '<div class="lbrow"><div class="rank">' + (i + 1) + '</div><div class="who"><div class="name">' +
       escapeHtml(r.anglerIds.map((id: string)=> displayHandle(byId[id])).join(' & ')) +
@@ -5144,16 +5146,16 @@ async function renderResultsAdmin(){
   };
   const bf = view.bigFish;
   wrap.innerHTML =
-    '<h2 style="margin-bottom:6px;">Solo</h2>' + podium('solo') +
-    '<h2 style="margin:12px 0 6px;">Team</h2>' + podium('team') +
-    '<h2 style="margin:12px 0 6px;">Big Fish pot</h2>' +
+    '<h2 class="u-mb-6">Solo</h2>' + podium('solo') +
+    '<h2 class="u-m-12-0-6">Team</h2>' + podium('team') +
+    '<h2 class="u-m-12-0-6">Big Fish pot</h2>' +
     (bf ? '<div class="lbrow"><div class="who"><div class="name">' +
       escapeHtml(displayHandle(byId[bf.anglerId])) + '</div></div><div class="len">' +
       Number(bf.length).toFixed(2) + '&quot;</div></div>'
-     : '<p class="hint" style="margin:4px 0 0;">No qualifying catch in the pot.</p>') +
-    '<h2 style="margin:12px 0 6px;">Side bets</h2>' +
+     : '<p class="hint u-m-4-0-0">No qualifying catch in the pot.</p>') +
+    '<h2 class="u-m-12-0-6">Side bets</h2>' +
     ((view.bets || []).length === 0
-      ? '<p class="hint" style="margin:4px 0 0;">None settled.</p>'
+      ? '<p class="hint u-m-4-0-0">None settled.</p>'
       : view.bets.map(b=> '<div class="lbrow"><div class="who"><div class="name">' +
           escapeHtml(b.title) + '</div><div class="sub">' +
           escapeHtml(displayHandle(byId[b.winnerId])) + '</div></div></div>').join(''));
@@ -6948,7 +6950,7 @@ function renderGpsCheck(catches: Catch[]){
     : review.map(c=>{
         const submitted = new Date(c.timestamp).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
         return '<div class="gps-row"><div class="gps-row-top"><span class="gps-row-name">'+escapeHtml(c.anglerName)+'</span><span class="gps-row-meta">'+c.length.toFixed(2)+'&quot;</span></div>'+
-          '<div class="gps-row-meta">'+submitted+' &middot; '+escapeHtml(c.status)+'</div><div style="margin-top:5px;">'+boundaryBadgeHtml(c)+'</div></div>';
+          '<div class="gps-row-meta">'+submitted+' &middot; '+escapeHtml(c.status)+'</div><div class="u-mt-5">'+boundaryBadgeHtml(c)+'</div></div>';
       }).join('');
   pageEl('gps-body').innerHTML = statHtml + rows;
 }
@@ -7083,7 +7085,7 @@ async function renderBeacons(){
       '<div class="beacon-row"><span class="beacon-who">' + escapeHtml(b.handle || 'An angler') + '</span>' +
       '<span class="beacon-dist">' + escapeHtml(isMine ? signalAgeText(b) : where) + '</span></div>' +
       (b.note ? '<div class="beacon-note">&ldquo;' + escapeHtml(b.note) + '&rdquo;</div>' : '') +
-      '<div class="beacon-note" style="font-style:normal;">' +
+      '<div class="beacon-note u-upright">' +
       escapeHtml(isMine
         ? 'The director and the whole field can see you, and your position refreshes while this page is open. Stand it down when you are safe.'
         : 'Raised ' + signalAgeText({ at: b.beaconAt }) + ' · position ' + signalAgeText(b)) +
@@ -7191,7 +7193,7 @@ async function renderPublicGps(){
       '<div class="gps-stat"><strong>'+outside+'</strong><span>Flagged</span></div>'+
       '<div class="gps-stat"><strong>'+missing+'</strong><span>No GPS</span></div>'+
     '</div>'+
-    '<p class="hint" style="margin-bottom:0;">'+catches.length+' total catch submission'+(catches.length===1?'':'s')+' checked.</p>';
+    '<p class="hint u-mb-0">'+catches.length+' total catch submission'+(catches.length===1?'':'s')+' checked.</p>';
 
   const myId = getMyAnglerId();
   const list = pageEl('public-gps-list');
@@ -7207,7 +7209,7 @@ async function renderPublicGps(){
   list.innerHTML = mine.map(c=>{
     const submitted = new Date(c.timestamp).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
     return '<div class="gps-row"><div class="gps-row-top"><span class="gps-row-name">'+escapeHtml(c.species)+'</span><span class="gps-row-meta">'+Number(c.length).toFixed(2)+'&quot;</span></div>'+
-      '<div class="gps-row-meta">'+submitted+' &middot; '+escapeHtml(c.status)+'</div><div style="margin-top:5px;">'+boundaryBadgeHtml(c)+'</div></div>';
+      '<div class="gps-row-meta">'+submitted+' &middot; '+escapeHtml(c.status)+'</div><div class="u-mt-5">'+boundaryBadgeHtml(c)+'</div></div>';
   }).join('');
 }
 
@@ -7735,11 +7737,11 @@ function renderReportHours(days: ReturnType<typeof contestDayHours>, cfg: Report
     const total = row.hours === null ? 'no total yet' : row.hours.toFixed(2) + ' hours';
     return '<div class="rday"><div class="rday-head">' +
       '<span class="rday-name">Day ' + d.day + ' &middot; ' + escapeHtml(eventDayText(d.dateKey)) + '</span>' +
-      '<span class="hint" style="margin:0;">' + escapeHtml(total) + '</span></div>' +
+      '<span class="hint u-m-0">' + escapeHtml(total) + '</span></div>' +
       '<div class="row2">' +
-        '<div class="field" style="margin-bottom:0;"><label for="report-start-' + d.dayKey + '">Start</label>' +
+        '<div class="field u-mb-0"><label for="report-start-' + d.dayKey + '">Start</label>' +
         '<input type="time" id="report-start-' + d.dayKey + '" data-fwp-hour="' + d.dayKey + '.start" value="' + escapeHtml(row.start) + '"></div>' +
-        '<div class="field" style="margin-bottom:0;"><label for="report-stop-' + d.dayKey + '">Stop</label>' +
+        '<div class="field u-mb-0"><label for="report-stop-' + d.dayKey + '">Stop</label>' +
         '<input type="time" id="report-stop-' + d.dayKey + '" data-fwp-hour="' + d.dayKey + '.stop" value="' + escapeHtml(row.stop) + '"></div>' +
       '</div></div>';
   }).join('');
@@ -7757,7 +7759,7 @@ function renderReportDied(species: ReportModel['species'], cfg: ReportSettings){
   }
   const died = cfg.died || {};
   el.innerHTML = species.map((s, i)=>
-    '<div class="field" style="margin-bottom:8px;">' +
+    '<div class="field u-mb-8">' +
       '<label for="report-died-' + i + '">' + escapeHtml(s.species) + ' &mdash; ' + s.caught + ' caught</label>' +
       '<input type="number" id="report-died-' + i + '" min="0" max="' + s.caught + '" step="1" ' +
         'data-fwp-died="' + escapeHtml(s.species) + '" placeholder="0" value="' +
@@ -7777,7 +7779,7 @@ function renderReportResidency(res: ReportModel['residency']){
   }
   el.innerHTML = res.unknownAnglers.map(a=>
     '<div class="rfix"><span>' + escapeHtml(a.name || 'Unnamed') + '</span>' +
-    '<span class="actions" style="margin:0;">' +
+    '<span class="actions u-m-0">' +
       '<button class="small" type="button" data-fwp-res="yes" data-angler="' + escapeHtml(a.id) + '">Montana</button>' +
       '<button class="small" type="button" data-fwp-res="no" data-angler="' + escapeHtml(a.id) + '">Non-resident</button>' +
     '</span></div>'
@@ -8291,18 +8293,18 @@ async function renderPayoutCalculator(){
   function divisionHtml(name: string, entries: number, pool: number, donated: number, eligible: number){
     const splits = splitFor(eligible, pool);
     const rows = splits.length===0
-      ? '<p class="hint" style="margin:6px 0 0;">No entries yet.</p>'
+      ? '<p class="hint u-m-6-0-0">No entries yet.</p>'
       : splits.map(s=>'<div class="lbrow"><div class="who"><div class="name">'+s.place+'</div></div><div class="len">$'+s.amount.toFixed(2)+'</div></div>').join('');
     const donatedNote = donated>0 ? ' &middot; +$'+donated.toFixed(2)+' donated' : '';
     const awarded = splits.reduce((s,x)=>s+x.amount, 0);
     const unawarded = pool - awarded;
     const shortfallNote = (eligible>0 && eligible<3 && unawarded>0.004)
-      ? '<p class="hint" style="margin:6px 0 0;">$'+unawarded.toFixed(2)+' of this pool is unawarded &mdash; the field is too small to fill all placements.</p>'
+      ? '<p class="hint u-m-6-0-0">$'+unawarded.toFixed(2)+' of this pool is unawarded &mdash; the field is too small to fill all placements.</p>'
       : '';
     const dqNote = (entries>eligible)
-      ? '<p class="hint" style="margin:6px 0 0;">'+(entries-eligible)+' disqualified &mdash; entry fee stays in the pool, place forfeited.</p>'
+      ? '<p class="hint u-m-6-0-0">'+(entries-eligible)+' disqualified &mdash; entry fee stays in the pool, place forfeited.</p>'
       : '';
-    return '<div style="margin-bottom:14px;"><div style="font-weight:600;font-size:13px;margin-bottom:4px;">'+name+' &middot; '+entries+' '+(entries===1?'entry':'entries')+' &middot; $'+pool.toFixed(2)+' pool'+donatedNote+'</div>'+rows+shortfallNote+dqNote+'</div>';
+    return '<div class="u-mb-14"><div class="u-weight-600 u-size-13 u-mb-4">'+name+' &middot; '+entries+' '+(entries===1?'entry':'entries')+' &middot; $'+pool.toFixed(2)+' pool'+donatedNote+'</div>'+rows+shortfallNote+dqNote+'</div>';
   }
 
   // A team entry keeps its placement while EITHER member is still eligible.
@@ -8329,7 +8331,7 @@ async function renderPayoutCalculator(){
     budgetSummaryEl.innerHTML =
       '<div class="lbrow"><div class="who"><div class="name">Total raised</div></div><div class="len">$'+totalRaised.toFixed(2)+'</div></div>'+
       '<div class="lbrow"><div class="who"><div class="name">Awards budget</div></div><div class="len">&minus;$'+awardsBudget.toFixed(2)+'</div></div>'+
-      '<div class="lbrow"><div class="who"><div class="name" style="font-weight:600;">Net cash for payouts</div></div><div class="len">$'+netAfterAwards.toFixed(2)+'</div></div>';
+      '<div class="lbrow"><div class="who"><div class="name u-weight-600">Net cash for payouts</div></div><div class="len">$'+netAfterAwards.toFixed(2)+'</div></div>';
   }
   const generalHtml = generalFund>0
     ? '<div class="lbrow"><div class="who"><div class="name">General tournament fund</div><div class="sub">Not split &mdash; held for director discretion</div></div><div class="len">$'+generalFund.toFixed(2)+'</div></div><div class="divider"></div>'
@@ -8374,7 +8376,7 @@ function renderOutstandingFees(anglers: Angler[], catches: Catch[]){
     : '';
 
   el.innerHTML =
-    '<div class="fp ' + (placing.length ? 'level-flag' : 'level-review') + '" style="margin-top:12px;">' +
+    '<div class="fp ' + (placing.length ? 'level-flag' : 'level-review') + ' u-mt-12">' +
       '<div class="fp-head"><span class="fp-title">Fees outstanding &middot; $' + owed.total.toFixed(2) + '</span></div>' +
       alert +
       '<div class="fp-item"><span class="fp-dot level-review"></span><span>' +
@@ -8391,7 +8393,7 @@ function renderDonationList(donations: Donation[]){
   const el = pageEl('don-list');
   if(!el) return;
   if(donations.length===0){
-    el.innerHTML = '<p class="hint" style="margin:0;">No donations logged yet.</p>';
+    el.innerHTML = '<p class="hint u-m-0">No donations logged yet.</p>';
     return;
   }
   el.innerHTML = donations.slice().reverse().map(d=>{
@@ -8400,8 +8402,8 @@ function renderDonationList(donations: Donation[]){
     const label = DONATION_TARGET_LABEL[d.target] || d.target;
     const note = d.note ? ' &middot; '+escapeHtml(d.note) : '';
     return '<div class="lbrow"><div class="who"><div class="name">'+label+note+'</div><div class="sub">'+when+'</div></div><div class="len">$'+d.amount.toFixed(2)+'</div>'+
-      '<button class="small" data-act="edit-donation" data-id="'+d.id+'" style="margin-left:8px;">Edit</button>'+
-      '<button class="small danger" data-act="rm-donation" data-id="'+d.id+'" style="margin-left:6px;">Remove</button></div>';
+      '<button class="small u-ml-8" data-act="edit-donation" data-id="'+d.id+'">Edit</button>'+
+      '<button class="small danger u-ml-6" data-act="rm-donation" data-id="'+d.id+'">Remove</button></div>';
   }).join('');
 
   el.querySelectorAll('[data-act="edit-donation"]').forEach(btn=>{
@@ -8451,11 +8453,11 @@ function donationEditRowHtml(d: Donation){
   const opts = Object.keys(DONATION_TARGET_LABEL).map(key=>
     '<option value="'+key+'"'+(key===d.target?' selected':'')+'>'+DONATION_TARGET_LABEL[key]+'</option>'
   ).join('');
-  return '<div class="lbrow" style="flex-wrap:wrap;align-items:flex-start;">'+
-    '<div class="field" style="flex:1 1 100%;margin-bottom:8px;"><select data-field="target" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:4px;background:var(--paper);color:var(--ink);font-family:inherit;">'+opts+'</select></div>'+
-    '<div class="field" style="flex:1;min-width:90px;margin-bottom:8px;"><input type="number" step="0.01" min="0" data-field="amount" value="'+d.amount+'" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:4px;background:var(--paper);color:var(--ink);font-family:inherit;"></div>'+
-    '<div class="field" style="flex:2;min-width:120px;margin-bottom:8px;"><input type="text" data-field="note" value="'+escapeHtml(d.note||'')+'" placeholder="Note" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:4px;background:var(--paper);color:var(--ink);font-family:inherit;"></div>'+
-    '<div style="flex:1 1 100%;display:flex;gap:6px;">'+
+  return '<div class="lbrow donation-edit">'+
+    '<div class="field donation-edit-wide"><select data-field="target" class="donation-input">'+opts+'</select></div>'+
+    '<div class="field donation-edit-amount"><input type="number" step="0.01" min="0" data-field="amount" value="'+d.amount+'" class="donation-input"></div>'+
+    '<div class="field donation-edit-note"><input type="text" data-field="note" value="'+escapeHtml(d.note||'')+'" placeholder="Note" class="donation-input"></div>'+
+    '<div class="donation-edit-actions">'+
       '<button class="small" data-act="save-donation" data-id="'+d.id+'">Save</button>'+
       '<button class="small" data-act="cancel-edit-donation" data-id="'+d.id+'">Cancel</button>'+
     '</div>'+
@@ -8516,8 +8518,8 @@ function renderEventAdmin(){
       const isLive = e.id === activeId;
       const total = c.anglers + c.catches + c.donations;
       const tags: string[] = [];
-      if(isLive) tags.push('<span class="badge" style="background:#DDE6D5;color:#3D6A50;">Live</span>');
-      if(e.archived) tags.push('<span class="badge" style="background:#E4E1D8;color:#6B6963;">Archived</span>');
+      if(isLive) tags.push('<span class="badge tone-good">Live</span>');
+      if(e.archived) tags.push('<span class="badge tone-plain">Archived</span>');
       if(!e.builtIn) tags.push('<span class="badge">Added here</span>');
       const sub = c.anglers+' angler'+(c.anglers===1?'':'s')+' · '+
                   c.catches+' catch'+(c.catches===1?'':'es')+' · '+
@@ -9480,7 +9482,7 @@ bindEl('bnd-recheck','click', async ()=>{
   const ok = await saveCatches(catches);
   noteEl.innerHTML = ok
     ? '<p class="hint">Updated '+changed+' catch'+(changed===1?'':'es')+' against the current boundary.</p>'
-    : '<div class="err" style="display:block;">Could not save the updated readings.</div>';
+    : '<div class="err u-block">Could not save the updated readings.</div>';
   renderAdmin();
 });
 
@@ -9513,7 +9515,7 @@ async function renderPositionsAdmin(){
         '<div class="beacon-row"><span class="beacon-who">' + escapeHtml(who) + '</span>' +
         '<span class="beacon-dist">' + escapeHtml(signalAgeText({ at: b.beaconAt })) + '</span></div>' +
         (b.note ? '<div class="beacon-note">&ldquo;' + escapeHtml(b.note) + '&rdquo;</div>' : '') +
-        '<div class="beacon-note" style="font-style:normal;">' +
+        '<div class="beacon-note u-upright">' +
         escapeHtml(b.lat.toFixed(5) + ', ' + b.lng.toFixed(5) + ' · position ' + signalAgeText(b)) +
         (a && a.phone ? ' · ' + escapeHtml(a.phone) : '') +
         '</div></div>';
@@ -9698,7 +9700,7 @@ async function openLightbox(catchId: string, opts?: { mode?: string; sequence?: 
       (c.division === 'team' ? 'Team' : 'Solo');
     meta.innerHTML = director
       ? head + ' &middot; ' + statusHtml(c.status) +
-        '<div style="margin-top:6px;">' + boundaryBadgeHtml(c) + captureBadgeHtml(c) + filedByBadgeHtml(c) + '</div>'
+        '<div class="u-mt-6">' + boundaryBadgeHtml(c) + captureBadgeHtml(c) + filedByBadgeHtml(c) + '</div>'
       // Publicly: what it is, and when it was caught. The boundary verdict and
       // the capture flags are review notes on a fish already judged, and
       // publishing them would reopen a decision that has been made.
@@ -9882,7 +9884,7 @@ async function renderAdmin(){
       const img = photoSlotHtml(c);
       return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+lengthHtml(c.length)+'</span></div>'+
         '<div class="name">'+escapeHtml(c.anglerName)+' &middot; '+escapeHtml(c.species)+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
-        '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+captureBadgeHtml(c)+filedByBadgeHtml(c)+'</div>'+
+        '<div class="u-mt-4">'+boundaryBadgeHtml(c)+captureBadgeHtml(c)+filedByBadgeHtml(c)+'</div>'+
         firstPassHtml(c, catches, dupCorpus)+
         '<div class="actions"><button class="small" data-act="approve" data-id="'+c.id+'">Approve</button>'+
         '<button class="small" data-act="reject" data-id="'+c.id+'">Reject</button></div></div></div>';
@@ -9896,7 +9898,7 @@ async function renderAdmin(){
       return '<div class="catchcard">'+img+'<div class="info"><div class="top"><span class="len">'+lengthHtml(c.length)+'</span></div>'+
         '<div class="name">'+escapeHtml(c.anglerName)+' &middot; '+escapeHtml(c.species)+' &middot; '+(c.division==='team'?'Team':'Solo')+'</div>'+
         statusHtml(c.status)+
-        '<div style="margin-top:4px;">'+boundaryBadgeHtml(c)+captureBadgeHtml(c)+filedByBadgeHtml(c)+'</div>'+
+        '<div class="u-mt-4">'+boundaryBadgeHtml(c)+captureBadgeHtml(c)+filedByBadgeHtml(c)+'</div>'+
         firstPassHtml(c, catches, dupCorpus)+
         '<div class="actions"><button class="small" data-act="delete" data-id="'+c.id+'">Delete</button></div></div></div>';
     }).join('');
@@ -9944,7 +9946,7 @@ function firstPassHtml(c: Catch, allCatches: Catch[], dupCorpus: Catch[]){
     const r = c.aiReview;
     if(r.error){
       aiBlock = '<div class="fp-ai-note">Fish-I vision check failed: '+escapeHtml(r.error)+'</div>'+
-        '<div class="actions" style="margin-top:6px;"><button class="small" data-act="ai-review" data-id="'+c.id+'">Try again</button></div>';
+        '<div class="actions u-mt-6"><button class="small" data-act="ai-review" data-id="'+c.id+'">Try again</button></div>';
     } else {
       const conf = typeof r.speciesConfidence==='number' ? ' ('+Math.round(r.speciesConfidence*100)+'% confidence)' : '';
       const mismatch = (r.matchesClaim === false)
@@ -9967,14 +9969,14 @@ function firstPassHtml(c: Catch, allCatches: Catch[], dupCorpus: Catch[]){
       aiBlock = '<div class="fp-ai-note"><strong>Fish-I vision:</strong> reads as '+escapeHtml(r.species||'unknown')+conf+
         (r.notes ? ' &middot; '+escapeHtml(r.notes) : '')+'</div>'+
         mismatch + framingHtml + concerns + allClear +
-        '<div class="actions" style="margin-top:6px;"><button class="small" data-act="ai-review" data-id="'+c.id+'">Re-run</button></div>';
+        '<div class="actions u-mt-6"><button class="small" data-act="ai-review" data-id="'+c.id+'">Re-run</button></div>';
     }
   } else if(fishIVisionAvailable()){
     aiBlock = '<button class="small" data-act="ai-review" data-id="'+c.id+'">Run Fish-I vision check</button>';
   } else {
     aiBlock = '<div class="fp-ai-note">Fish-I vision not ready &mdash; '+escapeHtml(fishIStatusText())+
-      '<br><span style="opacity:.75;">status: '+escapeHtml(fishIStatus)+'</span></div>'+
-      '<div class="actions" style="margin-top:6px;"><button class="small" data-act="fishi-retry" data-id="'+c.id+'">Retry Fish-I</button></div>';
+      '<br><span class="u-dim">status: '+escapeHtml(fishIStatus)+'</span></div>'+
+      '<div class="actions u-mt-6"><button class="small" data-act="fishi-retry" data-id="'+c.id+'">Retry Fish-I</button></div>';
   }
 
   return '<div class="fp level-'+verdict.level+'">'+
@@ -10050,7 +10052,7 @@ async function renderContestants(){
   const owed = outstandingFees(anglers);
   const feeBanner = owed.entries === 0
     ? ''
-    : '<div class="fp level-review" style="margin-bottom:12px;">'+
+    : '<div class="fp level-review u-mb-12">'+
         '<div class="fp-head"><span class="fp-title">Entry fees outstanding &middot; $'+
           owed.total.toFixed(2)+'</span></div>'+
         '<div class="fp-item"><span class="fp-dot level-review"></span><span>'+
@@ -10059,19 +10061,19 @@ async function renderContestants(){
           'the payout total and the state contest report.<br>'+
           escapeHtml(owed.anglers.filter(a=> a.role!=='partner').map(a=> a.name).join(', '))+
         '</span></div>'+
-        '<div class="actions" style="margin-top:8px;">'+
+        '<div class="actions u-mt-8">'+
           '<button class="small" data-act="fees-all">Mark all '+owed.entries+' received</button>'+
         '</div>'+
       '</div>';
 
   const banner = feeBanner + (missing.length
-    ? '<div class="fp level-review" style="margin-bottom:12px;">'+
+    ? '<div class="fp level-review u-mb-12">'+
         '<div class="fp-head"><span class="fp-title">Board codes missing</span></div>'+
         '<div class="fp-item"><span class="fp-dot level-review"></span><span>'+
           missing.length+' angler'+(missing.length===1?' has':'s have')+' no board code. '+
           'They registered before codes existed, and cannot write one on a bump board until they have it.'+
         '</span></div>'+
-        '<div class="actions" style="margin-top:8px;">'+
+        '<div class="actions u-mt-8">'+
           '<button class="small" data-act="assign-codes">Issue codes to '+missing.length+' angler'+(missing.length===1?'':'s')+'</button>'+
         '</div>'+
       '</div>'
@@ -10147,7 +10149,7 @@ function contestantRowHtml(d: ContestantRow, catches: Catch[]){
           (a.teamCode ? 'Team '+escapeHtml(a.teamCode)+' \u00b7 ' : '')+
           (a.anglerCode
             ? 'ID '+escapeHtml(a.anglerCode)
-            : '<strong style="color:var(--danger);">no board code</strong>')+
+            : '<strong class="u-danger">no board code</strong>')+
         '</div>'+
         '<div class="crow-sub">'+checked+'</div>'+
       '</div>'+
@@ -10170,7 +10172,7 @@ function contestantRowHtml(d: ContestantRow, catches: Catch[]){
     '</div>';
 
   const fish = d.mine.length===0
-    ? '<p class="hint" style="margin:0;">No catches submitted.</p>'
+    ? '<p class="hint u-m-0">No catches submitted.</p>'
     : d.mine.slice().sort((x,y)=>y.timestamp-x.timestamp).map(c=>
         '<div class="cfish"><span>'+escapeHtml(c.species)+' \u00b7 '+Number(c.length).toFixed(2)+'"</span>'+
         '<span class="st">'+escapeHtml(c.status)+' \u00b7 '+
@@ -10195,7 +10197,7 @@ function contestantRowHtml(d: ContestantRow, catches: Catch[]){
       '</div>';
   } else {
     confirmArea =
-      '<div class="actions" style="margin-top:8px;">'+
+      '<div class="actions u-mt-8">'+
         '<button class="small" data-act="c-unconfirm" data-id="'+a.id+'">Mark fee outstanding</button>'+
       '</div>';
   }
@@ -10217,12 +10219,12 @@ function contestantRowHtml(d: ContestantRow, catches: Catch[]){
     dqArea =
       '<div class="crow-note">Disqualified'+(a.dqReason ? ': '+escapeHtml(a.dqReason) : '')+
         (a.dqAt ? ' \u00b7 '+new Date(a.dqAt).toLocaleDateString([], {month:'short',day:'numeric'}) : '')+'</div>'+
-      '<div class="actions" style="margin-top:8px;">'+
+      '<div class="actions u-mt-8">'+
         '<button class="small" data-act="c-reinstate" data-id="'+a.id+'">Reinstate</button>'+
       '</div>';
   } else {
     dqArea =
-      '<div class="actions" style="margin-top:8px;">'+
+      '<div class="actions u-mt-8">'+
         '<button class="small danger" data-act="c-dq" data-id="'+a.id+'">Disqualify</button>'+
       '</div>';
   }
@@ -10245,10 +10247,10 @@ function contestantRowHtml(d: ContestantRow, catches: Catch[]){
           '<input type="tel" id="ce-phone" value="'+escapeHtml(a.phone || '')+'"></div>'+
         '<div class="field"><label for="ce-handle">Handle</label>'+
           '<input type="text" id="ce-handle" value="'+escapeHtml(a.handle || '')+'"></div>'+
-        '<div class="field"><label style="display:flex;align-items:center;gap:8px;font-weight:400;">'+
-          '<input type="checkbox" id="ce-bigfish" style="width:auto;"'+(a.bigfish?' checked':'')+'>'+
+        '<div class="field"><label class="check-label">'+
+          '<input type="checkbox" id="ce-bigfish" class="u-w-auto"'+(a.bigfish?' checked':'')+'>'+
           'In the Big Fish pot</label></div>'+
-        '<div class="err" id="ce-err" style="display:none;"></div>'+
+        '<div class="err start-hidden" id="ce-err"></div>'+
         '<div class="cdq-actions">'+
           '<button class="small" data-act="c-edit-save" data-id="'+a.id+'">Save</button>'+
           '<button class="small" data-act="c-edit-cancel" data-id="'+a.id+'">Cancel</button>'+
@@ -10285,7 +10287,7 @@ function contestantRowHtml(d: ContestantRow, catches: Catch[]){
   }
 
   const manageArea = (editContestantId === a.id || removeContestantId === a.id) ? '' :
-    '<div class="actions" style="margin-top:8px;">'+
+    '<div class="actions u-mt-8">'+
       '<button class="small" data-act="c-edit" data-id="'+a.id+'">Edit profile</button>'+
       '<button class="small danger" data-act="c-remove" data-id="'+a.id+'">Remove</button>'+
     '</div>';
