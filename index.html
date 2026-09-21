@@ -12,10 +12,12 @@
      ignore it in a meta tag and warn in the console about it, which is exactly
      the kind of line that reads like protection and blocks nothing. The header
      carries it, and lint knows to expect it missing here.
-     Dropping 'unsafe-inline' from style-src needs the style attributes in the
-     markup below - and the 70 more that app/livewire.js builds into HTML
-     strings - moved to classes first. See README, "What is still open". -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: https://tile.openstreetmap.org https://*.supabase.co; connect-src 'self' https://*.supabase.co; media-src 'self' blob:; worker-src 'self'; manifest-src 'self'; upgrade-insecure-requests">
+     Nothing on style-src or script-src says 'unsafe-inline', so a style
+     attribute in the markup below is simply not applied: the browser drops it
+     and says so only in the console. Every one lives in app/livewire.css as a
+     class - see "what used to be style=" at the end of it - and test/lint.mjs
+     fails on a new one. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob: https://tile.openstreetmap.org https://*.supabase.co; connect-src 'self' https://*.supabase.co; media-src 'self' blob:; worker-src 'self'; manifest-src 'self'; upgrade-insecure-requests">
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/livewire-icon-192.png">
 <!-- Fonts, served from this repo. They came from a Google origin until the

@@ -138,6 +138,26 @@ separate files because the Content-Security-Policy no longer allows
 the application apart from a block injected through a chat message or an
 angler's handle.
 
+**Nor does it allow `style-src 'unsafe-inline'`, so there are no `style="..."`
+attributes anywhere.** There were 218 - 148 in the markup and 70 in HTML the app
+builds - and each is now a class at the end of `app/livewire.css`. Injected CSS
+cannot run code, but it can restyle the page: hide a warning, dress a link up as
+a button, leak an attribute a character at a time through background images.
+Setting `element.style` from code is a different thing - the policy allows it,
+and it is how the app shows and hides things.
+
+The classes are `!important`, because an inline style beat every rule in the
+file and a plain class would not; `.start-hidden` is the one exception, since
+the app shows those elements by setting `style.display` and an `!important`
+class would keep them hidden for good. The move was checked by snapshotting
+every element's box and styling on every screen and director tool - phone and
+desktop, light and dark, the FWP report as it prints, 81 states and 175,285
+element snapshots - before and after: **identical**, and nothing blocked by the
+policy. Two runs of the unchanged app were compared first, to prove the
+comparison itself had no noise. `test/lint.mjs` now fails on a style attribute
+in the markup or in the app's HTML, on `setAttribute('style', ...)`, and on
+`'unsafe-inline'` back in `style-src`.
+
 **Every asset is served from this repository.** The fonts and Leaflet used to
 come off a CDN, which put a third party on the path of an angler filing a fish;
 a content blocker, a filtering DNS or a captive portal at the ramp was enough
@@ -545,6 +565,15 @@ and `test/lint.mjs` fails if the page loads something the shell leaves out.
   A phone that picks up the new `index.html` and loses signal before caching
   `/app/livewire.js` gets the boot guard screen rather than the app. Merge on a
   quiet day and open it on a phone afterwards.
+- **The same, for the stylesheet.** The page and `/app/livewire.css` are both
+  fetched fresh on every open, so a mismatch needs signal to drop between the
+  two: new markup with last deploy's stylesheet. Since the styles moved into
+  classes, that one open would show everything meant to start hidden - empty
+  error lines, the director panel's buttons under its lock - until the next
+  open with signal fetches the stylesheet. Cosmetic: hiding the director panel
+  was never what protected it - anyone can show it from a browser's inspector -
+  and what it can change is for the database's row policies in `sql/` to
+  decide. Still a reason to deploy away from a tournament.
 
 ## What is still open
 
@@ -559,12 +588,6 @@ and `test/lint.mjs` fails if the page loads something the shell leaves out.
   the schema and the exact policy logic, including the rollback script. Fixing
   it means building into a directory that holds only what should be public,
   rather than serving the repository root.
-
-- **`style-src` still allows `'unsafe-inline'`.** 218 `style="..."` attributes
-  have to move to classes first - 148 in `index.html` and 70 more built into
-  HTML strings by `app/livewire.js`, which are the awkward half. This is much less serious than
-  the script case — it is not a path to running code — but it is the last
-  `'unsafe-inline'` in the policy.
 - **The app is one 10,600-line file**, `src/livewire.ts`, in one global scope.
   Splitting it means modules, which the test harness cannot run - see
   "TypeScript" for why.
