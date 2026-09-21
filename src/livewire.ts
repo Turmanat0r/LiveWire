@@ -304,13 +304,13 @@ function eventClockFormatter(){
 
 // Event dates are bare YYYY-MM-DD, which Date parses as UTC midnight. Format
 // them back in UTC too, or a viewer west of Greenwich reads a day earlier.
-function eventDayText(dateKey, opts?){
+function eventDayText(dateKey: string, opts?: Intl.DateTimeFormatOptions){
   const o = Object.assign({ timeZone:'UTC', month:'short', day:'numeric' }, opts||{});
   return new Date(dateKey + 'T00:00:00Z').toLocaleDateString('en-US', o);
 }
 // "Sept 18-19, 2027" when the days share a month, "Sept 30 - Oct 1, 2027" when
 // not. Defaults to the live event; the director's event list passes each one.
-function eventDateRangeText(evt?){
+function eventDateRangeText(evt?: { dates: string[] }){
   const dates = (evt || activeEvent()).dates;
   if(dates.length === 0) return '';
   const year = dates[dates.length-1].slice(0,4);
@@ -329,7 +329,7 @@ function registrationCloseText(){
     .toLocaleDateString('en-US', { timeZone: evt.timeZone, month:'long', day:'numeric', year:'numeric' });
 }
 
-function eventTimeParts(now){
+function eventTimeParts(now: Date | number){
   const values: Record<string, string> = {};
   eventClockFormatter().formatToParts(now).forEach((part: Intl.DateTimeFormatPart)=>{
     if(part.type !== 'literal') values[part.type] = part.value;
@@ -340,7 +340,7 @@ function eventTimeParts(now){
   };
 }
 
-function formatCountdown(totalSeconds){
+function formatCountdown(totalSeconds: number){
   const seconds = Math.max(0, Math.floor(totalSeconds));
   const h = Math.floor(seconds/3600);
   const m = Math.floor((seconds%3600)/60);
@@ -394,7 +394,7 @@ function startEventClock(){
 }
 let overdueTimer: TimerId | null = null;
 
-function milesBetween(lat1, lng1, lat2, lng2){
+function milesBetween(lat1: number, lng1: number, lat2: number, lng2: number){
   const R = 3958.8;
   const dLat = (lat2-lat1) * Math.PI/180;
   const dLng = (lng2-lng1) * Math.PI/180;
@@ -792,7 +792,7 @@ const HANDLE_FASTFOOD = ['Whopper','Big Mac','McNugget','Baconator','Frosty','Cr
   'Chalupa','Doritos Locos','Waffle Fry','McFlurry','Drive-Thru','Value Meal','Extra Crispy','Biggie Size',
   'Dollar Menu','Curly Fry','Footlong','Spicy Chicken Sandwich','Junior Bacon'];
 
-function handlePick(arr){ return arr[Math.floor(Math.random() * arr.length)]; }
+function handlePick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]; }
 
 function generateHandle(){
   const pattern = Math.floor(Math.random() * 8);
@@ -810,7 +810,7 @@ function generateHandle(){
 // Two anglers sharing a handle would make the chat unreadable, and the pool is
 // big but not infinite. Reroll off a collision, and if the rolls keep landing
 // on taken names, number it rather than loop forever.
-function uniqueHandle(anglers){
+function uniqueHandle(anglers: Angler[]){
   const taken = new Set((anglers || []).map(a=> String(a.handle || '').toLowerCase()));
   for(let i = 0; i < 40; i++){
     const h = generateHandle();
@@ -857,7 +857,7 @@ function uniqueHandle(anglers){
 // The STORED field is still `pending`, and absence still means paid - renaming
 // it would orphan every record already written. Only the meaning and the
 // wording changed.
-function feePaid(a){ return !(a && a.pending); }
+function feePaid(a: Angler){ return !(a && a.pending); }
 
 // Digits only, last ten. Two people are the same person here if their numbers
 // match once punctuation and a country code are off - 406-555-0100,
@@ -865,7 +865,7 @@ function feePaid(a){ return !(a && a.pending); }
 //
 // Last ten rather than anything cleverer because every entrant is dialling a
 // North American number. An international field would need more than this.
-function normPhone(v){
+function normPhone(v: string){
   return String(v == null ? '' : v).replace(/\D/g, '').slice(-10);
 }
 
@@ -901,8 +901,8 @@ const CODE_LENGTH = 4;
 
 // Personal and team codes share ONE pool, so a number written on a board is
 // never ambiguous about which kind it is.
-function codesInUse(anglers){
-  const taken = new Set();
+function codesInUse(anglers: Angler[]){
+  const taken = new Set<string>();
   for(const a of (anglers || [])){
     if(a && a.anglerCode) taken.add(String(a.anglerCode));
     if(a && a.teamCode)   taken.add(String(a.teamCode));
@@ -918,7 +918,7 @@ function codesInUse(anglers){
 // NOT rule them out on its own: 3, 4, 6, 7 and 9 are all in it, so "3467" is a
 // code this can still draw. Uniqueness comes from `taken`, never from the
 // shape of the string.
-function makeCode(taken){
+function makeCode(taken: Set<string>){
   const n = CODE_ALPHABET.length;
   for(let i = 0; i < 4000; i++){
     let c = '';
@@ -945,15 +945,15 @@ function makeCode(taken){
 // nothing to keep unique across seasons, and it means a code found on a board
 // in a photo can never belong to two different anglers.
 function takenCodes(){
-  return codesInUse(allRows('anglers'));
+  return codesInUse(allRows('anglers') as Angler[]);
 }
 
 // Shown wherever an angler needs to read their own codes off a screen and copy
 // them onto a board. Anglers registered before codes existed have none until
 // the director assigns them, and are told that rather than shown a blank.
-function codeBoxHtml(a){
+function codeBoxHtml(a: Angler){
   if(!a) return '';
-  const chip = (label, value, cls?) =>
+  const chip = (label: string, value: string | null | undefined, cls?: string) =>
     '<div class="codechip'+(cls ? ' '+cls : '')+'"><span class="k">'+escapeHtml(label)+'</span>'+
     '<span class="v">'+escapeHtml(value || '—')+'</span></div>';
   let html = '<div class="codebox">';
@@ -970,7 +970,7 @@ function codeBoxHtml(a){
 // is live and their fish score, so this is a note about the director's
 // bookkeeping, not a warning about their standing. Saying more than that would
 // worry people who have already paid and are just waiting to be ticked off.
-function pendingNoticeHtml(a){
+function pendingNoticeHtml(a: Angler){
   if(feePaid(a)) return '';
   return '<div class="pending-notice">'+
     '<strong>Entry fee not matched up yet</strong>'+
@@ -981,7 +981,7 @@ function pendingNoticeHtml(a){
   '</div>';
 }
 
-function codeNoteHtml(a){
+function codeNoteHtml(a: Angler){
   if(!a) return '';
   if(!a.anglerCode){
     return '<p class="hint" style="margin:8px 0 0;">No board code has been issued yet &mdash; ask the director before you fish.</p>';
@@ -999,7 +999,7 @@ function codeNoteHtml(a){
 // the angler records the app downloads, so this hides them from the screen,
 // not from anyone determined to read the API. Splitting contact details into a
 // table only the director can read is the fix for that.
-function displayHandle(angler){
+function displayHandle(angler: Angler | null | undefined){
   if(!angler) return 'Unknown angler';
   return angler.handle || angler.tournamentId || 'Angler';
 }
@@ -2013,9 +2013,12 @@ async function saveCollection(name: SharedCollection, list: Row[]){
   return result;
 }
 
-async function loadAnglers(){ return cachedRows('anglers'); }
+// Where stored rows become anglers. The anglers collection only ever holds what
+// registration writes, so the cast is a statement about this app rather than a
+// hope - but it is the one place that statement is made, so it is here.
+async function loadAnglers(): Promise<Angler[]> { return cachedRows('anglers') as Angler[]; }
 async function saveAnglers(list: Row[]){ return await saveCollection('anglers', list); }
-async function loadCatches(){ return cachedRows('catches'); }
+async function loadCatches(): Promise<Catch[]> { return cachedRows('catches') as Catch[]; }
 // Every catch ever logged, across all events. ONLY the duplicate-photo check
 // uses this: a photo reused from an earlier tournament is precisely what that
 // check exists to catch, and scoping it to the live event would blind it to the
@@ -2096,7 +2099,14 @@ function eventSettings(id?: string){
   return {
     targetSpecies: saved.targetSpecies || evt.targetSpecies || 'Fish',
     recordInches: Number(saved.recordInches != null ? saved.recordInches : evt.recordInches) || 0,
-    course: saved.course || evt.course || { kind:'none' }
+    course: saved.course || evt.course || { kind:'none' },
+    // The director's species list, when they have saved one. Left out, as it was
+    // until this line was added, speciesList() never saw it: asked with no
+    // argument - the way scoring, the leaderboard, payouts, the results and the
+    // director's own editor all ask - it fell back to targetSpecies alone. A
+    // second species vanished from the list the moment it was saved and never
+    // scored. An event with no list still falls back exactly as before.
+    speciesList: saved.speciesList
   };
 }
 async function saveEventSettings(patch: RowFields){
@@ -2124,7 +2134,7 @@ async function saveEventSettings(patch: RowFields){
 // Every event that existed before this has `targetSpecies` and `recordInches`
 // as plain values, and nothing migrates them - speciesList() builds the list
 // from them on the way past. There is nothing to run and no event to edit.
-function speciesList(settings?){
+function speciesList(settings?: RowFields){
   const s = settings || eventSettings();
   const list = Array.isArray(s.speciesList) ? s.speciesList : [];
   const clean = list
@@ -2141,7 +2151,7 @@ function speciesList(settings?){
 }
 
 // Just the names, which is what scoring asks for.
-function scoringSpecies(settings?){
+function scoringSpecies(settings?: RowFields){
   return speciesList(settings).map(x=> x.name);
 }
 
@@ -2156,7 +2166,7 @@ function targetSpecies(){
 // The plausibility ceiling for one species, or the primary's when asked without
 // one. 0 means no ceiling was set, and every caller already treats that as
 // "do not check".
-function recordInches(species){
+function recordInches(species: string){
   const list = speciesList();
   if(species === undefined) return list.length ? list[0].recordInches : 0;
   for(let i = 0; i < list.length; i++){
@@ -2168,7 +2178,7 @@ function recordInches(species){
 // "walleye", "walleye or pike", "walleye, pike or lake trout". Every screen
 // that used to name the one species in a sentence now reads naturally with
 // several, rather than saying "scoring species" at anglers.
-function speciesPhrase(settings?){
+function speciesPhrase(settings?: RowFields){
   const names = scoringSpecies(settings).map(n=> n.toLowerCase());
   if(names.length === 0) return 'scoring fish';
   if(names.length === 1) return names[0];
@@ -2194,7 +2204,7 @@ const OTHER_SPECIES = 'Other';
 //
 // Making this one function polymorphic is what let multiple species reach
 // thirteen call sites without touching any of them.
-function isScoringSpecies(name, target?){
+function isScoringSpecies(name: string, target?: string){
   // OTHER_SPECIES is the sentinel an angler picks to say "this is not one of
   // the scoring species". A function called isScoringSpecies answering true for
   // it would be wrong on its face, so it is refused here and not only filtered
@@ -2212,7 +2222,7 @@ async function loadAwardsBudget(){
   const raw = localGet('awardsBudget:' + activeEventId());
   return raw ? (parseFloat(raw) || 0) : 0;
 }
-async function saveAwardsBudget(amount){
+async function saveAwardsBudget(amount: number){
   const map = awardsBudgetMap();
   map[activeEventId()] = Number(amount) || 0;
   return await saveConfig({ awardsBudgets: map });
@@ -2226,7 +2236,7 @@ async function saveAwardsBudget(amount){
 // Last line of defence on size. capturePhoto() and resizeImage() already encode
 // to budget, but this is the door every photo goes through, so the guarantee
 // belongs here too - an oversized frame is re-encoded rather than rejected.
-function fitPhoto(dataUrl){
+function fitPhoto(dataUrl: string){
   return new Promise<string>(resolve=>{
     if(!dataUrl || dataUrl.length <= photoBudget()){ resolve(dataUrl); return; }
     const img = new Image();
@@ -2241,7 +2251,7 @@ function fitPhoto(dataUrl){
 
 // Resolves the address to record on the catch ('' when the backend keys photos
 // by catch id), or null if the photo could not be stored at all.
-async function savePhoto(catchId, dataUrl){
+async function savePhoto(catchId: string, dataUrl: string){
   if(!dataUrl) return '';
   const fitted = await fitPhoto(dataUrl);
   photoCache.set(catchId, fitted);
@@ -2251,23 +2261,23 @@ async function savePhoto(catchId, dataUrl){
   return store.photoUrlFor ? store.photoUrlFor(catchId) : '';
 }
 
-function catchById(id){
+function catchById(id: string): Catch | null {
   const rows = liveCache.catches || [];
-  for(let i=0;i<rows.length;i++){ if(rows[i].id === id) return rows[i]; }
+  for(let i=0;i<rows.length;i++){ if(rows[i].id === id) return rows[i] as Catch; }
   return null;
 }
 
 // Synchronous on purpose: the camera overlay repaints from updateGuide(), and
 // awaiting a load there would let the guide render a frame behind the picker.
-function anglerById(id){
+function anglerById(id: string): Angler | null {
   const rows = liveCache.anglers || [];
-  for(let i=0;i<rows.length;i++){ if(rows[i].id === id) return rows[i]; }
+  for(let i=0;i<rows.length;i++){ if(rows[i].id === id) return rows[i] as Angler; }
   return null;
 }
 
 // Returns something usable directly as an <img> src: a data: URL from this
 // device, or an https: URL from object storage.
-async function loadPhoto(catchId){
+async function loadPhoto(catchId: string){
   if(!catchId) return '';
   if(photoCache.has(catchId)) return photoCache.get(catchId);
 
@@ -2292,7 +2302,7 @@ async function loadPhoto(catchId){
   return '';
 }
 
-function deletePhoto(catchId){
+function deletePhoto(catchId: string){
   photoCache.delete(catchId);
   localDel('photo:' + catchId);
   const q = readOutbox().filter(op=>!(op.kind === 'photo' && op.id === catchId));
@@ -2305,9 +2315,11 @@ function deletePhoto(catchId){
 // Device-only mode. When the device is full, drop photos for catches the
 // director has already ruled on (oldest first) before giving up - a reviewed
 // catch's photo has done its job, an unreviewed one's has not.
-function localPhotoSet(catchId, dataUrl){
+function localPhotoSet(catchId: string, dataUrl: string){
   if(localSet('photo:' + catchId, dataUrl)) return true;
-  let rows: Unshaped[] = [];
+  // The local mirror of the catches: trusted as Catch[] because only this app
+  // writes it, and checked as it is read below, because an older build may have.
+  let rows: Catch[] = [];
   try{ rows = JSON.parse(localGet('catches') || '[]'); }catch(e){ rows = []; }
   const spent = rows
     .filter(c=>c.id !== catchId && c.status && c.status !== 'pending')
@@ -2331,14 +2343,14 @@ function localPhotoSet(catchId, dataUrl){
 // so length and status go through here rather than straight into innerHTML.
 const CATCH_STATUSES = ['pending','approved','rejected'];
 // Only ever emits one of a known set, so it is safe in a class attribute.
-function statusClass(status){
+function statusClass(status: CatchStatus){
   return CATCH_STATUSES.indexOf(status) === -1 ? 'pending' : status;
 }
-function statusHtml(status){
+function statusHtml(status: CatchStatus){
   return '<span class="status '+statusClass(status)+'">'+escapeHtml(status)+'</span>';
 }
 // A length that is not a number renders as a dash instead of as markup.
-function lengthHtml(length){
+function lengthHtml(length: number){
   const n = Number(length);
   return isFinite(n) ? escapeHtml(n.toFixed(2)) + '&quot;' : '&mdash;';
 }
@@ -2361,7 +2373,7 @@ function lengthHtml(length){
 // for a different picture. A real swap is nowhere near it.
 const PHOTO_TAMPER_TOLERANCE = 2;
 
-function photoIntegrity(c, freshHash){
+function photoIntegrity(c: Catch | null, freshHash: string): PhotoIntegrity {
   const recorded = c && c.precheck && c.precheck.hash;
   // Nothing recorded means nothing to compare - a catch filed before the
   // first-pass checks existed. Absence is not evidence either way, so it must
@@ -2373,14 +2385,14 @@ function photoIntegrity(c, freshHash){
 
 // What the director is told. Only ever on a mismatch: a line on every card
 // saying "this photo is fine" is a line that stops being read.
-function photoTamperHtml(v){
+function photoTamperHtml(v: PhotoIntegrity | null){
   if(!v || !v.checked || v.match) return '';
   return '<div class="tamper-note">Photo does not match what was submitted &mdash; ' +
     v.distance + '/64 bits differ from the hash recorded when this catch was filed. ' +
     'The app cannot replace a catch photo, so this was not done through it.</div>';
 }
 
-function photoSlotHtml(c){
+function photoSlotHtml(c: Catch){
   return '<div class="photoslot" data-photo-for="'+escapeHtml(c.id)+'"><div class="noimg">&hellip;</div></div>';
 }
 // data-photo-for is the contract, not the class: the review lists hang it on a
@@ -2391,13 +2403,16 @@ function photoSlotHtml(c){
 // longer matches the record. Director lists only - the gallery and an angler's
 // own list would be reporting a problem to the one person who cannot act on it.
 // It costs nothing extra: the decode has already happened to draw the picture.
-function hydratePhotos(root, opts?){
+function hydratePhotos(root?: ParentNode | null, opts?: { verify?: boolean }){
   const scope = root || document;
   const verify = !!(opts && opts.verify);
-  scope.querySelectorAll('[data-photo-for]').forEach(host=>{
+  scope.querySelectorAll<HTMLElement>('[data-photo-for]').forEach(host=>{
     if(host.dataset.photoDone) return;
-    host.dataset.photoDone = '1';
+    // The selector is [data-photo-for], so the id is always there - said once,
+    // before the slot is marked done, so a slot can never be marked and empty.
     const id = host.dataset.photoFor;
+    if(!id) return;
+    host.dataset.photoDone = '1';
     const slot = host.querySelector('.photo-target') || host;
     loadPhoto(id).then(url=>{
       if(!slot.isConnected) return;
@@ -2423,7 +2438,7 @@ function hydratePhotos(root, opts?){
 // Split out so the hashing sits behind one try/catch: a cross-origin photo
 // taints the canvas and getImageData throws, and a check that cannot run must
 // never be reported as a check that failed.
-function flagPhotoMismatch(host, catchId, img){
+function flagPhotoMismatch(host: HTMLElement, catchId: string, img: HTMLImageElement){
   try{
     if(host.dataset && host.dataset.tamperDone) return;
     const v = photoIntegrity(catchById(catchId), dHashOf(img));
@@ -2445,7 +2460,8 @@ function flagPhotoMismatch(host, catchId, img){
     if(!target) return;
     const note = document.createElement('div');
     note.innerHTML = html;
-    target.appendChild(note.firstChild);
+    const first = note.firstChild;
+    if(first) target.appendChild(first);
     if(host.dataset) host.dataset.tamperDone = '1';
   }catch(e){ console.error(e); }
 }
@@ -2682,7 +2698,7 @@ function skewText(ms){
 const PHOTO_SOURCE_CAMERA = 'camera';
 const PHOTO_SOURCE_UPLOAD = 'upload';
 
-function stampClockText(at){
+function stampClockText(at: number){
   const evt = activeEvent();
   try{
     return new Intl.DateTimeFormat('en-US', {
@@ -2699,7 +2715,7 @@ function stampClockText(at){
 
 // The lines that get drawn, top to bottom. Split out from the drawing so the
 // wording can be tested without a canvas.
-function photoStampLines(source, at, skewMs){
+function photoStampLines(source: string, at: number, skewMs: number | null){
   const evt = activeEvent();
   const when = stampClockText(at);
   const dayIndex = (evt.dates || []).indexOf(eventTimeParts(new Date(at)).dateKey);
@@ -2718,7 +2734,7 @@ function photoStampLines(source, at, skewMs){
   return lines;
 }
 
-function photoStamp(source, at?){
+function photoStamp(source: string, at?: number){
   const when = at === undefined ? Date.now() : at;
   return {
     at: when,
@@ -2735,7 +2751,7 @@ function photoStamp(source, at?){
 // at a glance, and the stamp is meant to be read off a photo on a phone.
 function fontFace(){ return 'px ui-monospace, "SF Mono", Menlo, Consolas, monospace'; }
 
-function drawPhotoStamp(ctx, width, height, lines){
+function drawPhotoStamp(ctx: CanvasRenderingContext2D, width: number, height: number, lines: string[]){
   if(!ctx || !lines || lines.length === 0) return;
   ctx.save();
   const widest = ()=>{
@@ -2779,7 +2795,7 @@ function drawPhotoStamp(ctx, width, height, lines){
 // Takes an <img> or a live <video> frame. On a Supabase event the top rung
 // applies and the director gets a 1400px board photo; on the Artifact store,
 // whose records cap at 256 KiB, it settles a few rungs lower.
-function encodeToBudget(source, naturalW, naturalH, stamp?){
+function encodeToBudget(source: PixelSource, naturalW: number, naturalH: number, stamp?: PhotoStamp | null){
   const canvas = document.createElement('canvas');
   const ctx = context2d(canvas);
   const budget = photoBudget();
@@ -2815,7 +2831,7 @@ function encodeToBudget(source, naturalW, naturalH, stamp?){
 // Resolves { dataUrl, srcWidth, srcHeight } - the source dimensions are the
 // ORIGINAL photo's, captured before downscaling, so the resolution check in the
 // first-pass review judges what the angler actually shot, not our stored copy.
-function resizeImage(file, stamp){
+function resizeImage(file: Blob, stamp: PhotoStamp | null){
   return new Promise<ResizedImage>((resolve,reject)=>{
     const reader = new FileReader();
     reader.onload = e=>{
@@ -2841,7 +2857,7 @@ function resizeImage(file, stamp){
 
 // `win` is [x, y, w, h] in fractions of the source; omitted means the whole
 // frame, which is what every caller but the hash wants.
-function greyscaleFrom(img, w, h, win?){
+function greyscaleFrom(img: PixelSource, w: number, h: number, win?: number[]){
   const canvas = document.createElement('canvas');
   canvas.width = w; canvas.height = h;
   const ctx = context2d(canvas);
@@ -2860,7 +2876,7 @@ function greyscaleFrom(img, w, h, win?){
 // Difference hash: 9x8 greyscale, compare each pixel to its right neighbour.
 // Two photos of the same fish in the same pose hash within a few bits of each
 // other even after resaving, which is what makes duplicate detection work.
-function dHashOf(img, win?){
+function dHashOf(img: PixelSource, win?: number[]){
   const w = 9, h = 8;
   const grey = greyscaleFrom(img, w, h, win);
   let bits = '';
@@ -2877,7 +2893,7 @@ function dHashOf(img, win?){
 // One hash per window. [0] is the full frame, so anything reading only .hash -
 // a stored record from before this existed, the director's own eye - still gets
 // exactly the number it always got.
-function photoHashes(img){
+function photoHashes(img: PixelSource){
   return PRECHECK_HASH_WINDOWS.map(win=> dHashOf(img, win));
 }
 
@@ -2885,7 +2901,7 @@ function photoHashes(img){
 // windowing existed carry one hash and are compared through that alone: they
 // can still be matched BY a cropped photo, but a crop of them cannot be
 // recognised, because the windows that would have caught it were never taken.
-function photoHashList(p){
+function photoHashList(p: PhotoAnalysis | null | undefined){
   if(!p) return [];
   if(Array.isArray(p.hashes) && p.hashes.length) return p.hashes;
   return p.hash ? [p.hash] : [];
@@ -2898,7 +2914,7 @@ function photoHashList(p){
 // full frame matches one of A's windows, so the cross product adds nothing this
 // does not already reach - and comparing two narrow windows against each other
 // only adds ways for two low-detail patches to collide by accident.
-function photoHashDistance(a, b){
+function photoHashDistance(a: PhotoAnalysis | null | undefined, b: PhotoAnalysis | null | undefined){
   const A = photoHashList(a), B = photoHashList(b);
   if(!A.length || !B.length) return { distance: 64, cropped: false };
   let best = 64, cropped = false;
@@ -2913,7 +2929,7 @@ function photoHashDistance(a, b){
   return { distance: best, cropped: cropped };
 }
 
-function hammingHex(a, b){
+function hammingHex(a: string, b: string){
   if(!a || !b || a.length !== b.length) return 64;
   let d = 0;
   for(let i=0;i<a.length;i++){
@@ -2923,7 +2939,7 @@ function hammingHex(a, b){
   return d;
 }
 
-function exposureAndSharpness(img){
+function exposureAndSharpness(img: PixelSource){
   const w = 64, h = 64;
   const g = greyscaleFrom(img, w, h);
   let sum = 0;
@@ -2931,7 +2947,7 @@ function exposureAndSharpness(img){
   const brightness = sum / g.length;
 
   // Variance of the Laplacian - the standard cheap focus measure.
-  const lap: Unshaped[] = [];
+  const lap: number[] = [];
   for(let y=1;y<h-1;y++){
     for(let x=1;x<w-1;x++){
       lap.push(-4*g[y*w+x] + g[(y-1)*w+x] + g[(y+1)*w+x] + g[y*w+x-1] + g[y*w+x+1]);
@@ -2942,8 +2958,8 @@ function exposureAndSharpness(img){
   return { brightness, sharpness: variance };
 }
 
-function analyzePhoto(dataUrl, srcWidth, srcHeight){
-  return new Promise((resolve)=>{
+function analyzePhoto(dataUrl: string, srcWidth: number, srcHeight: number){
+  return new Promise<PhotoAnalysis | null>((resolve)=>{
     if(!dataUrl){ resolve(null); return; }
     const img = new Image();
     img.onload = ()=>{
@@ -2977,8 +2993,8 @@ function analyzePhoto(dataUrl, srcWidth, srcHeight){
 // a photo reused from a previous tournament is the strongest fraud signal here.
 // It defaults to allCatches so a caller that has no cross-event list still
 // behaves sensibly rather than silently checking nothing.
-function evaluateFirstPass(c, allCatches, dupCorpus){
-  const checks: Unshaped[] = [];
+function evaluateFirstPass(c: Catch, allCatches: Catch[], dupCorpus: Catch[]): FirstPassVerdict {
+  const checks: FirstPassCheck[] = [];
   const p = c.precheck;
   const dupPool = dupCorpus || allCatches;
 
@@ -3690,7 +3706,7 @@ async function renderHome(){
 // angler thought they were signing up as.
 let pendingHandle: string | null = null;
 
-async function refreshPendingHandle(reroll){
+async function refreshPendingHandle(reroll?: boolean){
   const el = pageEl('reg-handle');
   if(!el) return;
   if(reroll || !pendingHandle){
@@ -3701,7 +3717,7 @@ async function refreshPendingHandle(reroll){
 bindEl('reg-handle-reroll','click', ()=> refreshPendingHandle(true));
 
 // ---- claim UI ----
-function showClaimForm(open){
+function showClaimForm(open: boolean){
   const form = document.getElementById('claim-form');
   const btn = pageEl('claim-open');
   if(!form || !btn) return;
@@ -3721,7 +3737,7 @@ bindEl('claim-go','click', async ()=>{
   const okEl = pageEl('claim-ok');
   const code = pageEl<ValueElement>('claim-code').value.trim();
   const phone = pageEl<ValueElement>('claim-phone').value.trim();
-  const fail = (m)=>{ errEl.textContent = m; errEl.style.display = 'block'; okEl.style.display = 'none'; };
+  const fail = (m: string)=>{ errEl.textContent = m; errEl.style.display = 'block'; okEl.style.display = 'none'; };
   errEl.style.display = 'none';
   okEl.style.display = 'none';
 
@@ -3860,7 +3876,7 @@ document.querySelectorAll('#reg-division input[type=radio]').forEach(input=>{
 // refuse rather than write a guess. An entry made through this form always
 // carries a real true or false; residencyCounts() reads a MISSING field as
 // "registered before the app asked", which is a different thing entirely.
-function pickedResidency(sel){
+function pickedResidency(sel: string){
   const lab = document.querySelector(sel + ' label.active');
   return lab ? (lab as HTMLElement).dataset.val === 'yes' : null;
 }
@@ -3868,7 +3884,7 @@ function pickedResidency(sel){
 bindEl('reg-submit','click', async ()=>{
   const name = pageEl<ValueElement>('reg-name').value.trim();
   const phone = pageEl<ValueElement>('reg-phone').value.trim();
-  const division = (document.querySelector('#reg-division label.active') as HTMLElement).dataset.val;
+  const division: Division = (document.querySelector('#reg-division label.active') as HTMLElement).dataset.val === 'team' ? 'team' : 'solo';
   const partnerName = pageEl<ValueElement>('reg-partner').value.trim();
   const partnerPhone = pageEl<ValueElement>('reg-partner-phone').value.trim();
   const iceName = pageEl<ValueElement>('reg-ice-name').value.trim();
@@ -3876,7 +3892,7 @@ bindEl('reg-submit','click', async ()=>{
   const bigfish = pageEl<HTMLInputElement>('reg-bigfish').checked;
   const errEl = pageEl('reg-err');
 
-  const fail = (msg)=>{ errEl.textContent = msg; errEl.style.display = 'block'; };
+  const fail = (msg: string)=>{ errEl.textContent = msg; errEl.style.display = 'block'; };
 
   if(isRegistrationClosed()) return fail('Registration is closed for this event.');
   if(!name) return fail('Enter your name to register.');
@@ -3938,7 +3954,7 @@ bindEl('reg-submit','click', async ()=>{
   // nothing else identifies a person. Deliberately blocks rather than warns,
   // because a duplicate entry corrupts entry numbering, the pools and the
   // payouts all at once.
-  const norm = (v)=> String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const norm = (v: unknown)=> String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
   const clash = anglers.find(a=> norm(a.name) === norm(name));
   if(clash){
     return fail(name + ' is already registered as ' + clash.tournamentId +
@@ -3984,7 +4000,7 @@ bindEl('reg-submit','click', async ()=>{
   const teamCode = division === 'team' ? makeCode(codePool) : '';
 
   const captainId = uid();
-  const captain: Row = {
+  const captain: Angler = {
     id: captainId, name, phone, division, partner: division==='team'?partnerName:'', bigfish,
     tournamentId, role: division==='team' ? 'captain' : 'solo', teamId: null,
     anglerCode: makeCode(codePool), teamCode,
@@ -4162,7 +4178,7 @@ async function renderCheckinBody(){
 //
 // Returns [] until the final check-in deadline passes, because before then an
 // angler who is still out is simply still fishing.
-function overdueCheckouts(anglers, now){
+function overdueCheckouts(anglers: Angler[], now: Date | number){
   const parts = eventTimeParts(now || new Date());
   const dayIndex = eventDates().indexOf(parts.dateKey);
   if(dayIndex === -1) return [];                       // not an event day
@@ -4180,8 +4196,8 @@ function overdueCheckouts(anglers, now){
 // Longest unaccounted for first - but they all came off the water at the same
 // deadline, so within a day the tiebreak that matters is who was last SEEN.
 // A stale position is worse news than a fresh one.
-function sortOverdue(list, signals){
-  const byId = {};
+function sortOverdue(list: OverdueCheckout[], signals: Row[]){
+  const byId: Record<string, Row> = {};
   (signals || []).forEach(s=>{ byId[s.id] = s; });
   return (list || []).slice().sort((x, y)=>{
     const ax = byId[x.angler.id], ay = byId[y.angler.id];
@@ -4197,7 +4213,7 @@ function sortOverdue(list, signals){
 // here, plus a teammate created by the same form. A team registers once, on one
 // phone, so the captain's device is the only one holding the partner's record -
 // scoping to "just me" would strand the partner with no way to submit.
-function myAnglerIds(anglers){
+function myAnglerIds(anglers: Angler[]){
   const mine = getMyAnglerId();
   if(!mine) return [];
   const me = anglers.find(a=> a.id === mine);
@@ -4222,13 +4238,13 @@ function myAnglerIds(anglers){
 // check-in, manage and the livewell all inherit it rather than each remembering
 // to. It speaks last because it outranks everything else the note can say:
 // whose entry this is does not matter if nothing can be written at all.
-async function populateAnglerSelect(selectId, noteId?){
+async function populateAnglerSelect(selectId: string, noteId?: string){
   const anglers = await fillAnglerSelect(selectId, noteId);
   if(noteId && identitySettledMissing()) setText(noteId, identityBlockedText('anything filed here'));
   return anglers;
 }
 
-async function fillAnglerSelect(selectId, noteId){
+async function fillAnglerSelect(selectId: string, noteId?: string){
   const anglers = await loadAnglers();
   const sel = document.getElementById(selectId);
   if(!sel) return anglers;
@@ -4280,7 +4296,7 @@ async function fillAnglerSelect(selectId, noteId){
 // against a fresh roster read. Still not a security boundary - the anon key
 // ships in this page - but it stops the accident and the idle meddling, which
 // is what actually happens at a boat ramp.
-function canActFor(anglerId, anglers){
+function canActFor(anglerId: string, anglers: Angler[]){
   if(adminUnlocked) return true;
   if(!anglerId) return false;
   return myAnglerIds(anglers || []).indexOf(anglerId) !== -1;
@@ -4299,7 +4315,7 @@ function canActFor(anglerId, anglers){
 // an id that is on no roster in this tournament. That is how a catch used to
 // get filed against an angler who was not registered: the handler looked the id
 // up, did not find it, wrote down "Unknown" and saved it anyway.
-function actionGuard(anglerId, anglers, eventName){
+function actionGuard(anglerId: string, anglers: Angler[], eventName: string): ActionGuardResult {
   if(!anglerId){
     return { ok:false, code:'no-angler', angler:null,
       message:'Select the angler this belongs to.' };
@@ -4331,7 +4347,7 @@ function actionGuard(anglerId, anglers, eventName){
 // So the screen says out loud whose catch is about to be filed whenever that is
 // not this device's own entry. Empty in the ordinary case, which is every catch
 // an angler submits for themselves.
-function filingNotice(anglerId, anglers){
+function filingNotice(anglerId: string, anglers: Angler[]){
   if(!anglerId) return '';
   const mine = getMyAnglerId();
   if(mine && mine === anglerId) return '';
@@ -4349,7 +4365,7 @@ function filingNotice(anglerId, anglers){
 // picker. It just should not be INVISIBLE afterwards. So when the entry being
 // filed against is not the one this device is signed in to, the record says who
 // pressed the button.
-function filedByFor(anglerId, anglers){
+function filedByFor(anglerId: string, anglers: Angler[]): FiledBy | null {
   const mine = getMyAnglerId();
   if(mine && mine === anglerId) return null;
   const me = (anglers || []).find(a=> a.id === mine);
@@ -4395,7 +4411,7 @@ let capturedPhotoData: string | null = null;
 let capturedPhotoDims = { width: 0, height: 0 }; // native sensor size, before downscaling
 // What was burned into the pixels, kept so the catch record can carry the same
 // values. If the two ever disagreed, neither would be worth anything.
-let capturedPhotoStamp: UnshapedObject | null = null;
+let capturedPhotoStamp: PhotoStamp | null = null;
 
 // The scoring species plus the not-scored bucket. Rebuilt whenever the submit
 // screen is shown, so a director changing the target species reaches anglers
@@ -4557,8 +4573,8 @@ function cancelCountdown(){
 }
 
 function sampleFrame(){
-  const video = document.getElementById('vf-video');
-  if(!video || !(video as HTMLVideoElement).videoWidth) return;
+  const video = document.getElementById('vf-video') as HTMLVideoElement | null;
+  if(!video || !video.videoWidth) return;
 
   const w = 64, h = 64;
   const grey = greyscaleFrom(video, w, h);
@@ -4578,7 +4594,7 @@ function sampleFrame(){
   for(let i=0;i<grey.length;i++) brightness += grey[i];
   brightness /= grey.length;
 
-  const lap: Unshaped[] = [];
+  const lap: number[] = [];
   for(let y=1;y<h-1;y++){
     for(let x=1;x<w-1;x++){
       lap.push(-4*grey[y*w+x] + grey[(y-1)*w+x] + grey[(y+1)*w+x] + grey[y*w+x-1] + grey[y*w+x+1]);
@@ -4635,8 +4651,8 @@ function beginCountdown(){
 }
 
 function capturePhoto(){
-  const video = document.getElementById('vf-video');
-  if(!video || !(video as HTMLVideoElement).videoWidth) return;
+  const video = document.getElementById('vf-video') as HTMLVideoElement | null;
+  if(!video || !video.videoWidth) return;
   capturedPhotoDims = { width: (video as HTMLVideoElement).videoWidth, height: (video as HTMLVideoElement).videoHeight };
   // Stamped at the moment the shutter fires, not at submit. An angler who
   // photographs a fish and files it twenty minutes later has a stamp that says
@@ -4674,8 +4690,10 @@ bindEl('vf-retake','click', ()=>{
 // Picking from the library replaces an in-app capture. Submit prefers
 // capturedPhotoData, so without this the "choose a photo" field did nothing
 // once you had already taken a shot in the viewfinder.
-bindEl('sub-photo','change', (e)=>{
-  if(e.target.files && e.target.files[0]){
+bindEl('sub-photo','change', (e: Event)=>{
+  // Bound to #sub-photo, which is an <input type="file">.
+  const input = e.target as HTMLInputElement;
+  if(input.files && input.files[0]){
     capturedPhotoData = null;
     capturedPhotoDims = { width: 0, height: 0 };
     capturedPhotoStamp = null;
@@ -4691,7 +4709,7 @@ bindEl('sub-submit','click', async ()=>{
   const species = pageEl<ValueElement>('sub-species').value;
   const fileInput = document.getElementById('sub-photo');
   const submitBtn = pageEl('sub-submit');
-  const fail = (msg)=>{ errEl.textContent = msg; errEl.style.display='block'; };
+  const fail = (msg: string)=>{ errEl.textContent = msg; errEl.style.display='block'; };
 
   // Checked here and again below against a fresh roster read. This first pass
   // only saves the angler a wait; the one that matters is the one inside the
@@ -4721,13 +4739,14 @@ bindEl('sub-submit','click', async ()=>{
     let srcWidth = capturedPhotoDims.width, srcHeight = capturedPhotoDims.height;
     let stamp = capturedPhotoStamp;
 
-    if(!photoData && (fileInput as HTMLInputElement).files?.[0]){
+    const upload = (fileInput as HTMLInputElement).files?.[0];
+    if(!photoData && upload){
       submitBtn.textContent = 'Preparing photo…';
       try{
         // A file off the camera roll could have been shot at any time, so its
         // stamp reads as the time of submission and says so on the photo.
         stamp = photoStamp(PHOTO_SOURCE_UPLOAD);
-        const resized = await resizeImage((fileInput as HTMLInputElement).files?.[0], stamp);
+        const resized = await resizeImage(upload, stamp);
         photoData = resized.dataUrl;
         srcWidth = resized.srcWidth;
         srcHeight = resized.srcHeight;
@@ -4862,7 +4881,7 @@ async function renderManageList(){
   // background repaint that would have removed the buttons is suppressed while
   // an input has focus, which is exactly when the angler is typing a length. So
   // the check has to happen again here, against a fresh read.
-  const stillEditable = (catches, anglers, id)=>{
+  const stillEditable = (catches: Catch[], anglers: Angler[], id: string | undefined)=>{
     const idx = catches.findIndex(c=>c.id===id);
     if(idx === -1){
       setText('man-err', 'That catch is no longer on the list. Refreshing.');
@@ -5034,7 +5053,7 @@ function bigFishWinner(anglers, catches, target){
 // record, this is only the verdict on them.
 function buildResults(anglers, catches, bets, target){
   const divisions = {};
-  ['solo', 'team'].forEach(div=>{
+  (['solo', 'team'] as const).forEach(div=>{
     divisions[div] = standingsFor(div, catches || [], anglers || [], target)
       .map(row=> ({ key: row.key, anglerIds: row.anglerIds.slice(),
                     best: row.best, top3: row.top3sum }));
@@ -5084,7 +5103,7 @@ async function renderResultsAdmin(){
   // event could score several) or a list. isScoringSpecies takes either.
   const target = frozen ? frozen.targetSpecies : scoringSpecies();
   const view = frozen || buildResults(anglers, catches, bets, target);
-  const byId = {};
+  const byId: Record<string, Angler> = {};
   anglers.forEach(a=>{ byId[a.id] = a; });
 
   const pending = catches.filter(c=> c.status === 'pending').length;
@@ -5946,12 +5965,13 @@ bindEl('reel-download','click', ()=>{
 });
 
 // ---- leaderboard ----
-let currentDiv = 'solo';
+let currentDiv: Division = 'solo';
 document.querySelectorAll('.divtabs button').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     document.querySelectorAll('.divtabs button').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
-    currentDiv = (btn as HTMLElement).dataset.div || currentDiv;
+    const div = (btn as HTMLElement).dataset.div;
+    if(div === 'solo' || div === 'team') currentDiv = div;
     renderLeaderboard();
   });
 });
@@ -5971,13 +5991,13 @@ document.querySelectorAll('.divtabs button').forEach(btn=>{
 // field should never win a tie - and the id settles the impossible case, so the
 // order is total and nothing is ever left to arrival order.
 const TIE_LAST = Number.MAX_SAFE_INTEGER;
-function catchTime(c){
+function catchTime(c: Catch){
   const n = Number(c && c.timestamp);
   return isFinite(n) ? n : TIE_LAST;
 }
 // Longest first, then earliest, then id. Used for single fish (Big Fish, the
 // winning fish on the state form) so those two can never disagree.
-function byLengthThenEarliest(a, b){
+function byLengthThenEarliest(a: Catch, b: Catch): number {
   return (Number(b.length) - Number(a.length))
       || (catchTime(a) - catchTime(b))
       || String(a.id).localeCompare(String(b.id));
@@ -5985,7 +6005,7 @@ function byLengthThenEarliest(a, b){
 // The same rule upside down, for the "smallest fish" side bet. Earliest still
 // wins the tie - the tie-break is about who got there first, not about which
 // end of the tape the bet is scored from.
-function bySmallestThenEarliest(a, b){
+function bySmallestThenEarliest(a: Catch, b: Catch): number {
   return (Number(a.length) - Number(b.length))
       || (catchTime(a) - catchTime(b))
       || String(a.id).localeCompare(String(b.id));
@@ -5994,8 +6014,8 @@ function bySmallestThenEarliest(a, b){
 // Shared ranking used by BOTH the public leaderboard and the director's
 // contestant view, so "current standing" can never drift between the two.
 // Disqualified anglers are excluded here, which removes them everywhere at once.
-function standingsFor(division, catches, anglers, target?){
-  const anglerById = {};
+function standingsFor(division: Division, catches: Catch[], anglers: Angler[], target?: string){
+  const anglerById: Record<string, Angler> = {};
   anglers.forEach(a=>{ anglerById[a.id] = a; });
 
   const eligible = catches.filter(c=>{
@@ -6006,7 +6026,7 @@ function standingsFor(division, catches, anglers, target?){
     return !(a && a.disqualified);
   });
 
-  const groups = {};
+  const groups: Record<string, StandingsGroup> = {};
   eligible.forEach(c=>{
     const angler = anglerById[c.anglerId];
     // A team ranks as one unit, so either partner's fish lands in the same group.
@@ -6031,7 +6051,7 @@ function standingsFor(division, catches, anglers, target?){
       key: g.key, name: g.name, anglerIds: g.anglerIds,
       best: Number(sorted[0].length),
       bestAt: catchTime(sorted[0]),
-      top3sum: sorted.slice(0,3).reduce((s,c)=>s+Number(c.length),0),
+      top3sum: sorted.slice(0,3).reduce((s: number, c: Catch)=>s+Number(c.length),0),
       count: g.fish.length
     };
     // Best fish, then best 3 combined, then whoever got there first. The key
@@ -6045,7 +6065,7 @@ function standingsFor(division, catches, anglers, target?){
 }
 
 // 1-based placing for one angler in their division, or 0 if they aren't ranked.
-function rankOf(angler, catches, anglers){
+function rankOf(angler: Angler, catches: Catch[], anglers: Angler[]){
   const table = standingsFor(angler.division, catches, anglers);
   for(let i=0;i<table.length;i++){
     if(table[i].anglerIds.indexOf(angler.id) !== -1) return i+1;
@@ -6075,7 +6095,7 @@ async function renderLeaderboard(){
 // Who is actually in the pot: bought in, still eligible, and confirmed. Split
 // out of the render so the rule is testable without a browser - a pot that
 // quietly included an unpaid entry would only show up in a payout dispute.
-function bigFishEntrants(anglers){
+function bigFishEntrants(anglers: Angler[]){
   return (anglers || []).filter(a=> a.bigfish && !a.disqualified);
 }
 
@@ -6083,7 +6103,7 @@ async function renderBigFish(){
   const anglers = await loadAnglers();
   const inPot = new Set(bigFishEntrants(anglers).map(a=>a.id));
   const catches = (await loadCatches()).filter(c=>c.status==='approved' && isScoringSpecies(c.species) && inPot.has(c.anglerId));
-  const byId = {};
+  const byId: Record<string, Angler> = {};
   anglers.forEach(a=>{ byId[a.id] = a; });
   const el = pageEl('bf-list');
   if(catches.length===0){ el.innerHTML = '<p class="empty">No qualifying catches yet.</p>'; return; }
@@ -6106,7 +6126,7 @@ async function renderOverdueAlert(){
   if(list.length === 0){ el.style.display = 'none'; el.innerHTML = ''; return; }
 
   const signals = await loadSignals();
-  const byId = {};
+  const byId: Record<string, Row> = {};
   signals.forEach(s=>{ byId[s.id] = s; });
   const sorted = sortOverdue(list, signals);
   const mins = Math.floor(sorted[0].overdueSeconds / 60);
@@ -6733,7 +6753,7 @@ function wireBetActions(){
 
 bindEl('bet-create','click', async ()=>{
   const errEl = pageEl('bet-err');
-  const fail = (msg)=>{ errEl.textContent = msg; errEl.style.display = 'block'; };
+  const fail = (msg: string)=>{ errEl.textContent = msg; errEl.style.display = 'block'; };
   errEl.style.display = 'none';
 
   const title = (pageEl<ValueElement>('bet-title').value || '').trim();
@@ -7160,7 +7180,7 @@ function unpaidInTheMoney(anglers, catches){
   const out: Unshaped[] = [], seen: UnshapedObject = {};
   const place = ['1st', '2nd', '3rd'];
 
-  ['solo', 'team'].forEach(division=>{
+  (['solo', 'team'] as const).forEach(division=>{
     standingsFor(division, catches || [], roster).slice(0, 3).forEach((row, i)=>{
       (row.anglerIds || []).forEach(id=>{
         const a = byId[id];
@@ -8854,7 +8874,7 @@ bindEl('ev-cancel','click', ()=>{ resetEventForm(); renderAdmin(); });
 
 bindEl('ev-save','click', async ()=>{
   const errEl = pageEl('ev-err');
-  const fail = (msg)=>{ errEl.textContent = msg; errEl.style.display = 'block'; };
+  const fail = (msg: string)=>{ errEl.textContent = msg; errEl.style.display = 'block'; };
   errEl.style.display = 'none';
 
   const name = pageEl<ValueElement>('ev-name').value.trim();
@@ -9351,7 +9371,7 @@ bindEl('bnd-save','click', async ()=>{
 bindEl('bnd-recheck','click', async ()=>{
   const noteEl = pageEl('bnd-recheck-note');
   const catches = await loadCatches();
-  const located = catches.filter(c=> c.location && isFinite(c.location.lat) && isFinite(c.location.lng));
+  const located = catches.filter((c): c is LocatedCatch => !!c.location && isFinite(c.location.lat) && isFinite(c.location.lng));
   if(located.length === 0){
     noteEl.innerHTML = '<p class="hint">No catch has a stored position to re-check.</p>';
     return;
@@ -9386,7 +9406,7 @@ bindEl('bnd-recheck','click', async ()=>{
 async function renderPositionsAdmin(){
   const signals = await loadSignals();
   const anglers = await loadAnglers();
-  const byId = {};
+  const byId: Record<string, Angler> = {};
   anglers.forEach(a=>{ byId[a.id] = a; });
 
   const beacons = signals.filter(s=> s.beacon === true);
@@ -10301,7 +10321,7 @@ function wireContestantRows(){
       const idx = anglers.findIndex(a=> a.id === (btn as HTMLElement).dataset.id);
       if(idx === -1) return showErr('That angler is no longer on the roster.');
 
-      const norm = (v)=> String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const norm = (v: unknown)=> String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
       // Same one-per-person rule the registration form enforces, minus this
       // angler themselves.
       if(anglers.some(a=> a.id !== (btn as HTMLElement).dataset.id && norm(a.name) === norm(name))){
