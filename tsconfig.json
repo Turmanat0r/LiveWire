@@ -12,8 +12,8 @@
   // The flags, in the order they are worth doing:
   //   strictNullChecks             ON - was 524 findings, all resolved
   //   noImplicitAny                ON - was 984 findings, all resolved
-  //   noUncheckedIndexedAccess     in progress - 200 found, 123 left
-  //   + the rest of strict, unused 151 running total, catch variables mostly
+  //   noUncheckedIndexedAccess     in progress - 200 found, 88 left
+  //   + the rest of strict, unused 115 running total, catch variables mostly
   //
   // They do not add up separately - each changes what the next can infer - and
   // noUncheckedIndexedAccess reports nothing without strictNullChecks. See
