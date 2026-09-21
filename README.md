@@ -163,9 +163,9 @@ make sure a thing is there before it uses it?
 | Check | State | Findings |
 |---|---|---|
 | `strictNullChecks` | **on** | 524 when switched on, all resolved rather than silenced |
-| `noImplicitAny` | **in progress** | 984 when measured; 301 left, three areas done |
-| `+ noUncheckedIndexedAccess` | | 1,029 running total |
-| `+ the rest of strict, and the unused checks` | | 1,047 running total |
+| `noImplicitAny` | **ready to switch on** | 984 when measured; none left, all four areas done |
+| `+ noUncheckedIndexedAccess` | | 204 running total |
+| `+ the rest of strict, and the unused checks` | | 231 running total |
 
 The counts do not simply add up - each check changes what the next can infer -
 so they are running totals, measured against the source as it stands.
@@ -221,7 +221,10 @@ them - `noImplicitAny` only reports an `any` nobody wrote.
   nothing's forms: reset to `null` in code, and read as `undefined` from a
   missing `data-` attribute.
 
-`test/lint.mjs` prints how many remain on every run. It is 13 now, from 48.
+`test/lint.mjs` counted them on every run, from 48 down to **none**: every
+`Unshaped` and `UnshapedObject` has been replaced by the shape it actually
+holds. The two names go when `noImplicitAny` is switched on, so a new one
+cannot creep back in.
 
 ### noImplicitAny, one area at a time
 
@@ -233,7 +236,8 @@ there is nothing left for it to find. In order:
 1. **The data layer** - done. Sync, the outbox, both backends, the caches.
 2. **Anglers and catches** - done. Registration, submission, the leaderboard, scoring.
 3. **The director's tools** - done. Payouts, results, the FWP report, the boundary.
-4. **Everything else**, and then the switch goes on.
+4. **Everything else** - done. The trophy case, gallery, highlight reel, chat,
+   side bets, positions, beacons and the maps. The switch goes on next.
 
 **The data layer went first because a wrong shape there loses a catch.** It
 now has a written contract, where before it had two backends that had to agree
@@ -359,6 +363,71 @@ calls to functions that do not exist had quietly stopped recognising every typed
 parameter**: its pattern read `act: string` as not-a-name. It only surfaced when
 a typed parameter was *called*; it finds parameter lists by matching brackets
 now, and still catches a genuinely missing function.
+
+**Everything else** went from 301 findings to none, which is the whole app:
+`noImplicitAny` finds nothing left to report. The last 13 placeholders went
+with it.
+
+**The last three shared collections have shapes.** `ChatMessage`, `Bet` and
+`BetJoin`, and `Signal` - a position, or a beacon - are each written from the
+one place that creates them. All six collections now load as records the
+compiler knows; `Row` is only the data layer's own type, as it was meant to be.
+
+The screens' own shapes are **derived from what builds them**, like the report
+and the results before them: a trophy-case line, the trophy case's totals, a
+gallery tile and a reel's running order are each the return type of the
+function that makes one.
+
+**The gallery's privacy rule is now enforced by the compiler.** A gallery tile
+is a projection of a catch that leaves the angler's real name out, so nothing
+can put it on the wall - and that tile is now a type. Code that reads
+`anglerName` off a gallery tile, or off a shot in the highlight reel, no longer
+compiles. Putting a real name on a gallery tile was tried on purpose, and
+refused.
+
+What else the types now hold:
+
+- A catch card's badge is one of **four tones, and each has a colour**. The
+  compiler checks both ways: no badge in a colour that does not exist, and no
+  colour missing for a badge that does.
+- A side bet is a `bet` or a `join`, told apart by `kind`. **Only called
+  bets** reach a frozen result or the trophy case, and that test is now written
+  once, in `betIsSettled`, rather than twice.
+- **Leaflet stays untyped, under a name.** It ships no types and this app
+  installs none, so what it returns is as unknown as `L` is. `LeafletObject`
+  says which library a value came from without guessing at its methods.
+
+What the compiler corrected, this time:
+
+- A reel scene's first draft **grouped the title and end cards together**, and
+  that hid every shot from the compiler: a check for "title" could not rule out a
+  card that might be either. They are one kind each now.
+- **A chat message's author can be null.** The code that announces a catch
+  allows for there being no angler to name, so the type does too, and the feed
+  checks before looking an author up. It changes nothing on screen - a missing
+  author was never found anyway.
+- `normPhone` already turned a missing number into an empty one on its first
+  line. Its type now says so.
+
+Changes worth knowing about. None alters anything the page does today:
+
+- **A link or tab with an empty target does nothing** rather than switching to
+  a screen that does not exist, which would have left the app blank. The page
+  has none; this only matters if one is ever added.
+- **A side-bet button with no bet id** returns before loading anything. It found
+  no bet and returned a line later before.
+- **The "most fish" leader** is worked out with a `reduce` the compiler can
+  follow, instead of a loop it could not. The two were run side by side on
+  200,000 random tallies, 76,818 of them with a tie for the lead, and picked the
+  same angler every time.
+
+**Found, and not changed here: a tie in a "most fish" side bet.** Two anglers on
+the same count are split by whichever catch the server happened to send first.
+Every other ranking in the app breaks a tie on the earliest fish, because
+arrival order changes when a row is updated - see the note above
+`byLengthThenEarliest`. So two phones can show different leaders for a tied
+"most fish" bet. Which rule a tie should follow is the director's to decide,
+so it is left as it was.
 
 **One thing the tests cannot tell apart yet.** The live database is empty until
 there is a tournament in it, so a browser pass against production syncs every

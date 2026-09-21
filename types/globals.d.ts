@@ -76,16 +76,21 @@ interface HttpError extends Error {
 }
 
 /**
- * One scene in a catch reel: the title card, a shot, or the end card. Only a
- * shot carries `row` (the catch it was built from), and `image` is attached
- * later, once the photo has actually been fetched.
+ * One scene in a highlight reel: the title card, a shot, or the end card. A
+ * shot always carries `row`, the gallery tile it was built from; `image` is
+ * attached later, once the photo has actually been fetched, and is null for
+ * one that would not load. Checking `kind` is enough to know which you have.
  */
-interface ReelScene {
-  kind: string;
-  ms: number;
-  row?: any;
-  image?: any;
-}
+type ReelScene =
+  | { kind: 'title'; ms: number }
+  | { kind: 'end'; ms: number }
+  | { kind: 'shot'; ms: number; row: GalleryRow; image?: ReelPhoto | null };
+
+/**
+ * A photo ready to draw into the reel, and the blob: address to hand back when
+ * it is done with - empty for a photo that was already on this device.
+ */
+type ReelPhoto = { img: HTMLImageElement; revoke: string };
 
 /** A photo after resizing: the data URL, and the size it came in at. */
 interface ResizedImage {
@@ -777,10 +782,11 @@ type Donation = {
 };
 
 /**
- * A Leaflet map event, as far as the app reads one: where it happened. Leaflet
- * itself is an honest `any` - see `L` above - so this is the part in use.
+ * A Leaflet map event, as far as the app reads one: where it happened, and the
+ * marker or map it happened to - which is Leaflet's own, and as untyped as
+ * Leaflet is. See LeafletObject.
  */
-type LeafletEvent = { latlng: LatLng; target: UnshapedObject };
+type LeafletEvent = { latlng: LatLng; target: LeafletObject };
 
 /** A boundary that actually draws something: a circle or an outline, never 'none'. */
 type UsableBoundary = Exclude<Boundary, { kind: 'none' }>;
@@ -837,3 +843,128 @@ type SizeRow = {
  * that would not parse, so the form can point at exactly the line that is wrong.
  */
 type ParsedDateLine = { key?: string; bad?: string };
+
+// ============================================================================
+// EVERYTHING ELSE: THE FIELD'S OWN SCREENS
+//
+// Chat, side bets, positions and beacons, and the maps they are drawn on. The
+// three records below were the last of the six shared collections still moving
+// as plain Row. Each is written from the literal that creates it - one place
+// for a message, one for a position, two for a bet - and from every field the
+// compiler found read back.
+// ============================================================================
+
+/**
+ * One chat message. `catch` messages are posted by the app when a catch is
+ * filed, and carry which one; `chat` messages are typed. Either can be a reply,
+ * one level deep.
+ */
+type ChatMessage = {
+  id: string;
+  /**
+   * Who posted it. Null only if a catch were ever announced with no angler to
+   * name - the code that posts one allows for it, so the type does too.
+   */
+  anglerId: string | null;
+  /** Copied at posting time, so an old message survives its author's handle changing. */
+  handle: string;
+  kind: 'chat' | 'catch';
+  text: string;
+  /** The catch a `catch` message is about. The brag is read from the catch itself. */
+  catchId?: string;
+  /** The message this one answers, or null for a new conversation. */
+  replyTo: string | null;
+  timestamp: number;
+};
+
+/**
+ * A side bet. The app keeps score, never money - `stake` is whatever the
+ * anglers typed, "a round at the ramp", and nothing reads it but a person.
+ * `scoring` is one of BET_SCORING: smallest, most, first, or manual.
+ */
+type Bet = {
+  id: string;
+  kind: 'bet';
+  title: string;
+  stake: string;
+  scoring: string;
+  creatorId: string;
+  /** Null until somebody calls it. */
+  winnerId: string | null;
+  settledAt: number | null;
+  timestamp: number;
+};
+
+/**
+ * One angler in one bet. Its own record rather than a list inside the bet:
+ * two anglers joining at once would otherwise write the same record, and
+ * last-writer-wins would quietly drop one of them.
+ */
+type BetJoin = {
+  id: string;
+  kind: 'join';
+  betId: string;
+  anglerId: string;
+  timestamp: number;
+};
+
+/** The bets collection holds both, told apart by `kind`. */
+type BetRow = Bet | BetJoin;
+
+/** A bet somebody has called. Frozen results and the trophy case keep only these. */
+type SettledBet = Bet & { winnerId: string };
+
+/**
+ * Where an angler last was. One per angler, filed under their id, so a new fix
+ * overwrites the last rather than the table growing all day.
+ */
+type Signal = {
+  id: string;
+  anglerId: string;
+  handle: string;
+  lat: number;
+  lng: number;
+  /** Null when the fix came without one. */
+  accuracyMiles: number | null;
+  at: number;
+  /** Raised means somebody needs help. Only an explicit stand-down lowers it. */
+  beacon: boolean;
+  beaconAt: number | null;
+  /** What the angler said when they raised it, up to 140 characters. */
+  note: string;
+};
+
+/**
+ * Anything Leaflet hands back - a map, a layer, a marker.
+ *
+ * NOT a placeholder. Leaflet ships no types and this app installs none (see
+ * `L` at the top of this file), so whatever it returns is exactly as unknown
+ * as `L` is. The name says which library the value came from; a guess at its
+ * methods would read as checked when nothing had checked it.
+ */
+type LeafletObject = any;
+
+/** One live map, as ensureMap() keeps it: the element, the map, and its two layers. */
+type MapEntry = {
+  el: HTMLElement;
+  map: LeafletObject;
+  /** The course outline. */
+  boundary: LeafletObject;
+  /** Everything else: catches, beacons, you, the editor's handles. */
+  pins: LeafletObject;
+  /** Each screen frames the course once, then leaves the view where the user puts it. */
+  fittedCourse?: boolean;
+  fittedPositions?: boolean;
+  /** The boundary editor's own state, kept on the map it belongs to. */
+  wiredBoundary?: boolean;
+  radiusHandle?: LeafletObject | null;
+};
+
+/**
+ * The Claude viewer's sampler, as far as Fish-I uses it: ask a question about a
+ * photo and get JSON back. What comes back is the model's answer, which is why
+ * it is typed as a review that may be missing any of its fields - see AiReview.
+ */
+interface FishISampler {
+  json(prompt: string, opts: { images: Blob; modelTier: string }): Promise<Partial<AiReview>>;
+}
