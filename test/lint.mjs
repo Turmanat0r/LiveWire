@@ -643,7 +643,7 @@ if (!fs.existsSync(SW)) {
 // Two of the reel's rules cannot be reached from a test in Node - one needs a
 // real canvas, the other a browser that has captureStream but no MediaRecorder
 // (Safari 11 to 14.0, which is a real window). Both are load-bearing.
-const reelImg = (script.match(/async function reelImage\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+const reelImg = (script.match(/async function reelImage\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
 if (!reelImg) {
   note('reel', 'cannot find reelImage - the canvas-taint guard cannot be checked');
 } else {
@@ -657,7 +657,7 @@ if (!reelImg) {
       'then throws, so the reel would fail on every uploaded photo');
   }
 }
-const reelSup = (script.match(/function reelSupported\(\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+const reelSup = (script.match(/function reelSupported\(\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
 if (!reelSup) {
   note('reel', 'cannot find reelSupported - the recorder check cannot be verified');
 } else {
@@ -673,7 +673,7 @@ if (!reelSup) {
 }
 // The reel is the angler's OWN fish. A wall inside the app is one thing; a file
 // about to be posted is another, and only one of those did the field agree to.
-const reelRowsFn = (script.match(/function reelRows\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+const reelRowsFn = (script.match(/function reelRows\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
 if (reelRowsFn && !/r\.mine/.test(reelRowsFn)) {
   note('reel', 'reelRows no longer filters to the angler\'s own fish - somebody ' +
     'else\'s photo would end up in a file being posted to social media');
@@ -707,7 +707,7 @@ if (!wiring) {
 }
 // The gallery tile carries a caption and a marker over its photo. Painting the
 // image into the tile itself rather than into .photo-target wipes both.
-const hydrate = (script.match(/function hydratePhotos\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+const hydrate = (script.match(/function hydratePhotos\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
 if (hydrate && !hydrate.includes('.photo-target')) {
   note('gallery', 'hydratePhotos no longer paints into .photo-target, so a photo ' +
     'arriving wipes the caption off every gallery tile');
@@ -768,7 +768,7 @@ for (const [needle, guard, why] of [
 // The submit screen has to actually paint the notice that says whose catch is
 // about to be filed. The function can be perfect and never called.
 {
-  const body = (script.match(/async function renderSubmitScreen\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  const body = (script.match(/async function renderSubmitScreen\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (!body) note('ownership', 'renderSubmitScreen is gone');
   else if (!body.includes('renderFilingNotice(')) {
     note('ownership', 'the submit screen no longer paints the filing notice, so a catch ' +
@@ -806,7 +806,7 @@ if (/anglerName:\s*angler\s*\?/.test(script)) {
 // director access is unlocked, so membership has to be tested first or a
 // director can file a catch for a person who never entered.
 {
-  const body = (script.match(/function actionGuard\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  const body = (script.match(/function actionGuard\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (!body) {
     note('ownership', 'actionGuard is gone - nothing checks who a write is for');
   } else {
@@ -826,7 +826,7 @@ if (/anglerName:\s*angler\s*\?/.test(script)) {
 // windowed comparison is the fix, and every part of it is reachable only
 // through a real <canvas>, which the unit tests do not have.
 {
-  const analyze = (script.match(/function analyzePhoto\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  const analyze = (script.match(/function analyzePhoto\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (!analyze) {
     note('duplicates', 'analyzePhoto is gone - nothing hashes a photo');
   } else if (!/hashes:/.test(analyze)) {
@@ -835,7 +835,7 @@ if (/anglerName:\s*angler\s*\?/.test(script)) {
   }
   // Every window has to actually be taken. Returning one hash from photoHashes
   // leaves the whole windowed comparison in place and inert.
-  const hashes = (script.match(/function photoHashes\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  const hashes = (script.match(/function photoHashes\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (!hashes) {
     note('duplicates', 'photoHashes is gone - nothing takes the crop windows');
   } else if (!hashes.includes('PRECHECK_HASH_WINDOWS')) {
@@ -845,7 +845,7 @@ if (/anglerName:\s*angler\s*\?/.test(script)) {
   // And the window has to reach the canvas. drawImage with no source rect
   // silently hashes the whole frame for every window, which makes all eight
   // identical and the comparison useless.
-  const grey = (script.match(/function greyscaleFrom\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  const grey = (script.match(/function greyscaleFrom\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (!grey) {
     note('duplicates', 'greyscaleFrom is gone');
   } else if (!/const r = win \|\|/.test(grey) || !/img\.width \* r\[0\]/.test(grey)) {
@@ -853,7 +853,7 @@ if (/anglerName:\s*angler\s*\?/.test(script)) {
       'every window hashes the whole frame and they all come out identical');
   }
 
-  const verdict = (script.match(/function evaluateFirstPass\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  const verdict = (script.match(/function evaluateFirstPass\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (!verdict) {
     note('duplicates', 'evaluateFirstPass is gone');
   } else if (!verdict.includes('photoHashDistance(')) {
@@ -935,7 +935,7 @@ for (const m of script.matchAll(/\.sort\(\s*\([^)]*\)\s*=>\s*[a-z]\.length\s*-\s
     `order - sort with byLengthThenEarliest instead`);
 }
 // The comparator itself must keep all three rungs, or it stops being total.
-const cmpBody = (script.match(/function byLengthThenEarliest\(a, b\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+const cmpBody = (script.match(/function byLengthThenEarliest\(a(?::[^,)]+)?, b(?::[^)]+)?\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
 if (cmpBody) {
   for (const [needle, what] of [['b.length', 'length'], ['catchTime', 'the timestamp'],
                                 ['localeCompare', 'the id fallback']]) {
@@ -962,7 +962,7 @@ if (/^initFishI\(\);/m.test(code)) {
 // And the once-only guard, without which every repaint of the director's panel
 // asks again - worse than asking on load.
 {
-  const body = (script.match(/function ensureFishI\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  const body = (script.match(/function ensureFishI\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (!body) note('quota', 'ensureFishI is gone - nothing starts the Fish-I probe lazily');
   else if (!/if\(fishIStarted\) return;/.test(body)) {
     note('quota', 'ensureFishI has lost its once-only guard, so every repaint of the ' +
@@ -970,7 +970,7 @@ if (/^initFishI\(\);/m.test(code)) {
   }
 }
 {
-  const body = (script.match(/async function renderAdmin\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  const body = (script.match(/async function renderAdmin\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (!body) note('quota', 'renderAdmin is gone - nothing starts Fish-I');
   else if (!body.includes('ensureFishI(')) {
     note('quota', 'renderAdmin no longer calls ensureFishI(), so a director opening the ' +
@@ -999,7 +999,7 @@ for (const [needle, why] of [
 // point all thirteen call sites ask through. Everything below is a way that
 // choke point could quietly narrow back to one.
 {
-  const fn = (script.match(/function isScoringSpecies\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  const fn = (script.match(/function isScoringSpecies\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (!fn) {
     note('species', 'isScoringSpecies is gone - nothing decides what scores');
   } else {
@@ -1021,7 +1021,7 @@ for (const [needle, why] of [
 
   // The stored list is where Other is kept out and blanks are dropped. Without
   // that filter a stray entry makes every unscored fish count.
-  const list = (script.match(/function speciesList\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  const list = (script.match(/function speciesList\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (!list) note('species', 'speciesList is gone');
   else {
     if (!list.includes('OTHER_SPECIES')) {
@@ -1038,14 +1038,14 @@ for (const [needle, why] of [
   // The ceiling has to be per species. One ceiling across walleye and pike is
   // either so low it flags every big pike or so high it never flags an
   // impossible walleye - a check that cries wolf stops being read.
-  const verdict = (script.match(/function evaluateFirstPass\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  const verdict = (script.match(/function evaluateFirstPass\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (verdict && !/recordInches\(c\.species\)/.test(verdict)) {
     note('species', 'the length-plausibility check no longer uses the ceiling for the ' +
       'species the fish was filed as, so a mixed-species event flags the wrong fish');
   }
 
   // The submit picker is the only way an angler reaches the second species.
-  const opts = (script.match(/function renderSpeciesOptions\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  const opts = (script.match(/function renderSpeciesOptions\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (opts && !opts.includes('scoringSpecies()')) {
     note('species', 'the submit screen no longer lists every scoring species, so anglers ' +
       'cannot file the ones the director added');
@@ -1053,7 +1053,7 @@ for (const [needle, why] of [
 
   // Writing the list without the legacy fields would leave a phone that has not
   // reloaded reading no species at all.
-  const save = (script.match(/async function saveSpeciesList\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  const save = (script.match(/async function saveSpeciesList\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (!save) note('species', 'saveSpeciesList is gone');
   else if (!save.includes('targetSpecies:') || !save.includes('recordInches:')) {
     note('species', 'saveSpeciesList no longer writes targetSpecies/recordInches alongside ' +
@@ -1082,7 +1082,7 @@ for (const [needle, why] of [
 // Deterministic on purpose: people navigate by colour before they read the
 // label, so a tile must not change colour between visits.
 {
-  const fn = (script.match(/function tileAccent\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  const fn = (script.match(/function tileAccent\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (!fn) note('tiles', 'tileAccent is gone - the home tiles lose their colour bars');
   else if (/Math\.random/.test(fn)) {
     note('tiles', 'tileAccent picks at random, so a tile changes colour between visits - ' +
@@ -1101,13 +1101,13 @@ for (const [needle, why] of [
     }
   }
 
-  const paint = (script.match(/function paintTileAccents\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  const paint = (script.match(/function paintTileAccents\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (!paint) note('tiles', 'paintTileAccents is gone');
   else if (!paint.includes('home-info-tile')) {
     note('tiles', 'paintTileAccents no longer covers the info tiles, which is half of ' +
       'what “all of them need a colour line” meant');
   }
-  const home = (script.match(/async function renderHome\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  const home = (script.match(/async function renderHome\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (home && !home.includes('paintTileAccents(')) {
     note('tiles', 'renderHome no longer paints the tile accents, so every bar falls back ' +
       'to the near-invisible slate');
@@ -1125,13 +1125,13 @@ for (const [needle, why] of [
     note('integrity', 'the director review lists no longer re-check the stored photo, ' +
       'so a photo swapped after filing would pass without comment');
   }
-  const hy = (script.match(/function hydratePhotos\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  const hy = (script.match(/function hydratePhotos\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (!hy) note('integrity', 'hydratePhotos is gone');
   else if (!hy.includes('flagPhotoMismatch(')) {
     note('integrity', 'hydratePhotos never calls flagPhotoMismatch(), so opts.verify ' +
       'is accepted and ignored');
   }
-  const fl = (script.match(/function flagPhotoMismatch\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  const fl = (script.match(/function flagPhotoMismatch\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (!fl) note('integrity', 'flagPhotoMismatch is gone');
   else {
     if (!fl.includes('photoIntegrity(')) {
@@ -1163,7 +1163,7 @@ for (const [needle, why] of [
   // The lightbox is where the director is told to judge, so it is where this
   // has to be said - and the panel is reused between fish, so a warning left
   // behind would sit under a photo it has nothing to do with.
-  const lb = (script.match(/async function openLightbox\([^)]*\)\{([\s\S]*?)\n\}/) || ['', ''])[1];
+  const lb = (script.match(/async function openLightbox\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (!lb) note('integrity', 'openLightbox is gone');
   else {
     if (!lb.includes('photoTamperHtml(')) {
@@ -1211,7 +1211,7 @@ for (const m of script.matchAll(/'(\/api\/[a-z0-9-]+)'/g)) {
     // verified up to five candidate models by generating with each one.
     const getAt = api.indexOf("req.method === 'GET'");
     const postAt = api.indexOf("req.method !== 'POST'");
-    const resolve = (api.match(/async function resolveModel\([^)]*\)\s*\{([\s\S]*?)\n\}/) || ['', ''])[1];
+    const resolve = (api.match(/async function resolveModel\([^)]*\)(?::[^{]+)?\s*\{([\s\S]*?)\n\}/) || ['', ''])[1];
     if (!resolve) {
       note('quota', 'api/fish-i.js has no resolveModel - the health check cannot be verified');
     } else if (/generateContent/.test(resolve)) {
@@ -1248,7 +1248,7 @@ for (const m of script.matchAll(/'(\/api\/[a-z0-9-]+)'/g)) {
     // authConfigured is what every refusal above hangs off. Hard-coding it true
     // is the only shape in this file that could plausibly reopen the endpoint,
     // so it is checked structurally: nothing else can see inside it.
-    const cfg = (api.match(/function authConfigured\(\)\s*\{([\s\S]*?)\n\}/) || ['', ''])[1];
+    const cfg = (api.match(/function authConfigured\(\)(?::[^{]+)?\s*\{([\s\S]*?)\n\}/) || ['', ''])[1];
     if (!cfg) {
       note('quota', 'authConfigured is gone from api/fish-i.js');
     } else if (!cfg.includes('AUTH_URL') || !cfg.includes('AUTH_KEY')) {
@@ -1260,7 +1260,7 @@ for (const m of script.matchAll(/'(\/api\/[a-z0-9-]+)'/g)) {
     // app_metadata is the only place the claim may be read from: a client can
     // write its own user_metadata, so reading that would let anyone declare
     // themselves the director.
-    const claim = (api.match(/function directorClaim\([^)]*\)\s*\{([\s\S]*?)\n\}/) || ['', ''])[1];
+    const claim = (api.match(/function directorClaim\([^)]*\)(?::[^{]+)?\s*\{([\s\S]*?)\n\}/) || ['', ''])[1];
     if (!claim) {
       note('quota', 'directorClaim is gone from api/fish-i.js');
     } else {
@@ -1276,7 +1276,7 @@ for (const m of script.matchAll(/'(\/api\/[a-z0-9-]+)'/g)) {
     // Free-tier quotas are per MODEL. Treating one spent model as the whole
     // key turns "the newest model is busy" into "Fish-I is down until
     // tomorrow" with four untouched models sitting there.
-    const retry = (api.match(/function isRetryableModelStatus\([^)]*\)\s*\{([\s\S]*?)\n\}/) || ['', ''])[1];
+    const retry = (api.match(/function isRetryableModelStatus\([^)]*\)(?::[^{]+)?\s*\{([\s\S]*?)\n\}/) || ['', ''])[1];
     if (!retry) {
       note('quota', 'api/fish-i.js has no isRetryableModelStatus');
     } else if (!/\b429\b/.test(retry)) {

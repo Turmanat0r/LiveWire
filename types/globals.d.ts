@@ -436,3 +436,238 @@ interface ArtifactDb {
  * be a delete, which has no body at all.
  */
 type PhotoOp = Extract<OutboxOp, { kind: 'photo' }>;
+
+// ============================================================================
+// ANGLERS AND CATCHES
+//
+// The two records the whole tournament is made of. Each is built from the
+// literal that creates it - registration for an angler, submission for a
+// catch - and then from every field the compiler found the app reading or
+// writing later: a check-in, a DQ, an approval. Neither is guessed at.
+//
+// These are `type`, not `interface`, and that is load-bearing. The data layer
+// stores Row, which allows any field. An object type written this way can be
+// handed to it as one; an interface could not, because TypeScript only lets a
+// type with no index signature of its own stand in for one that has one when
+// it is a plain object type.
+// ============================================================================
+
+/** Only an approved catch counts. Pending is waiting for the director. */
+type CatchStatus = 'pending' | 'approved' | 'rejected';
+
+/** A solo entry, or one half of a team - the captain paid, the partner rides along. */
+type AnglerRole = 'solo' | 'captain' | 'partner';
+
+type Division = 'solo' | 'team';
+
+/** One contest day: when the angler checked in and out. Null until it happens. */
+type CheckinDay = { in: number | null; out: number | null };
+
+/** Every contest day's check-ins, keyed 'day1', 'day2'. */
+type Checkins = Record<string, CheckinDay>;
+
+// ---- the first pass: measurements, and the verdict worked out from them -------
+//
+// These were one type in the first draft, which was wrong twice. What a catch
+// STORES (under the field name `precheck`, for history's sake) is the photo's
+// measurements - its fingerprints, brightness, sharpness, original size. The
+// verdict is worked out from those every time the director's list is drawn and
+// is never stored at all. And the verdict's levels are not the checks' levels:
+// a verdict is clear, review or flag, while a single check can be anything from
+// ok to bad. The compiler found both, one of them by turning up a 'clear' that
+// no search for level comparisons had.
+
+/** How one check came out, from nothing to see to plainly wrong. */
+type FirstPassLevel = 'ok' | 'info' | 'warn' | 'review' | 'flag' | 'bad';
+
+/** One thing the first pass looked at, and what it made of it. */
+type FirstPassCheck = { level: FirstPassLevel; label: string; detail: string };
+
+/** The first pass's overall call: nothing to see, look at this, or this looks wrong. */
+type FirstPassOutcome = 'clear' | 'review' | 'flag';
+
+/**
+ * The automated first pass on a catch: a photo too small, too blurry, reused
+ * from another catch, or taken outside the boundary, flagged for the director
+ * to judge. Worked out from the stored PhotoAnalysis each time; never stored.
+ */
+type FirstPassVerdict = { level: FirstPassOutcome; checks: FirstPassCheck[] };
+
+/**
+ * A catch photo's measurements, taken in the browser when it was filed - no
+ * network, no model. Stored on the catch as `precheck`.
+ */
+type PhotoAnalysis = {
+  /** The fingerprint of the whole frame. The same as hashes[0], kept for older readers. */
+  hash: string;
+  /** One fingerprint per crop window, so a cropped reuse of a photo is caught too. */
+  hashes: string[];
+  brightness: number;
+  sharpness: number;
+  /** The ORIGINAL photo's size, taken before it was shrunk to store. */
+  srcWidth: number;
+  srcHeight: number;
+  analyzedAt: number;
+};
+
+/**
+ * When and how a photo was taken, kept beside the stamp burned into its pixels
+ * so the director's list can be sorted without opening every photo - never
+ * instead of the stamp, which is why the stamp is drawn at all.
+ */
+type PhotoCapture = { at: number; source: string; clockOffsetMs: number | null };
+
+/** A registered angler. One per person: a team entry is two of these. */
+type Angler = {
+  id: string;
+  name: string;
+  phone: string;
+  division: Division;
+  /** The other half of a team, by name. Empty for a solo entry. */
+  partner: string;
+  bigfish: boolean;
+  tournamentId: string;
+  role: AnglerRole;
+  /** Shared by both halves of a team. Null for a solo entry. */
+  teamId: string | null;
+  /**
+   * This angler's own code. Two anglers on one team have different ones.
+   * Optional because records from before codes existed have none until a
+   * backfill gives them one; null because makeCode() gives up and returns null
+   * when it cannot find a code nobody else holds.
+   */
+  anglerCode?: string | null;
+  /** The code a team shares. */
+  teamCode: string | null;
+  emergencyName: string;
+  emergencyPhone: string;
+  /** Only ever read by the FWP contest report. */
+  resident: boolean | null;
+  /**
+   * PRESENT MEANS UNPAID, ABSENT MEANS PAID - it is deleted, never set false.
+   * That keeps every record in the one shape feePaid() expects. It gates money
+   * and nothing else. First drafted as a required boolean; the compiler pointed
+   * at the `delete` that makes it optional.
+   */
+  pending?: boolean;
+  handle: string;
+  registeredAt: number;
+  checkins: Checkins;
+  /** Set by the director. A disqualified angler's catches stop counting. */
+  disqualified?: boolean;
+  dqReason?: string;
+  /** Null once a DQ is lifted. */
+  dqAt?: number | null;
+};
+
+/** A fish, filed from the water. */
+type Catch = {
+  id: string;
+  anglerId: string;
+  anglerName: string;
+  division: Division;
+  /** Null unless somebody else's device filed this one - then, who. */
+  filedBy: FiledBy | null;
+  species: string;
+  length: number;
+  hasPhoto: boolean;
+  photoUrl: string;
+  /** The photo's measurements. See PhotoAnalysis - the name is historical. */
+  precheck: PhotoAnalysis | null;
+  location: GeoFix | null;
+  capture: PhotoCapture | null;
+  timestamp: number;
+  status: CatchStatus;
+  /** Fish-I's look at the photo, once the director has asked for one. */
+  aiReview?: AiReview;
+};
+
+/**
+ * Who filed a catch on someone else's behalf - a teammate, or the director at
+ * the weigh-in - and when. First drafted as a plain string; filedByFor() has
+ * always returned this.
+ */
+type FiledBy = {
+  /** Null when the device filing it has no angler of its own on the roster. */
+  anglerId: string | null;
+  name: string;
+  director: boolean;
+  at: number;
+};
+
+/**
+ * What Fish-I, the vision pass, made of a catch photo.
+ *
+ * A TRUST, NOT A GUARANTEE. This is the answer an AI model was asked to give,
+ * and nothing makes it follow the shape. So every field is optional, and the
+ * screen that shows it still checks each one - `r.boardVisible === false`,
+ * `typeof r.speciesConfidence === 'number'` - rather than leaning on this.
+ * A review that failed carries only `error` and `reviewedAt`.
+ */
+type AiReview = {
+  reviewedAt: number;
+  error?: string;
+  /** Does the fish in the photo match the species that was claimed? */
+  matchesClaim?: boolean;
+  /** 0 to 1. */
+  speciesConfidence?: number;
+  boardVisible?: boolean;
+  noseAtStop?: boolean;
+  tailInFrame?: boolean;
+  fishFlat?: boolean;
+  handBlocking?: boolean;
+  concerns?: string[];
+};
+
+/** A catch known to have a position. */
+type LocatedCatch = Catch & { location: GeoFix };
+
+/**
+ * Whether someone may act for an angler - file a catch, check them in - and
+ * who that angler is.
+ *
+ * Four outcomes, not a yes/no with an angler that might be there, because one
+ * of the refusals still carries an angler: 'not-yours' is a real angler on the
+ * roster that this device is not allowed to act for. Written this way round,
+ * checking `ok` is enough for the compiler to know an angler is present -
+ * which is what the code filing a catch has always relied on.
+ */
+type ActionGuardResult =
+  | { ok: true; code: 'ok'; angler: Angler; message: string }
+  | { ok: false; code: 'no-angler' | 'not-registered'; angler: null; message: string }
+  | { ok: false; code: 'not-yours'; angler: Angler; message: string };
+
+// --- the smaller shapes the anglers-and-catches code passes around ------------
+
+/** What gets burned into a photo's pixels, and kept beside them. */
+type PhotoStamp = {
+  at: number;
+  /** Where the photo came from: the in-app camera, or a file off the camera roll. */
+  source: string;
+  /** Null until this device has heard the server's time; the stamp says so then. */
+  clockOffsetMs: number | null;
+  /** The text drawn onto the photo, one entry per line. */
+  lines: string[];
+};
+
+/**
+ * Whether the photo stored now is still the one that was submitted. Unchecked
+ * when the catch predates fingerprints - nothing recorded, nothing to compare.
+ */
+type PhotoIntegrity = { checked: boolean; match: boolean; distance: number };
+
+/** How far apart two photos' fingerprints are, and whether the nearest was a crop. */
+type HashDistance = { distance: number; cropped: boolean };
+
+/** An angler still on the water after the day's final check-in. */
+type OverdueCheckout = { angler: Angler; dayKey: string; overdueSeconds: number };
+
+/** One line of the standings: an angler, or a team as one, with their fish. */
+type StandingsGroup = { key: string; name: string; fish: Catch[]; anglerIds: string[] };
+
+/**
+ * Something whose pixels can be read, and whose size is known. The canvas API's
+ * own CanvasImageSource was the first choice and the wrong one: it includes
+ * sources with no width or height, and the photo analysis needs both.
+ */
+type PixelSource = HTMLImageElement | HTMLVideoElement | HTMLCanvasElement;

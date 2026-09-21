@@ -90,7 +90,7 @@ Or the tests one at a time, after a build:
 
 ```
 node test/lint.mjs          # structure, policy, assets, offline shell
-node test/events.test.mjs   # behaviour  (1,404 checks)
+node test/events.test.mjs   # behaviour  (1,410 checks)
 node test/fish-i.test.mjs   # the serverless endpoint  (125 checks)
 ```
 
@@ -163,7 +163,7 @@ make sure a thing is there before it uses it?
 | Check | State | Findings |
 |---|---|---|
 | `strictNullChecks` | **on** | 524 when switched on, all resolved rather than silenced |
-| `noImplicitAny` | **in progress** | 984 when measured; 760 left, the data layer done |
+| `noImplicitAny` | **in progress** | 984 when measured; 563 left, two areas done |
 | `+ noUncheckedIndexedAccess` | | 1,029 running total |
 | `+ the rest of strict, and the unused checks` | | 1,047 running total |
 
@@ -221,7 +221,7 @@ them - `noImplicitAny` only reports an `any` nobody wrote.
   nothing's forms: reset to `null` in code, and read as `undefined` from a
   missing `data-` attribute.
 
-`test/lint.mjs` prints how many remain on every run. It is 37 now, from 48.
+`test/lint.mjs` prints how many remain on every run. It is 32 now, from 48.
 
 ### noImplicitAny, one area at a time
 
@@ -231,7 +231,7 @@ area its own PR and the count falling as it goes; the last PR turns it on once
 there is nothing left for it to find. In order:
 
 1. **The data layer** - done. Sync, the outbox, both backends, the caches.
-2. **Anglers and catches** - registration, submission, the leaderboard, scoring.
+2. **Anglers and catches** - done. Registration, submission, the leaderboard, scoring.
 3. **The director's tools** - payouts, results, the FWP report, the boundary.
 4. **Everything else**, and then the switch goes on.
 
@@ -272,6 +272,50 @@ inside Claude, which no test and no browser ever reaches. The test checks that
 rows arrive with their ids and are copies the app can change - the viewer hands
 out frozen objects, and writing to one throws. Removing the copy fails seven of
 its checks.
+
+**Anglers and catches** got real types of their own: `Angler` and `Catch`,
+each built from the literal that creates it - registration, submission - and
+then from every field the compiler found the app writing later. That area went
+from about 190 findings to none, and `noImplicitAny` across the app from 760 to
+563.
+
+The compiler **caught my first drafts wrong, repeatedly** - nine types outright,
+plus fields they missed - which is the case for writing these down at all.
+Among them:
+
+- `pending` on an angler is deleted rather than set false - present means
+  unpaid, absent means paid - so it is optional, not the required flag I wrote.
+- `precheck` on a catch is the photo's *measurements*, not the first-pass
+  verdict I modelled it on. The verdict is worked out from them and never
+  stored, and its levels - clear, review, flag - are not the checks' levels.
+- `makeCode()` gives up and returns null when it cannot find a free code, so an
+  angler's code can genuinely be missing.
+- A photo's clock skew is null until the device has heard the server's time,
+  and the stamp says so rather than guessing.
+
+It also found the reverse, **places where my annotation was stricter than the
+code**: `displayHandle`, `photoIntegrity` and `stillEditable` were all written
+to cope with something missing, and say so on their first line.
+
+**And it found a real bug** - fixed in its own commit, with a test. A director's
+second target species was never scored: `eventSettings()` left the saved species
+list behind, so everything asking for it - scoring, the leaderboard, payouts,
+the results and the director's own editor - saw the first species only. The
+second vanished from the list as soon as it was saved. No live impact, since the
+only event is walleye. The type error that exposed it was the bug; there was no
+honest way to make it compile without fixing it.
+
+`actionGuard` now says what it has always meant: four outcomes rather than a
+yes or no, because one refusal - "not yours" - still carries an angler. Checking
+`ok` is enough for the compiler to know an angler is present, which is what
+filing a catch relies on; the compile proves the guard never passes without one.
+
+**What the browser could not reach.** The photo path's edits - the slot
+ordering, the mismatch note, reading an upload once - only run when a catch has
+a photo, and production has none. Each is identical by construction, and none
+is covered by a behaviour test. Proving them needs a catch filed with a photo,
+and the preview shares production's database, so that is real data;
+`sql/reset-test-data.sql` clears it afterwards.
 
 **One thing the tests cannot tell apart yet.** The live database is empty until
 there is a tournament in it, so a browser pass against production syncs every
@@ -323,7 +367,7 @@ the real `vercel.json` headers:
 - the app loads and the home screen renders, with **no CSP violations**
 - the only remote requests are to Supabase — no Google origin, no CDN
 - fonts load and render from `vendor/fonts-v1/`
-- all 1,529 checks across the three test files pass
+- all 1,535 checks across the three test files pass
 - each new check in `test/lint.mjs` was deliberately broken to confirm it fails
 - `app/boot-guard.js` was checked both ways: silent on a healthy load, and
   showing its message when `app/livewire.js` was blocked
