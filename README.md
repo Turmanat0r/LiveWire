@@ -90,7 +90,7 @@ Or the tests one at a time, after a build:
 
 ```
 node test/lint.mjs          # structure, policy, assets, offline shell
-node test/events.test.mjs   # behaviour  (1,410 checks)
+node test/events.test.mjs   # behaviour  (1,416 checks)
 node test/fish-i.test.mjs   # the serverless endpoint  (125 checks)
 ```
 
@@ -416,18 +416,19 @@ Changes worth knowing about. None alters anything the page does today:
   has none; this only matters if one is ever added.
 - **A side-bet button with no bet id** returns before loading anything. It found
   no bet and returned a line later before.
-- **The "most fish" leader** is worked out with a `reduce` the compiler can
-  follow, instead of a loop it could not. The two were run side by side on
-  200,000 random tallies, 76,818 of them with a tie for the lead, and picked the
-  same angler every time.
 
-**Found, and not changed here: a tie in a "most fish" side bet.** Two anglers on
-the same count are split by whichever catch the server happened to send first.
-Every other ranking in the app breaks a tie on the earliest fish, because
-arrival order changes when a row is updated - see the note above
-`byLengthThenEarliest`. So two phones can show different leaders for a tied
-"most fish" bet. Which rule a tie should follow is the director's to decide,
-so it is left as it was.
+**And a tie in a "most fish" side bet now goes to whoever got there first** -
+fixed in its own commit, with tests, at the director's call. Typing that code
+meant checking what it did on a tie, and the answer was: whichever catch the
+server happened to send first. Every other ranking in the app breaks a tie on
+the earliest fish, because arrival order changes when a row is updated - see the
+note above `byLengthThenEarliest` - so two phones could name different leaders
+for the same bet. Now more fish wins, a tie on the count goes to the angler who
+reached it first, and the leader's line says "got there first" when that is what
+decided it. The earliest-then-id rule is `byEarliest`, written once and shared
+with the "first fish" bet. Four of the six new tests fail against the old code,
+including one where it named a different leader depending only on the order the
+same two catches arrived in.
 
 **One thing the tests cannot tell apart yet.** The live database is empty until
 there is a tournament in it, so a browser pass against production syncs every

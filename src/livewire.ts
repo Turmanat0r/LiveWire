@@ -6037,6 +6037,13 @@ function bySmallestThenEarliest(a: Catch, b: Catch): number {
       || (catchTime(a) - catchTime(b))
       || String(a.id).localeCompare(String(b.id));
 }
+// The tie-break on its own - earliest, then id - for the rankings where length
+// is not the question: the first fish of a side bet, and who reached a count
+// first in a "most fish" one.
+function byEarliest(a: Catch, b: Catch): number {
+  return (catchTime(a) - catchTime(b))
+      || String(a.id).localeCompare(String(b.id));
+}
 
 // Shared ranking used by BOTH the public leaderboard and the director's
 // contestant view, so "current standing" can never drift between the two.
@@ -6642,18 +6649,25 @@ function betStanding(bet: Bet, rows: BetRow[], catches: Catch[], anglerById: Rec
   if(eligible.length === 0) return null;
 
   if(bet.scoring === 'most'){
-    const counts: Record<string, number> = {};
-    eligible.forEach(c=>{ counts[c.anglerId] = (counts[c.anglerId] || 0) + 1; });
-    // The first to reach the highest count. `eligible` is not empty, so there
-    // is always one.
-    const ids = Object.keys(counts);
-    const bestId = ids.reduce((m, id)=> counts[id] > counts[m] ? id : m, ids[0]);
-    const best = counts[bestId];
-    return { anglerId: bestId, detail: best + ' approved ' + (best === 1 ? 'fish' : 'fish') };
+    // Each entrant's fish, earliest first - so the time an angler reached a
+    // count is the time of that many-th fish.
+    const byAngler: Record<string, Catch[]> = {};
+    eligible.forEach(c=>{ (byAngler[c.anglerId] = byAngler[c.anglerId] || []).push(c); });
+    const tallies = Object.keys(byAngler).map(id=> byAngler[id].sort(byEarliest));
+    const best = Math.max.apply(null, tallies.map(t=> t.length));
+    // Most fish wins. A tie on the count goes to whoever GOT THERE FIRST - the
+    // earliest-fish rule every other ranking uses, and for the same reason:
+    // the order catches arrive in changes when one is updated, so it cannot be
+    // what decides. It used to be, here, and two phones could name different
+    // leaders for the same bet.
+    const level = tallies.filter(t=> t.length === best);
+    const leader = level.map(t=> t[best - 1]).sort(byEarliest)[0];
+    return { anglerId: leader.anglerId,
+             detail: best + ' approved ' + (best === 1 ? 'fish' : 'fish') +
+                     (level.length > 1 ? ', got there first' : '') };
   }
   if(bet.scoring === 'first'){
-    const first = eligible.slice().sort((a,b)=> (catchTime(a) - catchTime(b))
-                                            || String(a.id).localeCompare(String(b.id)))[0];
+    const first = eligible.slice().sort(byEarliest)[0];
     return { anglerId: first.anglerId,
              detail: 'at ' + new Date(first.timestamp).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) };
   }
