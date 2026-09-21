@@ -5120,5 +5120,31 @@ section('the Claude viewer backend hands out rows it can safely change');
 }
 
 // ============================================================
+section('a second target species scores, and stays on the director\'s list');
+// Every multi-species check above hands scoringSpecies() its settings
+// directly. Nothing asked the way the app itself asks - with no argument,
+// through eventSettings() - and eventSettings() left the stored list behind.
+//
+// So a second species the director saved vanished from their own list the
+// moment it redrew, the next one they added overwrote it, and it never scored:
+// not on the leaderboard, not in payouts, not in the final results. Found by
+// giving eventSettings() a type, whose result had no speciesList for
+// speciesList() to read.
+{
+  seed([], [], [], {});
+  await setEvent(E1);
+  await t.saveSpeciesList([{ name:'Walleye', recordInches:36 },
+                           { name:'Northern Pike', recordInches:44 }]);
+
+  check('the director\'s list keeps both species',
+    t.speciesList().map((x) => x.name), ['Walleye', 'Northern Pike']);
+  check('both score, asked the way scoring asks', t.scoringSpecies(), ['Walleye', 'Northern Pike']);
+  check('a pike catch scores', t.isScoringSpecies('Northern Pike'), true);
+  check('and has its own length ceiling', t.recordInches('Northern Pike'), 44);
+  check('the first species still scores', t.isScoringSpecies('Walleye'), true);
+  check('a species nobody chose still does not', t.isScoringSpecies('Yellow Perch'), false);
+}
+
+// ============================================================
 console.log('\n' + (fail === 0 ? 'ALL PASS' : fail + ' FAILED') + '  (' + pass + ' passed)');
 process.exit(fail === 0 ? 0 : 1);

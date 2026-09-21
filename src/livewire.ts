@@ -2096,7 +2096,14 @@ function eventSettings(id?: string){
   return {
     targetSpecies: saved.targetSpecies || evt.targetSpecies || 'Fish',
     recordInches: Number(saved.recordInches != null ? saved.recordInches : evt.recordInches) || 0,
-    course: saved.course || evt.course || { kind:'none' }
+    course: saved.course || evt.course || { kind:'none' },
+    // The director's species list, when they have saved one. Left out, as it was
+    // until this line was added, speciesList() never saw it: asked with no
+    // argument - the way scoring, the leaderboard, payouts, the results and the
+    // director's own editor all ask - it fell back to targetSpecies alone. A
+    // second species vanished from the list the moment it was saved and never
+    // scored. An event with no list still falls back exactly as before.
+    speciesList: saved.speciesList
   };
 }
 async function saveEventSettings(patch: RowFields){
