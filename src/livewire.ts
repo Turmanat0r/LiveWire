@@ -1061,24 +1061,24 @@ const PHOTO_STEPS = [
 const PHOTO_BUDGET_DEFAULT = 140000;
 function photoBudget(){ return store && store.photoBudget ? store.photoBudget : PHOTO_BUDGET_DEFAULT; }
 
-function localGet(key){
+function localGet(key: string): string | null {
   try{ return window.localStorage.getItem(STORAGE_PREFIX + key); }
   catch(e){ return null; }
 }
-function localSet(key, value){
+function localSet(key: string, value: string): boolean {
   try{ window.localStorage.setItem(STORAGE_PREFIX + key, value); return true; }
   catch(e){ console.error(e); return false; }
 }
-function localDel(key){
+function localDel(key: string){
   try{ window.localStorage.removeItem(STORAGE_PREFIX + key); }catch(e){}
 }
-function deepClone(v){
+function deepClone<T>(v: T): T {
   try{ return JSON.parse(JSON.stringify(v)); }catch(e){ return v; }
 }
 
-const SHARED_COLLECTIONS = ['anglers','catches','donations','messages','signals','bets'];
-let store: UnshapedObject | null = null;                 // the active backend, or null for device-only
-let syncState = 'connecting';     // connecting | live | offline | local
+const SHARED_COLLECTIONS: SharedCollection[] = ['anglers','catches','donations','messages','signals','bets'];
+let store: Backend | null = null;                 // the active backend, or null for device-only
+let syncState: SyncState = 'connecting';     // connecting | live | offline | local
 let syncDetail = '';
 let storeFull = false;
 const liveCache: LiveCache = { anglers:null, catches:null, donations:null, messages:null, signals:null, bets:null, config:null };
@@ -1109,8 +1109,8 @@ function activeEvent(){ return eventById(activeEventId()) || EVENTS[0]; }
 // backfill is this line, not a migration. Rows get a real stamp as they are
 // next written (see saveCollection), and untouched ones keep reading correctly
 // forever.
-function rowEventId(row){ return (row && row.eventId) || LEGACY_EVENT_ID; }
-function isActiveEventRow(row){ return rowEventId(row) === activeEventId(); }
+function rowEventId(row: Row){ return (row && row.eventId) || LEGACY_EVENT_ID; }
+function isActiveEventRow(row: Row){ return rowEventId(row) === activeEventId(); }
 const photoCache = new Map();
 let storeRefreshTimer: TimerId | null = null;
 
@@ -1129,8 +1129,8 @@ let storeRefreshTimer: TimerId | null = null;
 // THIS STEP CHANGES NO BEHAVIOUR. Until anonymous sign-in is switched on in the
 // Supabase dashboard, signInAnonymously() fails and every request falls back to
 // the anon key exactly as before. Turning it on is what makes it live.
-let sbClient: UnshapedObject | null = null;
-let authSession: UnshapedObject | null = null;
+let sbClient: SupabaseClient | null = null;
+let authSession: AuthSession | null = null;
 let authMode = 'anon-key';   // anon-key | anonymous | signed-in | director
 
 function authModeLabel(){
@@ -1146,7 +1146,7 @@ function bearerToken(){
   return (authSession && authSession.access_token) || SUPABASE_ANON_KEY;
 }
 
-function noteAuthSession(session){
+function noteAuthSession(session: AuthSession | null | undefined){
   authSession = session || null;
   const user = session && session.user;
   const meta = (user && user.app_metadata) || {};
@@ -1294,7 +1294,7 @@ function identitySettledMissing(){ return identityTried && identityMissing(); }
 // of an identity. "Signing in" is the honest word even though nobody typed a
 // password: what is missing is this device's place in the tournament, and the
 // angler needs to know it is not their fish, their form or their phone.
-function identityBlockedText(what){
+function identityBlockedText(what: string){
   return 'This device has not finished signing in to the tournament server, so '
     + what + ' cannot be saved yet. Stay where you have signal for a few seconds '
     + 'and try again — it keeps retrying on its own. If it will not clear, '
@@ -1344,7 +1344,7 @@ async function ensureIdentity(){
         identityError = 'the sign-in library could not be loaded';
         return false;
       }
-      const client: UnshapedObject = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      const client: SupabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
           persistSession: true,
           autoRefreshToken: true,
@@ -1354,7 +1354,7 @@ async function ensureIdentity(){
       });
       sbClient = client;
       // Fires on refresh as well as sign-in, so the token we send is never stale.
-      client.auth.onAuthStateChange((_evt, session)=> noteAuthSession(session));
+      client.auth.onAuthStateChange((_evt: string, session: AuthSession | null)=> noteAuthSession(session));
     }
 
     const existing = await sbClient.auth.getSession();
@@ -1388,7 +1388,7 @@ async function ensureIdentity(){
 // transient, and an angler who opened the app in a dead spot at the ramp has
 // signal again a minute later. Backs off to every 30s and then keeps going,
 // because the alternative is a phone that quietly cannot file a fish all day.
-function noteIdentityAttempt(ok){
+function noteIdentityAttempt(ok: boolean){
   identityTried = true;
   try{ updateSyncUi(); }catch(e){}
   try{ updateRegisterReadiness(); }catch(e){}
@@ -1442,9 +1442,9 @@ async function initAuth(){
 // works from any static host and as a local file. Devices pick up each other's
 // writes by polling; for a tournament, five seconds is indistinguishable from
 // realtime and costs far less complexity than a websocket.
-function supabaseBackend(){
+function supabaseBackend(): Backend {
   const base = SUPABASE_URL.replace(/\/+$/, '');
-  const TABLES = { anglers:'anglers', catches:'catches', donations:'donations',
+  const TABLES: Record<CollectionName, string> = { anglers:'anglers', catches:'catches', donations:'donations',
                    messages:'messages', signals:'signals', bets:'bets', config:'config' };
   // Built per request, not once: the session token is refreshed in the
   // background, and a header object captured at startup would go stale and
@@ -1454,7 +1454,7 @@ function supabaseBackend(){
     'Authorization': 'Bearer ' + bearerToken()
   });
 
-  async function rest(path, init){
+  async function rest(path: string, init?: RequestInit){
     const opts = Object.assign({}, init);
     opts.headers = Object.assign({}, authHeaders(), (init && init.headers) || {});
     const res = await fetch(base + path, opts);
@@ -1471,7 +1471,7 @@ function supabaseBackend(){
     return res;
   }
 
-  function publicPhotoUrl(catchId){
+  function publicPhotoUrl(catchId: string){
     return base + '/storage/v1/object/public/' + SUPABASE_BUCKET + '/' +
            encodeURIComponent(catchId) + '.jpg';
   }
@@ -1489,15 +1489,17 @@ function supabaseBackend(){
   // rows however it likes, and that order changes when a row is updated - so
   // paging over an unordered set can miss rows and repeat others in the same
   // pass. Ordering by id makes the pages line up.
-  async function fetchAll(table){
+  async function fetchAll(table: string): Promise<Row[]> {
     const q = '/rest/v1/' + table + '?select=id,data&order=id.asc&limit=' + SYNC_PAGE;
-    const out: Unshaped[] = [];
+    const out: Row[] = [];
     // Ask for the row count with the first page: it comes back in the same
     // round trip, so we learn how far to page without a wasted request.
     const first = await rest(q + '&offset=0', {
       method: 'GET', headers: { 'Prefer': 'count=exact' }
     });
-    const take = (rows)=>{
+    // Not assumed to be a list: the server can answer with an error object instead,
+    // and this is the check that notices.
+    const take = (rows: unknown)=>{
       if(!Array.isArray(rows)) return 0;
       for(const r of rows) out.push(Object.assign({}, r.data, { id: r.id }));
       return rows.length;
@@ -1530,7 +1532,7 @@ function supabaseBackend(){
       await rest('/rest/v1/config?select=id&limit=1', { method: 'GET' });
     },
 
-    async applyOp(op){
+    async applyOp(op: OutboxOp){
       if(op.kind === 'photo'){
         const blob = dataUrlToBlob(op.body && op.body.data);
         if(!blob){ const e: HttpError = new Error('Unreadable photo data'); e.status = 400; throw e; }
@@ -1558,7 +1560,7 @@ function supabaseBackend(){
       });
     },
 
-    start(onRows){
+    start(onRows: RowsHandler){
       // ONE tick at a time. setInterval does not wait for an async callback, so
       // on a weak link ticks used to overlap and pile up - and the extra
       // concurrent fetches made the weak link weaker. That is a spiral, and it
@@ -1590,7 +1592,9 @@ function supabaseBackend(){
         if(typeof document !== 'undefined' && document.hidden){ schedule(); return; }
         inFlight = true;
         try{
-          for(const coll of Object.keys(TABLES)){
+          // Object.keys is always typed as plain strings - an object can carry
+          // keys its type does not mention. TABLES is exactly one per collection.
+          for(const coll of Object.keys(TABLES) as CollectionName[]){
             onRows(coll, await fetchAll(TABLES[coll]));
           }
           failures = 0;
@@ -1626,9 +1630,9 @@ function supabaseBackend(){
 
     // Deterministic from the catch id, so a queued upload still gets the right
     // address written onto the catch immediately.
-    photoUrlFor(catchId){ return publicPhotoUrl(catchId); },
-    async getPhoto(catchId){ return publicPhotoUrl(catchId); },
-    async deletePhoto(catchId){
+    photoUrlFor(catchId: string){ return publicPhotoUrl(catchId); },
+    async getPhoto(catchId: string){ return publicPhotoUrl(catchId); },
+    async deletePhoto(catchId: string){
       try{
         await rest('/storage/v1/object/' + SUPABASE_BUCKET + '/' +
                    encodeURIComponent(catchId) + '.jpg', { method: 'DELETE' });
@@ -1638,13 +1642,13 @@ function supabaseBackend(){
 }
 
 // ---- backend: the Claude viewer's shared store ----
-function artifactDbBackend(db){
+function artifactDbBackend(db: ArtifactDb): Backend {
   return {
     label: 'shared store',
     photoBudget: 140000,   // records cap at 256 KiB
     async connect(){},
 
-    async applyOp(op){
+    async applyOp(op: OutboxOp){
       if(op.kind === 'photo'){
         return await db.doc('photos/' + op.id).set({ data: (op.body||{}).data, at: Date.now() });
       }
@@ -1653,31 +1657,26 @@ function artifactDbBackend(db){
       return await ref.set(op.body || {});
     },
 
-    start(onRows){
+    start(onRows: RowsHandler){
       SHARED_COLLECTIONS.forEach(coll=>{
         db.collection(coll).onSnapshot(snap=>{
           // data() is frozen and reused between deliveries, but this app mutates
           // rows in place (checkins, dq flags), so each row is cloned out.
-          onRows(coll, snap.docs.map(d=>{
-            const row = deepClone(d.data() || {});
-            row.id = d.id;
-            return row;
-          }));
+          onRows(coll, snap.docs.map(d=> Object.assign(deepClone(d.data() || {}), { id: d.id })));
         }, handleStoreError);
       });
       db.doc('config/tournament').onSnapshot(snap=>{
-        const body = snap.exists ? deepClone(snap.data() || {}) : {};
-        body.id = 'tournament';
+        const body = Object.assign(snap.exists ? deepClone(snap.data() || {}) : {}, { id: 'tournament' });
         onRows('config', snap.exists ? [body] : []);
       }, handleStoreError);
     },
 
     photoUrlFor(){ return ''; },   // keyed by catch id, no address to store
-    async getPhoto(catchId){
+    async getPhoto(catchId: string){
       const snap = await db.doc('photos/' + catchId).get();
       return snap.exists ? ((snap.data() || {}).data || '') : '';
     },
-    async deletePhoto(catchId){ await db.doc('photos/' + catchId).delete(); }
+    async deletePhoto(catchId: string){ await db.doc('photos/' + catchId).delete(); }
   };
 }
 
@@ -1732,7 +1731,7 @@ let rosterLoaded = false;
 // and waiting for a sync that will never come would block registration forever.
 function rosterIsLoaded(){ return rosterLoaded || syncState === 'local'; }
 
-function onRows(coll, rows){
+function onRows(coll: CollectionName, rows: Row[]){
   if(coll === 'anglers'){
     rosterLoaded = true;
     try{ updateRegisterReadiness(); }catch(e){}
@@ -1752,13 +1751,13 @@ function onRows(coll, rows){
   onStoreChanged();
 }
 
-function handleStoreError(err){
+function handleStoreError(err: HttpError){
   console.error(err);
   if(err && err.code === 'quota_exceeded') storeFull = true;
   setSyncState('offline', (err && err.message) || 'Lost the shared store.');
 }
 
-function setSyncState(state, detail){
+function setSyncState(state: SyncState, detail?: string){
   syncState = state;
   syncDetail = detail || '';
   updateSyncUi();
@@ -1778,14 +1777,18 @@ function onStoreChanged(){
 }
 
 // ---- outbox ----
-function readOutbox(){
+// Trusted as OutboxOp[] because only this app writes the outbox - but it is
+// read back from local storage, and an older build may have written it in a
+// shape this one does not expect. That is why the code reading an op still
+// checks the fields it depends on, rather than leaning on this type.
+function readOutbox(): OutboxOp[] {
   try{ return JSON.parse(localGet('outbox') || '[]'); }catch(e){ return []; }
 }
-function writeOutbox(list){ return localSet('outbox', JSON.stringify(list)); }
+function writeOutbox(list: OutboxOp[]){ return localSet('outbox', JSON.stringify(list)); }
 function outboxCount(){ return readOutbox().length; }
-function opKey(op){ return op.kind + ':' + op.coll + '/' + op.id; }
+function opKey(op: OutboxOp){ return op.kind + ':' + op.coll + '/' + op.id; }
 
-function queueOutbox(ops){
+function queueOutbox(ops: OutboxOp[]){
   const q = readOutbox();
   ops.forEach(op=>{
     // One pending write per record; a newer edit supersedes an older one.
@@ -1803,7 +1806,7 @@ async function drainOutbox(){
   const q = readOutbox();
   if(q.length === 0) return;
   draining = true;
-  const left: Unshaped[] = [];
+  const left: OutboxOp[] = [];
   for(const op of q){
     try{ await store.applyOp(op); }
     catch(e){
@@ -1822,7 +1825,7 @@ async function drainOutbox(){
 
 // A write worth retrying vs one that never will be. Covers both backends: db
 // error codes, and HTTP status for the REST one.
-function permanentError(e){
+function permanentError(e: HttpError){
   if(e && (e.code === 'invalid_argument' || e.code === 'quota_exceeded')) return true;
   if(e && typeof e.status === 'number'){
     return e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429;
@@ -1845,7 +1848,7 @@ let lastWriteError: HttpError | null = null;
 // blanket "check your signal and try again" sent people to the one place the
 // answer was not: their bars were full, and the server had refused their
 // identity. Everything else keeps the wording it already had.
-function writeFailureText(what){
+function writeFailureText(what: string){
   if(storeFull){
     return 'The tournament database is full. Show this to the director before submitting anything else.';
   }
@@ -1861,7 +1864,7 @@ function writeFailureText(what){
 // Postgres unique-violation, from supabase-one-entry-per-person.sql. The REST
 // layer hands back the response body, so match on the SQLSTATE and on the
 // index names rather than on prose that could change.
-function duplicateEntryError(e){
+function duplicateEntryError(e: HttpError | null){
   const m = (e && e.message) || '';
   if(!/23505/.test(m)) return null;
   if(/anglers_one_entry_per_person/.test(m)) return 'person';
@@ -1869,11 +1872,11 @@ function duplicateEntryError(e){
   return 'other';
 }
 
-async function runOps(ops){
+async function runOps(ops: OutboxOp[]){
   lastWriteQueued = false;
   lastWriteError = null;
   if(!store) return queueOutbox(ops);
-  const failed: Unshaped[] = [];
+  const failed: OutboxOp[] = [];
   for(const op of ops){
     try{ await store.applyOp(op); }
     catch(e){
@@ -1913,7 +1916,7 @@ async function runOps(ops){
 // Every row in a collection, every event. Deliberately does NOT touch
 // loadedIds - only a scoped load may do that, or a later save would read the
 // other events' records as rows the user had deleted.
-function allRows(name){
+function allRows(name: SharedCollection){
   let rows = liveCache[name];
   if(!rows){
     try{ rows = JSON.parse(localGet(name) || '[]'); }catch(e){ rows = []; }
@@ -1922,7 +1925,7 @@ function allRows(name){
   return rows;
 }
 
-function cachedRows(name){
+function cachedRows(name: SharedCollection){
   const mine = allRows(name).filter(isActiveEventRow);
   loadedIds[name] = new Set(mine.map(r=>r.id));
   return deepClone(mine);
@@ -1932,13 +1935,13 @@ function cachedRows(name){
 // Stamping here rather than at each creation site means registration, catch
 // submission and donations all inherit it with no code of their own - and an
 // older record being edited keeps the event it was born in.
-function stampEvent(row){
+function stampEvent(row: Row){
   if(row && !row.eventId) row.eventId = activeEventId();
   return row;
 }
 
-function rowBody(row){
-  const body = Object.assign({}, row);
+function rowBody(row: Row): RowFields {
+  const body: RowFields = Object.assign({}, row);
   delete body.id;
   delete body.photo;   // photos are stored apart, never inline
   return body;
@@ -1947,20 +1950,20 @@ function rowBody(row){
 // The caller only ever saw the live event's rows, so what it hands back has to
 // be folded into the full cache rather than replacing it - otherwise saving one
 // catch would wipe every other event's records out of the local mirror.
-function mergeIntoCache(name, rows){
+function mergeIntoCache(name: SharedCollection, rows: Row[]){
   const others = (liveCache[name] || []).filter(r=> !isActiveEventRow(r));
-  const mine = deepClone(rows).map(r=>{ const b = rowBody(r); b.id = r.id; return b; });
+  const mine = deepClone(rows).map((r): Row => ({ ...rowBody(r), id: r.id }));
   return others.concat(mine);
 }
 
-async function saveCollection(name, list){
+async function saveCollection(name: SharedCollection, list: Row[]){
   const rows = Array.isArray(list) ? list : [];
   rows.forEach(stampEvent);
   const ids = new Set(rows.map(r=>r.id));
   // Scoped to the live event by cachedRows(), so another event's records can
   // never appear here as something to delete.
   const prior = loadedIds[name] || new Set();
-  const removed: Unshaped[] = [];
+  const removed: string[] = [];
   prior.forEach(id=>{ if(!ids.has(id)) removed.push(id); });
 
   if(!store){
@@ -1974,7 +1977,7 @@ async function saveCollection(name, list){
 
   const prevRows = liveCache[name] || [];
   const prevSig = new Map(prevRows.map(r=>[r.id, JSON.stringify(rowBody(r))]));
-  const ops: Unshaped[] = [];
+  const ops: OutboxOp[] = [];
   rows.forEach(row=>{
     const sig = JSON.stringify(rowBody(row));
     if(prevSig.get(row.id) === sig) return;   // untouched, skip the write
@@ -2011,7 +2014,7 @@ async function saveCollection(name, list){
 }
 
 async function loadAnglers(){ return cachedRows('anglers'); }
-async function saveAnglers(list){ return await saveCollection('anglers', list); }
+async function saveAnglers(list: Row[]){ return await saveCollection('anglers', list); }
 async function loadCatches(){ return cachedRows('catches'); }
 // Every catch ever logged, across all events. ONLY the duplicate-photo check
 // uses this: a photo reused from an earlier tournament is precisely what that
@@ -2025,17 +2028,17 @@ async function loadCatchesAllEvents(){ return deepClone(allRows('catches')); }
 // of these - they use loadAnglers()/loadCatches(), which stay on the live event.
 async function loadAnglersAllEvents(){ return deepClone(allRows('anglers')); }
 async function loadBetsAllEvents(){ return deepClone(allRows('bets')); }
-async function saveCatches(list){ return await saveCollection('catches', list); }
+async function saveCatches(list: Row[]){ return await saveCollection('catches', list); }
 async function loadDonations(){ return cachedRows('donations'); }
 async function loadMessages(){ return cachedRows('messages'); }
-async function saveMessages(list){ return await saveCollection('messages', list); }
+async function saveMessages(list: Row[]){ return await saveCollection('messages', list); }
 // One row per angler, keyed by their id, so this table stays the size of the
 // field instead of growing with every fix taken.
 async function loadSignals(){ return cachedRows('signals'); }
-async function saveSignals(list){ return await saveCollection('signals', list); }
+async function saveSignals(list: Row[]){ return await saveCollection('signals', list); }
 async function loadBets(){ return cachedRows('bets'); }
-async function saveBets(list){ return await saveCollection('bets', list); }
-async function saveDonations(list){ return await saveCollection('donations', list); }
+async function saveBets(list: Row[]){ return await saveCollection('bets', list); }
+async function saveDonations(list: Row[]){ return await saveCollection('donations', list); }
 
 // ---- config ----
 // One shared record, holding which event is live and a budget per event. Both
@@ -2055,7 +2058,7 @@ function mirrorConfigLocally(){
   const map = awardsBudgetMap();
   Object.keys(map).forEach(id=> localSet('awardsBudget:' + id, String(map[id] || 0)));
 }
-async function saveConfig(patch){
+async function saveConfig(patch: RowFields){
   if(!liveCache.config) liveCache.config = {};
   Object.assign(liveCache.config, patch);
   // Once budgets are held per event, the old single number is stale - drop it
@@ -2066,7 +2069,7 @@ async function saveConfig(patch){
   return await runOps([{ kind:'set', coll:'config', id:'tournament', body: configBody() }]);
 }
 
-async function setActiveEvent(id){
+async function setActiveEvent(id: string){
   if(!eventById(id)) return false;
   localSet('activeEventId', id);
   return await saveConfig({ activeEventId: id });
@@ -2086,7 +2089,7 @@ function awardsBudgetMap(){
 // The EVENTS entry supplies the starting values; anything the director saves
 // for that event in the shared config wins. Same shape as the budgets above,
 // so it reaches every phone through the one config record.
-function eventSettings(id?){
+function eventSettings(id?: string){
   const evt = eventById(id || activeEventId()) || EVENTS[0];
   const all = (liveCache.config && liveCache.config.eventSettings) || {};
   const saved = all[evt.id] || {};
@@ -2096,7 +2099,7 @@ function eventSettings(id?){
     course: saved.course || evt.course || { kind:'none' }
   };
 }
-async function saveEventSettings(patch){
+async function saveEventSettings(patch: RowFields){
   const all = Object.assign({}, (liveCache.config && liveCache.config.eventSettings) || {});
   const id = activeEventId();
   all[id] = Object.assign({}, all[id] || {}, patch);
@@ -2224,7 +2227,7 @@ async function saveAwardsBudget(amount){
 // to budget, but this is the door every photo goes through, so the guarantee
 // belongs here too - an oversized frame is re-encoded rather than rejected.
 function fitPhoto(dataUrl){
-  return new Promise(resolve=>{
+  return new Promise<string>(resolve=>{
     if(!dataUrl || dataUrl.length <= photoBudget()){ resolve(dataUrl); return; }
     const img = new Image();
     img.onload = ()=>{
@@ -2269,7 +2272,7 @@ async function loadPhoto(catchId){
   if(photoCache.has(catchId)) return photoCache.get(catchId);
 
   // Still waiting to upload? The bytes are in the outbox.
-  const pending = readOutbox().find(op=>op.kind === 'photo' && op.id === catchId);
+  const pending = readOutbox().find((op): op is PhotoOp => op.kind === 'photo' && op.id === catchId);
   if(pending && pending.body && pending.body.data){
     photoCache.set(catchId, pending.body.data);
     return pending.body.data;
@@ -3981,7 +3984,7 @@ bindEl('reg-submit','click', async ()=>{
   const teamCode = division === 'team' ? makeCode(codePool) : '';
 
   const captainId = uid();
-  const captain: UnshapedObject = {
+  const captain: Row = {
     id: captainId, name, phone, division, partner: division==='team'?partnerName:'', bigfish,
     tournamentId, role: division==='team' ? 'captain' : 'solo', teamId: null,
     anglerCode: makeCode(codePool), teamCode,
@@ -8951,7 +8954,7 @@ function confirmByName(evt, verb, detail){
 // directly and the cache is trimmed to match.
 async function wipeEventData(id){
   const doomed: Record<string, Set<string>> = {};
-  const ops: Unshaped[] = [];
+  const ops: OutboxOp[] = [];
   for(const coll of SHARED_COLLECTIONS){
     const rows = allRows(coll).filter(r=> rowEventId(r) === id);
     doomed[coll] = new Set(rows.map(r=> r.id));
@@ -8966,7 +8969,8 @@ async function wipeEventData(id){
     localSet(coll, JSON.stringify(liveCache[coll]));
     // Otherwise the next save would read these ids as rows the user just
     // deleted from the LIVE event and try to delete them a second time.
-    if(loadedIds[coll]) gone.forEach(x=> loadedIds[coll].delete(x));
+    const ids = loadedIds[coll];
+    if(ids) gone.forEach(x=> ids.delete(x));
   }
   (doomed.catches || new Set()).forEach(cid=> deletePhoto(cid));
   onStoreChanged();

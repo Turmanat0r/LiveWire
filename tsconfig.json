@@ -71,8 +71,12 @@
     // assigning to an undeclared name, a duplicate parameter, `with` - is
     // already a compile error, and the compile is clean.
     //
-    // Worth re-checking if that ever stops being true. The tests cannot: they
-    // run the app through `new Function()`, which is not strict.
+    // And the tests exercise it, every run. The compiled file opens with
+    // "use strict", and test/events.test.mjs passes that file as the BODY of
+    // `new Function()` - where a directive at the top applies. So every
+    // behaviour test runs the app strict, exactly as a phone does. (This comment
+    // once said the opposite. It was wrong: it described `new Function()` in
+    // general and missed that the directive arrives inside the body.)
     "strict": false,
     "noImplicitAny": false,
 

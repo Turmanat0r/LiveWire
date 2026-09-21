@@ -90,7 +90,7 @@ Or the tests one at a time, after a build:
 
 ```
 node test/lint.mjs          # structure, policy, assets, offline shell
-node test/events.test.mjs   # behaviour  (1,394 checks)
+node test/events.test.mjs   # behaviour  (1,404 checks)
 node test/fish-i.test.mjs   # the serverless endpoint  (125 checks)
 ```
 
@@ -163,7 +163,7 @@ make sure a thing is there before it uses it?
 | Check | State | Findings |
 |---|---|---|
 | `strictNullChecks` | **on** | 524 when switched on, all resolved rather than silenced |
-| `noImplicitAny` | next | 984 |
+| `noImplicitAny` | **in progress** | 984 when measured; 760 left, the data layer done |
 | `+ noUncheckedIndexedAccess` | | 1,029 running total |
 | `+ the rest of strict, and the unused checks` | | 1,047 running total |
 
@@ -221,7 +221,63 @@ them - `noImplicitAny` only reports an `any` nobody wrote.
   nothing's forms: reset to `null` in code, and read as `undefined` from a
   missing `data-` attribute.
 
-`test/lint.mjs` prints how many remain on every run. It is 48 now.
+`test/lint.mjs` prints how many remain on every run. It is 37 now, from 48.
+
+### noImplicitAny, one area at a time
+
+`noImplicitAny` is a single switch, but the typing behind it does not have to
+be one change. It is being done area by area with the switch still off, each
+area its own PR and the count falling as it goes; the last PR turns it on once
+there is nothing left for it to find. In order:
+
+1. **The data layer** - done. Sync, the outbox, both backends, the caches.
+2. **Anglers and catches** - registration, submission, the leaderboard, scoring.
+3. **The director's tools** - payouts, results, the FWP report, the boundary.
+4. **Everything else**, and then the switch goes on.
+
+**The data layer went first because a wrong shape there loses a catch.** It
+now has a written contract, where before it had two backends that had to agree
+on one nobody had written down:
+
+- **`Backend`** - everything a backend offers the app. Both
+  factories are declared as returning one, so the compiler now checks that the
+  tournament server and the Claude viewer's store agree. Nothing did before.
+- **`OutboxOp`** - a write waiting for signal, in exactly one of three kinds:
+  `set`, `delete` or `photo`. A delete has no body, and code that reads one
+  now has to say which kind it found.
+- **`CollectionName`** - the six shared collections plus `config`, as a
+  fixed list rather than any string.
+- **`SupabaseClient`** and **`ArtifactDb`** - the two outside libraries,
+  described only as far as the app calls them. Each was written by reading
+  every call, so it cannot drift on a method the app has never used.
+
+`Row` - a stored record, any fields plus its id - is loose on purpose, and not
+a placeholder. The data layer moves records without looking inside them; what a
+catch or an angler carries belongs to the code that reads one, and gets typed in
+the next area.
+
+Typing this one layer cleared 224 findings across the whole app, not the 80
+inside it: once `loadAnglers()` returns records, everything downstream of it is
+typed too.
+
+**What the compiler found:** `AuthSession` was first drafted with only `user`
+and it rejected that four times; the viewer's `onSnapshot` takes an error
+handler the first draft left off; and `readOutbox()` is now openly a trust
+rather than a guarantee - the outbox comes back out of local storage, which an
+older build may have written in a different shape, so the code reading it still
+checks the fields it depends on.
+
+**The Claude viewer's store now has a test.** It had none: it only switches on
+inside Claude, which no test and no browser ever reaches. The test checks that
+rows arrive with their ids and are copies the app can change - the viewer hands
+out frozen objects, and writing to one throws. Removing the copy fails seven of
+its checks.
+
+**One thing the tests cannot tell apart yet.** The live database is empty until
+there is a tournament in it, so a browser pass against production syncs every
+collection and gets no rows back. "Every row has an id" is then true of nothing.
+The behaviour tests are what carry real rows through the merge - breaking it
+fails two of them - so they, not the empty production sync, are the evidence.
 
 Worth knowing before you start: `noUncheckedIndexedAccess` on its own reports
 nothing at all, because it has no effect without `strictNullChecks`. And a CLI
@@ -250,8 +306,14 @@ TypeScript 7 always emits `"use strict"`; `alwaysStrict: false` was removed
 from the compiler. That was checked rather than assumed — strict mode would
 change this app if it used `this` in a plain call, `arguments`, or an octal
 literal, and it uses none of the three. Everything else strict mode forbids is
-already a compile error. Worth re-checking if that stops being true, because
-the tests cannot: `new Function()` is not strict.
+already a compile error.
+
+**And the behaviour tests run strict too, every time.** The compiled file opens
+with `"use strict"`, and the test harness passes that file as the *body* of
+`new Function()`, where a directive at the top applies. So all of them exercise
+the app exactly as a phone does. An earlier version of this section said the
+tests could not see strict mode at all; that was wrong, and it understated how
+much the suite covers rather than overstating it.
 
 ## What was actually tested, and what was not
 
@@ -261,7 +323,7 @@ the real `vercel.json` headers:
 - the app loads and the home screen renders, with **no CSP violations**
 - the only remote requests are to Supabase — no Google origin, no CDN
 - fonts load and render from `vendor/fonts-v1/`
-- all 1,519 checks across the three test files pass
+- all 1,529 checks across the three test files pass
 - each new check in `test/lint.mjs` was deliberately broken to confirm it fails
 - `app/boot-guard.js` was checked both ways: silent on a healthy load, and
   showing its message when `app/livewire.js` was blocked

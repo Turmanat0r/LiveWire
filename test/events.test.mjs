@@ -64,7 +64,7 @@ globalThis.__t = {
   registrationCloseText,
   myAnglerIds, populateAnglerSelect, renderRoster, statusClass, statusHtml, lengthHtml, escapeHtml,
   bearerToken, authModeLabel, noteAuthSession, initAuth, SUPABASE_ANON_KEY,
-  supabaseBackend,
+  supabaseBackend, artifactDbBackend,
   generateHandle, uniqueHandle, displayHandle,
   loadMessages, saveMessages, chatAuthor, chatUnreadCount, chatLastSeen,
   markChatSeen, chatItemHtml, chatBragHtml, announceCatch, CHAT_MAX, canDeleteMessage,
@@ -5052,6 +5052,71 @@ t.identityTried = wasTried;
 // ---- the write gate lets a device-only build straight through ----
 check('a device-only build is never blocked from writing',
   await t.identityReadyForWrite(), true);
+}
+
+// ============================================================
+section('the Claude viewer backend hands out rows it can safely change');
+// The shared store inside the Claude viewer is one of the app's three backends,
+// and until this section nothing tested it at all - it only switches on when
+// the page is opened as a published Artifact, which no test and no ordinary
+// browser ever does.
+//
+// Two things matter about the rows it passes to onRows, and both are easy to
+// break without noticing:
+//
+//   1. Each row must carry the id it is filed under. The store keeps the id
+//      beside the document rather than inside it, so it has to be put back.
+//   2. Each row must be a COPY. The viewer hands out the same frozen object on
+//      every delivery, while this app changes rows in place - a check-in, a
+//      DQ flag. Putting the id straight onto the viewer's own object would
+//      throw on a frozen one, and on a merely shared one would quietly change
+//      what the next delivery hands over.
+//
+// This runs strict, as the app does on a phone: the compiled file opens with
+// "use strict", and new Function() honours a directive at the top of its body.
+// So a write to a frozen row THROWS here rather than silently doing nothing,
+// which is what lets the copy check below fail loudly when it should.
+{
+  const frozenCatch = Object.freeze({ anglerId: 'a1', length: 21.5 });
+  const frozenConfig = Object.freeze({ activeEventId: 'ev-1' });
+  const delivered = [];
+
+  // A stand-in for the viewer's store: every collection delivers one frozen
+  // document, and the config document exists.
+  const fakeDb = {
+    collection(name) {
+      return {
+        onSnapshot(handler) {
+          handler({ docs: [{ id: name + '-1', data: () => frozenCatch }] });
+        }
+      };
+    },
+    doc() {
+      return { onSnapshot(handler) { handler({ exists: true, data: () => frozenConfig }); } };
+    }
+  };
+
+  let threw = null;
+  try {
+    t.artifactDbBackend(fakeDb).start((coll, rows) => delivered.push({ coll, rows }));
+  } catch (e) { threw = e.message; }
+
+  check('it starts without throwing on frozen documents', threw, null);
+
+  const catches = (delivered.find((d) => d.coll === 'catches') || {}).rows || [];
+  check('a collection arrives as rows', catches.length, 1);
+  check('each row carries the id it is filed under', catches[0] && catches[0].id, 'catches-1');
+  check('and keeps its own fields', catches[0] && catches[0].length, 21.5);
+  check('it is a copy, not the viewer\'s own object', catches[0] === frozenCatch, false);
+  check('which the app can change in place', (() => {
+    try { catches[0].checkedIn = true; return catches[0].checkedIn; } catch (e) { return 'threw'; }
+  })(), true);
+  check('without touching what the viewer holds', 'id' in frozenCatch, false);
+
+  const config = (delivered.find((d) => d.coll === 'config') || {}).rows || [];
+  check('the config record arrives too', config.length, 1);
+  check('filed under its fixed id', config[0] && config[0].id, 'tournament');
+  check('and it is a copy as well', config[0] === frozenConfig, false);
 }
 
 // ============================================================

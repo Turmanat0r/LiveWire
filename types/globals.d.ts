@@ -71,6 +71,8 @@ type DisableableElement = ValueElement | HTMLButtonElement;
  */
 interface HttpError extends Error {
   status?: number;
+  /** Postgres error code, when the server sends one - 23505 is a duplicate entry. */
+  code?: string;
 }
 
 /**
@@ -226,13 +228,13 @@ type MaybeId = string | null | undefined;
  * settings record rather than a list of them.
  */
 interface LiveCache {
-  anglers: Unshaped[] | null;
-  catches: Unshaped[] | null;
-  donations: Unshaped[] | null;
-  messages: Unshaped[] | null;
-  signals: Unshaped[] | null;
-  bets: Unshaped[] | null;
-  config: UnshapedObject | null;
+  anglers: Row[] | null;
+  catches: Row[] | null;
+  donations: Row[] | null;
+  messages: Row[] | null;
+  signals: Row[] | null;
+  bets: Row[] | null;
+  config: RowFields | null;
 }
 
 /**
@@ -269,3 +271,168 @@ type Boundary =
   | { kind: 'none' }
   | { kind: 'circle'; center: LatLng; radiusMiles: number }
   | { kind: 'polygon'; points: LatLng[] };
+
+// ============================================================================
+// THE DATA LAYER
+//
+// The shapes everything else in the app is built on: which collections exist,
+// what a stored record is, what a write waiting in the outbox looks like, and
+// the one interface both backends have to present. None of it was written down
+// before, and two backends had to agree on it anyway.
+// ============================================================================
+
+/**
+ * The six collections every device shares. One record per THING - a catch, an
+ * angler, one person joining one side bet - never one record holding a list,
+ * because writes are last-writer-wins and a list would lose whichever of two
+ * simultaneous additions arrived first.
+ */
+type SharedCollection = 'anglers' | 'catches' | 'donations' | 'messages' | 'signals' | 'bets';
+
+/** Everything the store moves: the six shared collections, and the one config record. */
+type CollectionName = SharedCollection | 'config';
+
+/**
+ * The fields of a stored record, apart from the id it is filed under.
+ *
+ * Loose on purpose, and NOT a placeholder like Unshaped. The data layer moves
+ * records without ever looking inside them - which fields a catch or an angler
+ * carries is the business of the code that reads one, and those get types of
+ * their own when that code does. A layer whose whole job is not to care about
+ * the contents is described accurately by a type that does not either.
+ */
+type RowFields = { [field: string]: any };
+
+/** A stored record as the app holds it: its fields, plus the id it is filed under. */
+type Row = RowFields & { id: string };
+
+/**
+ * A write waiting to reach the server. It sits in the outbox in local storage
+ * until it goes, which is what makes losing signal on the water never lose a
+ * catch. There are exactly three kinds, and each backend branches on `kind`:
+ *
+ *   set     write a record, whole
+ *   delete  remove one; there is nothing to send but which
+ *   photo   a catch photo, stored apart from the catch so that a leaderboard,
+ *           the standings and the payouts never move a single image byte
+ */
+type OutboxOp =
+  | { kind: 'set'; coll: CollectionName; id: string; body: RowFields }
+  | { kind: 'delete'; coll: CollectionName; id: string }
+  | { kind: 'photo'; coll: 'photos'; id: string; body: { data: string } };
+
+/** What a backend calls whenever a collection's rows arrive, first load or later. */
+type RowsHandler = (coll: CollectionName, rows: Row[]) => void;
+
+/**
+ * What a backend offers the app. There are two - the tournament server
+ * (Supabase) and the Claude viewer's shared store - and everything above this
+ * layer talks to whichever one is active through these and nothing else.
+ *
+ * Both factories are declared as returning this, which is the point of writing
+ * it down: until then nothing checked that the two agreed, and they had to.
+ */
+interface Backend {
+  /** How the sync indicator names it: "tournament server", "shared store". */
+  label: string;
+  /** The largest photo, in bytes of data URL, this backend will store. */
+  photoBudget: number;
+  connect(): Promise<unknown>;
+  applyOp(op: OutboxOp): Promise<unknown>;
+  start(onRows: RowsHandler): unknown;
+  /** An address for the photo, or '' where there is no address to give. */
+  photoUrlFor(catchId: string): string;
+  getPhoto(catchId: string): Promise<string>;
+  deletePhoto(catchId: string): Promise<unknown>;
+  /** Only the tournament server can page through a whole table on demand. */
+  fetchAll?: (table: string) => Promise<Row[]>;
+}
+
+/** What the sync indicator says. "local" is a phone with no server configured at all. */
+type SyncState = 'connecting' | 'live' | 'offline' | 'local';
+
+/**
+ * This device's sign-in, as the Supabase SDK hands it over - the fields the app
+ * actually reads, and no more. First drafted with only `user`, which the
+ * compiler rejected four times over.
+ */
+interface AuthSession {
+  /** Sent as the bearer token on every request once this device has signed in. */
+  access_token?: string;
+  user?: {
+    id?: string;
+    email?: string;
+    /** The SDK's own flag. Older builds omit it, and then no email means anonymous. */
+    is_anonymous?: boolean;
+    /**
+     * WHERE DIRECTOR STATUS LIVES, AND WHY HERE. app_metadata can only be set by
+     * the server. user_metadata sits right beside it and would be worthless: a
+     * client can write its own, so anyone could simply declare themselves the
+     * director. Older rows stored it as the string 'true', so both are read.
+     */
+    app_metadata?: { director?: boolean | string };
+  } | null;
+}
+
+// --- the two outside libraries the data layer talks to ----------------------
+//
+// Neither is described in full. Each interface below is the part of the library
+// the app actually calls, found by reading every call - so it is a statement
+// about this app rather than a copy of someone else's documentation, and it
+// cannot drift out of date on a method the app has never used.
+
+/** What every Supabase auth call hands back: a session on success, an error on failure. */
+interface SupabaseAuthResult {
+  data?: { session?: AuthSession | null } | null;
+  error?: { message?: string } | null;
+}
+
+/** The Supabase client, as far as the app uses it: signing in, and no further. */
+interface SupabaseClient {
+  auth: {
+    getSession(): Promise<SupabaseAuthResult>;
+    signInAnonymously(): Promise<SupabaseAuthResult>;
+    signInWithPassword(credentials: { email: string; password: string }): Promise<SupabaseAuthResult>;
+    signOut(): Promise<unknown>;
+    /** Fires on a token refresh as well as a sign-in, so the bearer token never goes stale. */
+    onAuthStateChange(handler: (event: string, session: AuthSession | null) => void): unknown;
+  };
+}
+
+/** One document in the Claude viewer's shared store, as read back. */
+interface ArtifactDocSnapshot {
+  exists: boolean;
+  data(): RowFields | undefined;
+}
+
+/** A whole collection in the Claude viewer's shared store, as read back. */
+interface ArtifactQuerySnapshot {
+  docs: { id: string; data(): RowFields }[];
+}
+
+/** A handle on one document in the Claude viewer's shared store. */
+interface ArtifactDocRef {
+  get(): Promise<ArtifactDocSnapshot>;
+  set(data: RowFields): Promise<unknown>;
+  delete(): Promise<unknown>;
+  onSnapshot(handler: (snap: ArtifactDocSnapshot) => void, onError?: (err: HttpError) => void): unknown;
+}
+
+/**
+ * The Claude viewer's shared store: documents addressed by 'collection/id',
+ * and live updates on a document or a whole collection. Present only when the
+ * page is opened as a published Artifact inside Claude.
+ */
+interface ArtifactDb {
+  doc(path: string): ArtifactDocRef;
+  collection(name: string): {
+    onSnapshot(handler: (snap: ArtifactQuerySnapshot) => void, onError?: (err: HttpError) => void): unknown;
+  };
+}
+
+/**
+ * The one kind of outbox write that carries a photo. Named so that code looking
+ * for a pending upload can say that is what it found - a plain OutboxOp might
+ * be a delete, which has no body at all.
+ */
+type PhotoOp = Extract<OutboxOp, { kind: 'photo' }>;

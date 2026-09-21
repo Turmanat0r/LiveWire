@@ -209,7 +209,12 @@ if (undef.length) note('undefined-call', `called but never defined: ${undef.join
 // ------------------------------------------------------------- store wiring
 // A collection wired into SHARED_COLLECTIONS but missed anywhere else simply
 // never syncs, with no error to notice.
-const shared = (script.match(/const SHARED_COLLECTIONS = \[([^\]]+)\]/) || [])[1] || '';
+// Every declaration pattern in this file allows for a type annotation -
+// `(?::[^=]+)?` - because each one broke the first time the declaration it
+// looks for gained a type. They all failed loudly, which is how they were
+// found; a check that breaks whenever the code gets more precise would sooner
+// or later have been switched off instead of fixed.
+const shared = (script.match(/const SHARED_COLLECTIONS(?::[^=]+)? = \[([^\]]+)\]/) || [])[1] || '';
 const collections = [...shared.matchAll(/'([^']+)'/g)].map((m) => m[1]);
 if (collections.length === 0) note('store', 'SHARED_COLLECTIONS could not be read');
 
@@ -220,7 +225,7 @@ if (collections.length === 0) note('store', 'SHARED_COLLECTIONS could not be rea
 // whenever the code gains a type is a check waiting to be switched off.
 const liveCacheDecl = (script.match(/const liveCache(?::[^=]+)? = \{[^}]*\}/) || [''])[0];
 const loadedIdsDecl = (script.match(/const loadedIds(?::[^=]+)? = \{[^}]*\}/) || [''])[0];
-const tablesDecl = (script.match(/const TABLES = \{[\s\S]*?\}/) || [''])[0];
+const tablesDecl = (script.match(/const TABLES(?::[^=]+)? = \{[\s\S]*?\}/) || [''])[0];
 for (const c of collections) {
   if (!new RegExp(`\\b${c}:`).test(liveCacheDecl)) note('store', `${c} is missing from liveCache`);
   if (!new RegExp(`\\b${c}:`).test(loadedIdsDecl)) note('store', `${c} is missing from loadedIds`);
@@ -882,7 +887,7 @@ if (/anglerName:\s*angler\s*\?/.test(script)) {
 //   backoff      an unreachable server was retried every 5s forever.
 //   no setInterval(tick)   the loop must reschedule itself AFTER each pass
 //                finishes, which setInterval cannot do.
-const startBody = (script.match(/start\(onRows\)\{([\s\S]*?)\n    \},/) || ['', ''])[1];
+const startBody = (script.match(/start\(onRows(?::[^)]+)?\)\{([\s\S]*?)\n    \},/) || ['', ''])[1];
 if (!startBody) {
   note('sync', 'cannot find start(onRows) - the polling loop guards cannot be checked');
 } else {
