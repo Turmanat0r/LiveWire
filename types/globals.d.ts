@@ -140,7 +140,12 @@ interface ReportDayRow {
   start: any;
   stop: any;
   overridden: boolean;
-  hours: number;
+  /**
+   * Null when the times do not make a span - a stop before its start, or a
+   * clock that did not parse. This was declared as a plain number when the
+   * type was first drafted, and turning on strictNullChecks caught it.
+   */
+  hours: number | null;
   /** Filled in per day once the catches have been counted. */
   caught?: number;
   /** Null on a day something died: see the note at the assignment. */
@@ -167,3 +172,100 @@ interface EventRecord {
   recordInches?: number;
   course?: any;
 }
+
+/**
+ * A value whose shape has not been written down yet.
+ *
+ * Exactly `any`, under a name of its own, and the name is the point.
+ *
+ * Turning on strictNullChecks made every empty `[]` in the app infer as
+ * `never[]` - a list that can hold nothing - so the first `push` onto each one
+ * failed. The right fix is the real element type, and that is the job of the
+ * noImplicitAny pass that comes after this one. Writing plain `any[]` would
+ * have compiled just as well, and then been invisible to that pass for ever:
+ * noImplicitAny only reports an `any` nobody wrote, and this one somebody did.
+ *
+ * So every placeholder says what it is. `grep Unshaped` is the list of what is
+ * left to describe, and test/lint.mjs prints how many remain on every run.
+ */
+type Unshaped = any;
+
+/**
+ * An object whose fields are not written down yet - but an object, and never
+ * null by itself, so `| null` beside it still means something.
+ *
+ * `Unshaped | null` would NOT: a union with `any` is just `any`, so it would
+ * quietly switch null-checking off for exactly the values strictNullChecks was
+ * turned on to check. The Supabase client, the active backend, the boundary
+ * being drawn - these are the app's nullable state, and whether the code checks
+ * them before using them is the whole question. Any field can still be read off
+ * one of these, which is what lets them stand in until the real shape is known.
+ */
+type UnshapedObject = Record<string, any>;
+
+/** Whatever setTimeout and setInterval hand back, for clearing later. */
+type TimerId = ReturnType<typeof setTimeout>;
+
+/**
+ * The id of whatever is selected, open or being edited - or nothing.
+ *
+ * Both kinds of nothing, on purpose. These are reset to null in code, but they
+ * are also read straight off `element.dataset.id`, which is undefined when the
+ * attribute is absent. Narrowing that to one or the other would mean changing
+ * what the code stores, and every check that reads it is a truthiness test that
+ * treats the two the same already.
+ */
+type MaybeId = string | null | undefined;
+
+/**
+ * What has been read from the server so far, one entry per shared collection.
+ *
+ * Null means "not loaded yet", which is a different answer from an empty list
+ * and the code treats it differently: an empty list is a tournament with no
+ * catches, null is a phone that has not heard back. `config` is the one shared
+ * settings record rather than a list of them.
+ */
+interface LiveCache {
+  anglers: Unshaped[] | null;
+  catches: Unshaped[] | null;
+  donations: Unshaped[] | null;
+  messages: Unshaped[] | null;
+  signals: Unshaped[] | null;
+  bets: Unshaped[] | null;
+  config: UnshapedObject | null;
+}
+
+/**
+ * The ids each collection held when this device last loaded it. A delete is only
+ * ever of something in here, so a catch another angler files between this
+ * phone's load and its save is never mistaken for one the user removed. Null
+ * until the first load, for the same reason as LiveCache.
+ */
+interface LoadedIds {
+  anglers: Set<string> | null;
+  catches: Set<string> | null;
+  donations: Set<string> | null;
+  messages: Set<string> | null;
+  signals: Set<string> | null;
+  bets: Set<string> | null;
+}
+
+/** A point on the water. */
+interface LatLng {
+  lat: number;
+  lng: number;
+}
+
+/**
+ * A course boundary, in exactly one of its three shapes.
+ *
+ * `kind` is what tells them apart, and checking it is enough for TypeScript to
+ * know which fields exist: a circle has a centre and a radius, an outline has
+ * its corner points, and "none" has neither. Before this was written down the
+ * compiler could not see that a circle always has a centre, so every read of
+ * one after `clean.kind === 'circle'` was a possible crash as far as it knew.
+ */
+type Boundary =
+  | { kind: 'none' }
+  | { kind: 'circle'; center: LatLng; radiusMiles: number }
+  | { kind: 'polygon'; points: LatLng[] };

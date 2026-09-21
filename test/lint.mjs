@@ -81,6 +81,45 @@ for (const sel of script.matchAll(/querySelector(?:All)?\('([^']+)'\)/g)) {
   for (const m of sel[1].matchAll(/#([A-Za-z][\w-]*)/g)) bump(m[1]);
 }
 
+// pageEl() THROWS when its element is missing - that is the point of it - so
+// the rule for it is stricter than the one for getElementById above. Its id has
+// to be:
+//   - a plain string literal, or nothing here can read it to check it
+//   - in index.html itself, so it is on the page before the script even runs
+//   - NOT one of RUNTIME_IDS, because those are exactly the elements the script
+//     builds for itself and that are sometimes not there
+//
+// The test harness cannot catch a violation of any of these. Its fake
+// getElementById invents an element for whatever id it is asked for, so pageEl
+// never throws inside a test. This check is the only thing standing between a
+// mistyped id and a phone that fails at startup.
+//
+// Comments are blanked first and strings are not: the ids are strings, and the
+// prose explaining pageEl mentions `pageEl()` often enough to be mistaken for a
+// call with no id at all.
+const uncommented = script
+  .replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' '))
+  .replace(/(^|[^:'"`\\])\/\/[^\n]*/g, (c, p) => p + ' '.repeat(c.length - p.length));
+for (const m of uncommented.matchAll(/\bpageEl(?:<[^>()]*>)?\(([^)]*)\)/g)) {
+  if (uncommented.slice(Math.max(0, m.index - 9), m.index) === 'function ') continue;   // the definition
+  const arg = m[1].trim();
+  const lit = arg.match(/^'([^']+)'$/);
+  if (!lit) {
+    note('page-el', `pageEl(${arg}) is not given a plain id, so nothing can check the ` +
+      `element exists - and pageEl throws when it does not`);
+    continue;
+  }
+  const id = lit[1];
+  bump(id);
+  if (RUNTIME_IDS.has(id)) {
+    note('page-el', `pageEl('${id}') names an element the script builds for itself, which ` +
+      `is not always there - pageEl would throw. Use getElementById and check the result`);
+  } else if (!declared.has(id)) {
+    note('page-el', `pageEl('${id}') names an element that is not in index.html, so it ` +
+      `throws the moment that line runs`);
+  }
+}
+
 for (const [id, count] of referenced) {
   if (!declared.has(id) && !RUNTIME_IDS.has(id)) {
     note('missing-id', `#${id} is used ${count}x in the script but never appears in the HTML`);
@@ -174,8 +213,13 @@ const shared = (script.match(/const SHARED_COLLECTIONS = \[([^\]]+)\]/) || [])[1
 const collections = [...shared.matchAll(/'([^']+)'/g)].map((m) => m[1]);
 if (collections.length === 0) note('store', 'SHARED_COLLECTIONS could not be read');
 
-const liveCacheDecl = (script.match(/const liveCache = \{[^}]*\}/) || [''])[0];
-const loadedIdsDecl = (script.match(/const loadedIds = \{[^}]*\}/) || [''])[0];
+// The `(?::[^=]+)?` is for the type annotation. Both declarations gained one
+// when strictNullChecks went on - `const liveCache: LiveCache = {` - and the
+// patterns as first written stopped matching, which reported every collection
+// missing from both caches. Loud, so it was noticed; but a check that breaks
+// whenever the code gains a type is a check waiting to be switched off.
+const liveCacheDecl = (script.match(/const liveCache(?::[^=]+)? = \{[^}]*\}/) || [''])[0];
+const loadedIdsDecl = (script.match(/const loadedIds(?::[^=]+)? = \{[^}]*\}/) || [''])[0];
 const tablesDecl = (script.match(/const TABLES = \{[\s\S]*?\}/) || [''])[0];
 for (const c of collections) {
   if (!new RegExp(`\\b${c}:`).test(liveCacheDecl)) note('store', `${c} is missing from liveCache`);
@@ -1238,7 +1282,17 @@ for (const m of script.matchAll(/'(\/api\/[a-z0-9-]+)'/g)) {
 }
 
 // ------------------------------------------------------------------- report
-if (problems.length === 0) { console.log('lint: clean'); process.exit(0); }
+// How much of the app still has no written-down shape. Not a finding - these
+// are deliberate placeholders, one per value whose type is the noImplicitAny
+// pass's job - so it never fails the run. It is printed every time so the
+// number is seen going down, and so a new one going in is seen too.
+//
+// Counted in the source with comments blanked, because the prose explaining
+// what Unshaped is uses the word more often than some of the code does.
+const unshaped = (uncommented.match(/\bUnshaped(Object)?\b/g) || []).length;
+const shapeNote = unshaped ? ` (${unshaped} value${unshaped === 1 ? '' : 's'} still Unshaped)` : '';
+
+if (problems.length === 0) { console.log('lint: clean' + shapeNote); process.exit(0); }
 const byKind = {};
 for (const p of problems) (byKind[p.kind] = byKind[p.kind] || []).push(p.msg);
 for (const kind of Object.keys(byKind)) {
