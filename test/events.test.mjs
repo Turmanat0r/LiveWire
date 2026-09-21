@@ -3130,6 +3130,26 @@ rows = [mkBet('most')].concat(joinsFor('bet1', ['b1', 'b2']));
 st = t.betStanding(rows[0], rows, BET_CATCHES, byId);
 check('most counts approved catches', st.anglerId, 'b2');
 check('and reports the count', /2 approved/.test(st.detail), true);
+check('a clear lead says nothing about a tie', /got there first/.test(st.detail), false);
+
+// A tie on the count goes to whoever reached it first. b2's second fish is at
+// 200 and b1's at 300, so b2 leads - whatever order the server sends them in.
+// Before, the tie went to whichever angler's catch came first in the list,
+// which is b1 here, and which changes when any catch is updated.
+const mkFish = (id, anglerId, timestamp) =>
+  ({ id, eventId:E1, anglerId, species:'Walleye', status:'approved', division:'solo', length:12, timestamp });
+const TIED = [mkFish('t1', 'b1', 100), mkFish('t2', 'b2', 150), mkFish('t3', 'b2', 200), mkFish('t4', 'b1', 300)];
+st = t.betStanding(rows[0], rows, TIED, byId);
+check('a tie on count goes to whoever reached it first', st.anglerId, 'b2');
+check('and says that is how it was settled', /2 approved fish, got there first/.test(st.detail), true);
+check('whatever order the catches arrive in', t.betStanding(rows[0], rows, TIED.slice().reverse(), byId).anglerId, 'b2');
+st = t.betStanding(rows[0], rows, TIED.concat([mkFish('t5', 'b1', 400)]), byId);
+check('more fish still beats getting there first', st.anglerId, 'b1');
+// Two fish logged in the same second: the id settles it, the same on every phone.
+const HEAT = [mkFish('s2', 'b2', 500), mkFish('s1', 'b1', 500)];
+check('a dead heat is settled the same way in any order',
+  [t.betStanding(rows[0], rows, HEAT, byId).anglerId, t.betStanding(rows[0], rows, HEAT.slice().reverse(), byId).anglerId],
+  ['b1', 'b1']);
 
 rows = [mkBet('first')].concat(joinsFor('bet1', ['b1', 'b2']));
 st = t.betStanding(rows[0], rows, BET_CATCHES, byId);
