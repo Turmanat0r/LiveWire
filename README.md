@@ -155,17 +155,19 @@ file through `new Function()`, which cannot execute module syntax at all. One
 top-level `export` breaks all of that at once, so `test/lint.mjs` fails if one
 appears.
 
-**Part of the way there, one check at a time.** The first pass changed the
+**Most of the way there, one check at a time.** The first pass changed the
 toolchain without changing the app. The second turned on `strictNullChecks`,
 the check that asks the question most worth asking of this app: does the code
-make sure a thing is there before it uses it?
+make sure a thing is there before it uses it? The third turned on
+`noImplicitAny`: every value has a type the compiler can check, rather than one
+it had to assume.
 
 | Check | State | Findings |
 |---|---|---|
 | `strictNullChecks` | **on** | 524 when switched on, all resolved rather than silenced |
-| `noImplicitAny` | **ready to switch on** | 984 when measured; none left, all four areas done |
-| `+ noUncheckedIndexedAccess` | | 204 running total |
-| `+ the rest of strict, and the unused checks` | | 231 running total |
+| `noImplicitAny` | **on** | 984 when measured, typed an area at a time, all resolved |
+| `+ noUncheckedIndexedAccess` | | 200 running total |
+| `+ the rest of strict, and the unused checks` | | 228 running total |
 
 The counts do not simply add up - each check changes what the next can infer -
 so they are running totals, measured against the source as it stands.
@@ -204,40 +206,67 @@ The compiler found two more mistakes in types drafted during the first pass:
 always a number; and until a boundary was written down as one of three shapes,
 nothing could see that a circle always has a centre.
 
-### Placeholders, and why they are named
+### Placeholders, while they were needed
 
-Three stand-ins in `types/globals.d.ts` mark values whose shape is not written
-down yet. They are named, rather than plain `any`, so the next pass can find
-them - `noImplicitAny` only reports an `any` nobody wrote.
+Turning on strictNullChecks made every empty `[]` infer as a list that could
+hold nothing, and the real element types were the next pass's job. So two
+named stand-ins held the place, rather than plain `any` - `noImplicitAny` only
+reports an `any` nobody wrote, and a plain one would have been invisible to it
+for good:
 
-- **`Unshaped`** - exactly `any`. Every empty `[]` inferred as a list that
-  could hold nothing once strictNullChecks was on.
+- **`Unshaped`** - exactly `any`.
 - **`UnshapedObject`** - an object of unknown fields, but never null by itself.
-  `Unshaped | null` would not do: a union with `any` is just `any`, and would
-  quietly switch null-checking off for the app's nullable state - the backend,
-  the Supabase client, the boundary being drawn - which is exactly what this
-  check exists to look at.
-- **`MaybeId`** - the id of whatever is selected, or nothing, in both of
-  nothing's forms: reset to `null` in code, and read as `undefined` from a
-  missing `data-` attribute.
+  `Unshaped | null` would not have done: a union with `any` is just `any`, and
+  would have switched null-checking off for the app's nullable state - the
+  backend, the Supabase client, the boundary being drawn.
 
-`test/lint.mjs` counted them on every run, from 48 down to **none**: every
-`Unshaped` and `UnshapedObject` has been replaced by the shape it actually
-holds. The two names go when `noImplicitAny` is switched on, so a new one
-cannot creep back in.
+`test/lint.mjs` counted them on every run, from 48 down to none, and **both
+are gone now**. Every one was replaced by the shape it actually holds, and the
+names were deleted when `noImplicitAny` went on, so writing one again does not
+compile.
+
+**`MaybeId`** stays: it is a real type, not a stand-in. It is the id of
+whatever is selected, or nothing, in both of nothing's forms - reset to `null`
+in code, and read as `undefined` from a missing `data-` attribute.
+
+**A hand-written `any` is a lint finding.** `noImplicitAny` reports every `any`
+the compiler had to assume, and says nothing about one somebody wrote -
+`const x: any[] = []` compiles clean with it on. So `test/lint.mjs` fails on
+one anywhere in `src/` or `types/`, apart from a short named list of things
+that come from outside and ship no types of their own: `L`, `supabase`,
+`claude`, what Leaflet hands back, and the data layer's record fields, which
+are loose on purpose. Five were planted - at the start, middle and end of the
+app, in the boot guard, and in the types - and all five were caught.
 
 ### noImplicitAny, one area at a time
 
-`noImplicitAny` is a single switch, but the typing behind it does not have to
-be one change. It is being done area by area with the switch still off, each
-area its own PR and the count falling as it goes; the last PR turns it on once
-there is nothing left for it to find. In order:
+`noImplicitAny` is a single switch, but the typing behind it did not have to be
+one change. It was done area by area with the switch still off, each area its
+own PR and the count falling as it went, and the last PR turned it on once
+there was nothing left for it to find:
 
-1. **The data layer** - done. Sync, the outbox, both backends, the caches.
-2. **Anglers and catches** - done. Registration, submission, the leaderboard, scoring.
-3. **The director's tools** - done. Payouts, results, the FWP report, the boundary.
-4. **Everything else** - done. The trophy case, gallery, highlight reel, chat,
-   side bets, positions, beacons and the maps. The switch goes on next.
+1. **The data layer.** Sync, the outbox, both backends, the caches.
+2. **Anglers and catches.** Registration, submission, the leaderboard, scoring.
+3. **The director's tools.** Payouts, results, the FWP report, the boundary.
+4. **Everything else.** The trophy case, gallery, highlight reel, chat, side
+   bets, positions, beacons and the maps.
+5. **The switch.** On, with nothing for it to report.
+
+**Switching it on changed nothing the app runs.** The built `app/livewire.js`
+is byte for byte the file production was already serving. Three more things
+went with it:
+
+- **Eleven fields drafted as `any` in the first pass got their shapes** - a
+  report day's number, date and clock times, and an event record's presenter,
+  prefix, dates, time zone, species and course. `noImplicitAny` could never
+  see those, because somebody wrote them. The compiler agreed with every one:
+  nothing in the app had to change.
+- **The boot guard lost its one cast to `any`.** It compared a script element
+  with `window` to rule out an ordinary uncaught error; it compares the event's
+  target instead, which is the same object. Its failure screen was checked in a
+  real browser with the app blocked, and still says which file did not arrive.
+- **The two placeholder names were deleted**, and a hand-written `any` became a
+  lint finding - see above.
 
 **The data layer went first because a wrong shape there loses a catch.** It
 now has a written contract, where before it had two backends that had to agree
@@ -438,17 +467,20 @@ fails two of them - so they, not the empty production sync, are the evidence.
 
 Worth knowing before you start: `noUncheckedIndexedAccess` on its own reports
 nothing at all, because it has no effect without `strictNullChecks`. And a CLI
-`--strict` will *not* override an explicit `"noImplicitAny": false` in
-`tsconfig.json` - the specific setting wins over the umbrella one, whichever
-side it is written on. That is worth remembering when a run comes back
-suspiciously clean.
+`--strict` will *not* override a check that `tsconfig.json` turns off by name -
+the specific setting wins over the umbrella one, whichever side it is written
+on. That caught this project out while `noImplicitAny` was still `false`, and
+it is worth remembering whenever a run comes back suspiciously clean.
 
-The last row already found three real ones: `nameEl`, `recEl` and `catches`
-are declared and never read.
+Most of what the rest of `strict` adds is catch variables: it types `catch(e)`
+as unknown, so each handler has to check what it caught before reading
+`.message` off it. The unused checks already find four real ones: `nameEl`,
+`recEl` and `catches` are declared and never read, and so is one callback's `e`.
 
 Along the way the `any`s in `types/globals.d.ts` — `L`, `supabase`, `claude` —
 should get real shapes. They are honest `any` for now rather than an invented
-type that reads as verified when nobody checked it.
+type that reads as verified when nobody checked it, and lint holds them to that
+named list.
 
 One thing already earned its keep: the first draft of `GeoFix` called the
 accuracy field `accuracy`, and the compiler pointed out that the code has
@@ -516,9 +548,10 @@ and `test/lint.mjs` fails if the page loads something the shell leaves out.
 
 ## What is still open
 
-- **The compiler is turned down.** The first TypeScript pass was the toolchain,
-  not the typing - see the table under "TypeScript" for what turning each check
-  on is worth. Until then the type system is catching far less than it could.
+- **Two of the compiler's checks are still off.** `strictNullChecks` and
+  `noImplicitAny` are on; `noUncheckedIndexedAccess` and the rest of `strict`
+  are worth about 228 more findings between them - see the table under
+  "TypeScript".
 - **`sql/` and `test/` are publicly downloadable**, and always have been:
   the whole repository root is what gets served. Nothing there is a secret -
   the anon key ships in the page by design and the row policies are enforced by
@@ -532,8 +565,9 @@ and `test/lint.mjs` fails if the page loads something the shell leaves out.
   HTML strings by `app/livewire.js`, which are the awkward half. This is much less serious than
   the script case — it is not a path to running code — but it is the last
   `'unsafe-inline'` in the policy.
-- **The app is JavaScript, not TypeScript**, and `app/livewire.js` is one
-  10,400-line file.
+- **The app is one 10,600-line file**, `src/livewire.ts`, in one global scope.
+  Splitting it means modules, which the test harness cannot run - see
+  "TypeScript" for why.
 - **`/app/` filenames carry no version**, so they are served
   `must-revalidate` and the service worker fetches them network-first. That is
   correct but it costs a request per load; content-hashed names would not.

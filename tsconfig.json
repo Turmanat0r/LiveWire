@@ -2,19 +2,18 @@
   // LiveWire's app code. See README, "TypeScript", for why the settings are
   // where they are and what the plan is for tightening them.
   //
-  // THIS IS DELIBERATELY PERMISSIVE AND IS NOT THE FINISHED STATE. The point of
-  // the first pass was to change the toolchain without changing the app: same
-  // code, same behaviour, emitted JavaScript that matches what was already
-  // live. Turning the real checks on is worth about 1,500 more findings and
-  // belongs in its own pass, one category at a time, with the tests green after
-  // each. Switching them all on here would have buried a toolchain change in a
-  // thousand-line diff nobody could review.
+  // NOT THE FINISHED STATE, BUT MOST OF THE WAY. The first pass changed the
+  // toolchain without changing the app: same code, same behaviour, emitted
+  // JavaScript that matched what was already live. The real checks have been
+  // turned on since one at a time, each in its own pass with the tests green
+  // after it, because switching them all on at once would have buried the
+  // change in a diff nobody could review.
   //
-  // The flags to turn on, in the order they are worth doing:
-  //   strictNullChecks            ON - was 524 findings, all resolved
-  //   + noImplicitAny            1,441 running total, untyped parameters
-  //   + noUncheckedIndexedAccess 1,485 running total
-  //   + the rest of strict       1,501 running total, catch variables
+  // The flags, in the order they are worth doing:
+  //   strictNullChecks             ON - was 524 findings, all resolved
+  //   noImplicitAny                ON - was 984 findings, all resolved
+  //   + noUncheckedIndexedAccess   200 running total
+  //   + the rest of strict, unused 228 running total, catch variables mostly
   //
   // They do not add up separately - each changes what the next can infer - and
   // noUncheckedIndexedAccess reports nothing without strictNullChecks. See
@@ -78,13 +77,23 @@
     // once said the opposite. It was wrong: it described `new Function()` in
     // general and missed that the directive arrives inside the body.)
     "strict": false,
-    "noImplicitAny": false,
 
     // ON. The first of the real checks, and the one that asks the question most
     // worth asking of this app: does the code check a thing is there before it
     // uses it? 524 findings when first switched on, every one resolved rather
     // than silenced - see README, "TypeScript".
-    "strictNullChecks": true
+    "strictNullChecks": true,
+
+    // ON. Every value has a type the compiler can check, not one it had to
+    // assume. 984 findings when first measured, typed an area at a time - the
+    // data layer, anglers and catches, the director's tools, then everything
+    // else - and switched on once there was nothing left for it to find.
+    //
+    // It cannot see an `any` somebody WROTE, which is how a value goes back to
+    // having no shape without anyone noticing. test/lint.mjs does that half: a
+    // hand-written `any` is a finding, apart from a short list of things that
+    // come from outside and ship no types of their own.
+    "noImplicitAny": true
   },
   "include": ["src/**/*.ts", "types/**/*.d.ts"]
 }

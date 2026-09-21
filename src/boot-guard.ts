@@ -39,8 +39,11 @@
   // listener on window. This is how we can tell "the file never arrived" from
   // "the file arrived and did not run", which are different sentences.
   window.addEventListener('error', function (e) {
-    var el = e.target as HTMLScriptElement | null;
-    if (el && (el as any) !== window && el.tagName === 'SCRIPT' && el.src) failedSrc = el.src;
+    // The element that failed to load - or, for an ordinary uncaught error, the
+    // window itself, which is why that is ruled out first.
+    var target = e.target;
+    var el = target as HTMLScriptElement | null;
+    if (el && target !== window && el.tagName === 'SCRIPT' && el.src) failedSrc = el.src;
   }, true);
 
   function check() {
