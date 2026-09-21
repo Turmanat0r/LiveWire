@@ -2649,8 +2649,9 @@ function escapeHtml(s: unknown){
 
 function initials(name: string){
   const parts = (name||'').trim().split(/\s+/);
-  if(parts.length===0 || !parts[0]) return '?';
-  return (parts[0][0] + (parts[1]?parts[1][0]:'')).toUpperCase();
+  const first = parts[0], second = parts[1];
+  if(!first) return '?';
+  return (first.charAt(0) + (second ? second.charAt(0) : '')).toUpperCase();
 }
 
 // ---- the server's clock ----
@@ -4234,7 +4235,7 @@ function overdueCheckouts(anglers: Angler[], now: Date | number){
   const dayKey = 'day' + (dayIndex + 1);
   const overdueBy = parts.seconds - FINAL_CHECKIN_SECONDS;
   return (anglers || []).filter(a=>{
-    const rec = (a.checkins && a.checkins[dayKey]) || {};
+    const rec: Partial<CheckinDay> = (a.checkins && a.checkins[dayKey]) || {};
     // Checked in and not back out. Someone who never checked in never launched.
     return !!rec.in && !rec.out;
   }).map(a=> ({ angler: a, dayKey: dayKey, overdueSeconds: overdueBy }));
@@ -4477,7 +4478,7 @@ function renderSpeciesOptions(){
   // Hold the angler's choice across a repaint, but never leave them pointed at
   // a species this event no longer scores.
   if(keep === OTHER_SPECIES || names.indexOf(keep) !== -1) (sel as ValueElement).value = keep;
-  else (sel as ValueElement).value = names.length ? names[0] : OTHER_SPECIES;
+  else (sel as ValueElement).value = names[0] ?? OTHER_SPECIES;
 }
 
 // Which species the angler is filing this catch as. Falls back to the scoring
@@ -4931,24 +4932,26 @@ async function renderManageList(){
   // background repaint that would have removed the buttons is suppressed while
   // an input has focus, which is exactly when the angler is typing a length. So
   // the check has to happen again here, against a fresh read.
-  const stillEditable = (catches: Catch[], anglers: Angler[], id: string | undefined)=>{
-    const idx = catches.findIndex(c=>c.id===id);
-    if(idx === -1){
+  // Hands back the catch itself - the same object that is in `catches`, so a
+  // change to it is a change to the list - or null when it may not be touched.
+  const stillEditable = (catches: Catch[], anglers: Angler[], id: string | undefined): Catch | null =>{
+    const c = catches.find(x=>x.id===id);
+    if(!c){
       setText('man-err', 'That catch is no longer on the list. Refreshing.');
-      return -1;
+      return null;
     }
-    if(catches[idx].status !== 'pending'){
+    if(c.status !== 'pending'){
       setText('man-err', 'The director reviewed that catch while this page was open, '+
         'so it is locked now. Nothing was changed.');
-      return -1;
+      return null;
     }
     // The picker only offers entries this device is signed in to, but the
     // picker is markup. Confirm the catch really is one of ours before writing.
-    if(!canActFor(catches[idx].anglerId, anglers)){
+    if(!canActFor(c.anglerId, anglers)){
       setText('man-err', 'That catch belongs to another angler, so nothing was changed.');
-      return -1;
+      return null;
     }
-    return idx;
+    return c;
   };
 
   el.querySelectorAll('[data-act="savelen"]').forEach(btn=>{
@@ -4958,9 +4961,9 @@ async function renderManageList(){
       const newLen = parseFloat((input as ValueElement).value);
       if(!newLen || newLen<=0) return;
       const catches = await loadCatches();
-      const idx = stillEditable(catches, await loadAnglers(), (btn as HTMLElement).dataset.id);
-      if(idx === -1){ renderManageList(); return; }
-      catches[idx].length = newLen;
+      const c = stillEditable(catches, await loadAnglers(), (btn as HTMLElement).dataset.id);
+      if(!c){ renderManageList(); return; }
+      c.length = newLen;
       await saveCatches(catches);
       renderManageList();
     });
@@ -4969,10 +4972,10 @@ async function renderManageList(){
     btn.addEventListener('click', async ()=>{
       setText('man-err', '');
       const catches = await loadCatches();
-      const idx = stillEditable(catches, await loadAnglers(), (btn as HTMLElement).dataset.id);
-      if(idx === -1){ renderManageList(); return; }
+      const c = stillEditable(catches, await loadAnglers(), (btn as HTMLElement).dataset.id);
+      if(!c){ renderManageList(); return; }
       if(!window.confirm('Withdraw this catch? It is removed along with its photo, and cannot be brought back.')) return;
-      catches.splice(idx,1);
+      catches.splice(catches.indexOf(c), 1);
       await saveCatches(catches);
       renderManageList();
     });
@@ -5294,7 +5297,8 @@ type TrophyStats = ReturnType<typeof trophyStats>;
 
 function trophyEventRow(eventId: string, evAnglers: Angler[], evCatches: Catch[], evBets: BetRow[], mineIds: Set<string>, info: TrophyEventInfo | null){
   const meHere = evAnglers.filter(a=> mineIds.has(a.id));
-  if(meHere.length === 0) return null;
+  const entry = meHere[0];
+  if(!entry) return null;
   const frozen = (info && info.results) || null;
   // A frozen event is scored by the species it was frozen against, so the fish
   // count on the row and the board it was placed on can never disagree.
@@ -5307,19 +5311,16 @@ function trophyEventRow(eventId: string, evAnglers: Angler[], evCatches: Catch[]
 
   const perDay: Record<string, number> = {};
   approved.forEach(c=>{ const k = dayKeyIn(c.timestamp, tz); perDay[k] = (perDay[k] || 0) + 1; });
-  const bestDay = Object.keys(perDay).reduce((m, k)=> Math.max(m, perDay[k]), 0);
+  const bestDay = Object.values(perDay).reduce((m, v)=> Math.max(m, v), 0);
 
-  const entry = meHere[0];
   const division = entry.division || 'solo';
   // The frozen board if there is one; otherwise worked out now, against THIS
   // event's species rather than the live one's - see isScoringSpecies().
   const table = (frozen && frozen.divisions && frozen.divisions[division])
     ? frozen.divisions[division]
     : standingsFor(division, evCatches, evAnglers, target);
-  let placing = 0;
-  for(let i = 0; i < table.length; i++){
-    if((table[i].anglerIds || []).some(id=> mineIds.has(id))){ placing = i + 1; break; }
-  }
+  // 1-based; the -1 of "not on the board" becomes 0, which is what unranked has always been.
+  const placing = table.findIndex(row=> (row.anglerIds || []).some(id=> mineIds.has(id))) + 1;
   const bigFish = frozen ? frozen.bigFish : bigFishWinner(evAnglers, evCatches, target);
   const wonBets = (frozen ? (frozen.bets || [])
                           : betRecords(evBets || []).filter(betIsSettled))
@@ -5348,7 +5349,7 @@ function trophyEventRow(eventId: string, evAnglers: Angler[], evCatches: Catch[]
     division,
     fish: approved.length,
     scoring: scoring.length,
-    best: lengths.length ? lengths[0] : 0,
+    best: lengths[0] ?? 0,
     // The actual fish, so the all-time best can name its species and be tied
     // back to a record rather than being a bare number.
     bestCatch: scoring[0] || null,
@@ -5380,8 +5381,8 @@ function trophyStats(allAnglers: Angler[], allCatches: Catch[], allBets: BetRow[
   });
 
   const history: TrophyRow[] = [];
-  Object.keys(anglersBy).forEach(eventId=>{
-    const row = trophyEventRow(eventId, anglersBy[eventId], catchesBy[eventId] || [],
+  Object.entries(anglersBy).forEach(([eventId, evAnglers])=>{
+    const row = trophyEventRow(eventId, evAnglers, catchesBy[eventId] || [],
       betsBy[eventId] || [], ids, infoFor ? infoFor(eventId) : null);
     if(row) history.push(row);
   });
@@ -6108,25 +6109,26 @@ function standingsFor(division: Division, catches: Catch[], anglers: Angler[], t
     // A team ranks as one unit, so either partner's fish lands in the same group.
     const key = (division==='team' && angler && angler.teamId) ? angler.teamId : c.anglerId;
     // Named by handle, never by c.anglerName - the leaderboard is public.
-    if(!groups[key]) groups[key] = { key, name: displayHandle(angler), fish: [], anglerIds: [] };
+    const g = groups[key] || (groups[key] = { key, name: displayHandle(angler), fish: [], anglerIds: [] });
     // The whole catch, not just its length - the tie-break needs its timestamp.
-    groups[key].fish.push(c);
-    if(groups[key].anglerIds.indexOf(c.anglerId)===-1) groups[key].anglerIds.push(c.anglerId);
+    g.fish.push(c);
+    if(g.anglerIds.indexOf(c.anglerId)===-1) g.anglerIds.push(c.anglerId);
     if(division==='team' && angler && angler.teamId){
       const mate = anglers.find(m=>m.teamId===angler.teamId && m.id!==angler.id);
-      groups[key].name = mate ? displayHandle(angler)+' & '+displayHandle(mate) : displayHandle(angler);
+      g.name = mate ? displayHandle(angler)+' & '+displayHandle(mate) : displayHandle(angler);
     }
   });
 
-  return Object.keys(groups).map(k=>{
-    const g = groups[k];
+  return Object.values(groups).map(g=>{
     // Longest first, and among equal lengths the one landed first - so bestAt
-    // is when this group's best fish was actually caught.
+    // is when this group's best fish was actually caught. Every group has a
+    // fish - it is made by one - so the fallbacks never apply.
     const sorted = g.fish.slice().sort(byLengthThenEarliest);
+    const top = sorted[0];
     return {
       key: g.key, name: g.name, anglerIds: g.anglerIds,
-      best: Number(sorted[0].length),
-      bestAt: catchTime(sorted[0]),
+      best: top ? Number(top.length) : 0,
+      bestAt: top ? catchTime(top) : TIE_LAST,
       top3sum: sorted.slice(0,3).reduce((s: number, c: Catch)=>s+Number(c.length),0),
       count: g.fish.length
     };
@@ -6143,10 +6145,7 @@ function standingsFor(division: Division, catches: Catch[], anglers: Angler[], t
 // 1-based placing for one angler in their division, or 0 if they aren't ranked.
 function rankOf(angler: Angler, catches: Catch[], anglers: Angler[]){
   const table = standingsFor(angler.division, catches, anglers);
-  for(let i=0;i<table.length;i++){
-    if(table[i].anglerIds.indexOf(angler.id) !== -1) return i+1;
-  }
-  return 0;
+  return table.findIndex(row=> row.anglerIds.indexOf(angler.id) !== -1) + 1;
 }
 
 async function renderLeaderboard(){
@@ -6534,8 +6533,8 @@ async function renderChat(){
     if(!m.replyTo) return;
     (ctx.repliesByParent[m.replyTo] = ctx.repliesByParent[m.replyTo] || []).push(m);
   });
-  Object.keys(ctx.repliesByParent).forEach(k=>
-    ctx.repliesByParent[k].sort((a,b)=> a.timestamp - b.timestamp));
+  Object.values(ctx.repliesByParent).forEach(list=>
+    list.sort((a,b)=> a.timestamp - b.timestamp));
 
   // Newest conversation first; replies read oldest-first underneath.
   const top = messages.filter(m=> !m.replyTo).sort((a,b)=> b.timestamp - a.timestamp);
@@ -6687,7 +6686,7 @@ function betStanding(bet: Bet, rows: BetRow[], catches: Catch[], anglerById: Rec
   const eligible = catches.filter(c=>
     c.status === 'approved' && isScoringSpecies(c.species) &&
     entrants.indexOf(c.anglerId) !== -1 &&
-    !(anglerById[c.anglerId] && anglerById[c.anglerId].disqualified));
+    !anglerById[c.anglerId]?.disqualified);
   if(eligible.length === 0) return null;
 
   if(bet.scoring === 'most'){
@@ -6695,7 +6694,7 @@ function betStanding(bet: Bet, rows: BetRow[], catches: Catch[], anglerById: Rec
     // count is the time of that many-th fish.
     const byAngler: Record<string, Catch[]> = {};
     eligible.forEach(c=>{ (byAngler[c.anglerId] = byAngler[c.anglerId] || []).push(c); });
-    const tallies = Object.keys(byAngler).map(id=> byAngler[id].sort(byEarliest));
+    const tallies = Object.values(byAngler).map(list=> list.sort(byEarliest));
     const best = Math.max.apply(null, tallies.map(t=> t.length));
     // Most fish wins. A tie on the count goes to whoever GOT THERE FIRST - the
     // earliest-fish rule every other ranking uses, and for the same reason:
@@ -6703,18 +6702,23 @@ function betStanding(bet: Bet, rows: BetRow[], catches: Catch[], anglerById: Rec
     // what decides. It used to be, here, and two phones could name different
     // leaders for the same bet.
     const level = tallies.filter(t=> t.length === best);
-    const leader = level.map(t=> t[best - 1]).sort(byEarliest)[0];
+    // Every tally on the level has exactly `best` fish, so each has a best-th.
+    const leader = level.map(t=> t[best - 1]).filter((c): c is Catch => !!c).sort(byEarliest)[0];
+    if(!leader) return null;
     return { anglerId: leader.anglerId,
              detail: best + ' approved ' + (best === 1 ? 'fish' : 'fish') +
                      (level.length > 1 ? ', got there first' : '') };
   }
   if(bet.scoring === 'first'){
+    // `eligible` is not empty - that returned above - so neither is this.
     const first = eligible.slice().sort(byEarliest)[0];
+    if(!first) return null;
     return { anglerId: first.anglerId,
              detail: 'at ' + new Date(first.timestamp).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) };
   }
   // smallest
   const small = eligible.slice().sort(bySmallestThenEarliest)[0];
+  if(!small) return null;
   return { anglerId: small.anglerId, detail: Number(small.length).toFixed(2) + '"' };
 }
 
