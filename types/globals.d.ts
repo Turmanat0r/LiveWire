@@ -944,3 +944,15 @@ type MapEntry = {
 interface FishISampler {
   json(prompt: string, opts: { images: Blob; modelTier: string }): Promise<Partial<AiReview>>;
 }
+
+/**
+ * A list that always has at least one item: one, then any more.
+ *
+ * TypeScript then knows the FIRST item is there. Everything past it still has
+ * to be checked - the type cannot know how long the rest is - which is exactly
+ * as much as a never-empty list promises.
+ */
+type NonEmpty<T> = [T, ...T[]];
+
+/** A part of a photo, as fractions of it: [x, y, width, height]. [0, 0, 1, 1] is the whole frame. */
+type FrameWindow = [x: number, y: number, w: number, h: number];

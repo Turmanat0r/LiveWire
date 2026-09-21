@@ -112,7 +112,7 @@ const ADMIN_PASS = "lilac-hazel-15";
 // Typed as ONE EVENT, THEN ANY MORE, because it is never empty and a great deal
 // leans on its first entry: the legacy id, the default, and the fallback when a
 // stored id matches nothing. The compiler holds the list to that.
-const EVENTS: [TournamentEvent, ...TournamentEvent[]] = [
+const EVENTS: NonEmpty<TournamentEvent> = [
   {
     id: 'mkwo-2027',
     name: 'Montana Kayak Walleye Open',
@@ -259,7 +259,7 @@ const PRECHECK_DUP_CROP_MAX_DISTANCE = 4;
 // [x, y, width, height], as fractions of the source. Index 0 MUST be the full
 // frame: it is the one stored as .hash, and photoHashDistance requires one side
 // of every comparison to be a whole photo.
-const PRECHECK_HASH_WINDOWS = [
+const PRECHECK_HASH_WINDOWS: FrameWindow[] = [
   [0,     0,     1,    1   ],   // whole
   [0.075, 0.075, 0.85, 0.85],   // centred, three depths
   [0.15,  0.15,  0.70, 0.70],
@@ -769,40 +769,42 @@ function pad3(n: number){ return String(n).padStart(3,'0'); }
 // it is the name they razz each other under in the chat. Real names stay on
 // everything official - standings, payouts, the director's roster - because
 // that is money and placings; the handle is for the banter.
-const HANDLE_TITLES = ['Captain','Sir','Doc','Lord','Deputy','The Right Honorable','Reverend','Professor',
+const HANDLE_TITLES: NonEmpty<string> = ['Captain','Sir','Doc','Lord','Deputy','The Right Honorable','Reverend','Professor',
   'Colonel','General','Chief','The Notorious','Commodore','Warden','Judge','Ambassador','Marshal','Baron',
   'The Honorable','Detective','Sergeant','Governor'];
-const HANDLE_ADJECTIVES = ['Sneaky','Grumpy','Wobbly','Feral','Rogue','Salty','Lucky','Reckless','Soggy',
+const HANDLE_ADJECTIVES: NonEmpty<string> = ['Sneaky','Grumpy','Wobbly','Feral','Rogue','Salty','Lucky','Reckless','Soggy',
   'Rowdy','Chaotic','Stubborn','Slippery','Mighty','Legendary','Wandering','Cranky','Jolly','Sly',
   'Sedimental','Fossilized','Petrified','Igneous','Molten','Weathered','Unbothered','Overqualified',
   'Suspiciously Calm','Feisty','Ornery','Restless','Waterlogged','Windburnt','Overcaffeinated',
   'Unlicensed','Self-Appointed','Undeterred','Bewildered','Vengeful','Nocturnal','Barnacled','Crusty',
   'Formerly Respectable','Mildly Feral','Certified','Unsupervised'];
-const HANDLE_GEO = ['Granite','Boulder','Shale','Basalt','Quartz','Obsidian','Bedrock','Canyon','Ridge',
+const HANDLE_GEO: NonEmpty<string> = ['Granite','Boulder','Shale','Basalt','Quartz','Obsidian','Bedrock','Canyon','Ridge',
   'Fossil','Pyrite','Slate','Gravel','Cobble','Talus','Moraine','Feldspar','Schist','Limestone','Sediment',
   'Cliffside','Riverstone','Mica','Sandstone','Dolomite','Gneiss','Magma','Silt','Chert','Alluvium','Bluff',
   'Outcrop','Scree','Tundra','Permafrost','Butte','Mesa','Glacier','Tectonic','Sedimentary'];
-const HANDLE_FISH = ['Walleye','Bass','Pike','Catfish','Perch','Sturgeon','Trout','Muskie','Crappie','Carp',
+const HANDLE_FISH: NonEmpty<string> = ['Walleye','Bass','Pike','Catfish','Perch','Sturgeon','Trout','Muskie','Crappie','Carp',
   'Gar','Herring','Salmon','Bluegill','Sucker','Chub','Minnow','Grayling','Kokanee','Ling','Sunfish',
   'Northern','Burbot','Whitefish','Shiner','Darter','Bullhead','Smallmouth','Largemouth','Cisco','Goldeye',
   'Sauger','Redhorse'];
-const HANDLE_SUFFIXES = ['McFin','Esq.','Jr.','the Third','of the Ponds','of Canyon Ferry','the Relentless',
+const HANDLE_SUFFIXES: NonEmpty<string> = ['McFin','Esq.','Jr.','the Third','of the Ponds','of Canyon Ferry','the Relentless',
   'the Unbothered','the Elder','the Persistent','the Undefeated (Probably)','the Overpacked','of the Silos',
   'the Sunburnt','the Overprepared','the Chronically Early','the Reigning Champion (Self-Declared)',
   'the Well-Anchored','the Suspiciously Confident','the Locally Feared','of Third Place','the Bait-Rich',
   'the Underfunded','the Overinsured'];
-const HANDLE_BAIT = ['Spinnerbait','Crankbait','Jerkbait','Chatterbait','Wacky Rig','Drop Shot','Jig','Spoon',
+const HANDLE_BAIT: NonEmpty<string> = ['Spinnerbait','Crankbait','Jerkbait','Chatterbait','Wacky Rig','Drop Shot','Jig','Spoon',
   'Swimbait','Topwater','Bobber','Nightcrawler','Leech','Rooster Tail','Rapala','Powerbait','Treble Hook',
   'Gulp Minnow','Rubber Worm','Buzzbait'];
-const HANDLE_WATERS = ['Canyon Ferry','Yellowstone','Missouri River','Bitterroot','Clark Fork',
+const HANDLE_WATERS: NonEmpty<string> = ['Canyon Ferry','Yellowstone','Missouri River','Bitterroot','Clark Fork',
   'Flathead Lake','Hauser Lake','Holter Lake','Madison River','Gallatin River','Big Hole River','Fort Peck',
   'Georgetown Lake','Hebgen Lake','Noxon Reservoir','Smith River','Blackfoot River','Rock Creek',
   'Beaverhead','Tongue River','Ruby River'];
-const HANDLE_FASTFOOD = ['Whopper','Big Mac','McNugget','Baconator','Frosty','Crunchwrap','Gordita',
+const HANDLE_FASTFOOD: NonEmpty<string> = ['Whopper','Big Mac','McNugget','Baconator','Frosty','Crunchwrap','Gordita',
   'Chalupa','Doritos Locos','Waffle Fry','McFlurry','Drive-Thru','Value Meal','Extra Crispy','Biggie Size',
   'Dollar Menu','Curly Fry','Footlong','Spicy Chicken Sandwich','Junior Bacon'];
 
-function handlePick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]; }
+// An index into the list, so always an item - the first stands in only to say
+// so, and is never what comes back.
+function handlePick<T>(arr: NonEmpty<T>): T { return arr[Math.floor(Math.random() * arr.length)] ?? arr[0]; }
 
 function generateHandle(){
   const pattern = Math.floor(Math.random() * 8);
@@ -2193,9 +2195,10 @@ function recordInches(species: string){
 // several, rather than saying "scoring species" at anglers.
 function speciesPhrase(settings?: RowFields){
   const names = scoringSpecies(settings).map(n=> n.toLowerCase());
-  if(names.length === 0) return 'scoring fish';
-  if(names.length === 1) return names[0];
-  return names.slice(0, -1).join(', ') + ' or ' + names[names.length - 1];
+  const last = names[names.length - 1];
+  if(last === undefined) return 'scoring fish';
+  if(names.length === 1) return last;
+  return names.slice(0, -1).join(', ') + ' or ' + last;
 }
 function courseBoundary(){ return eventSettings().course; }
 const OTHER_SPECIES = 'Other';
@@ -2769,7 +2772,7 @@ function drawPhotoStamp(ctx: CanvasRenderingContext2D, width: number, height: nu
   ctx.save();
   const widest = ()=>{
     let w = 0;
-    for(let i = 0; i < lines.length; i++) w = Math.max(w, ctx.measureText(lines[i]).width);
+    for(const line of lines) w = Math.max(w, ctx.measureText(line).width);
     return w;
   };
   // 2.6% of the short edge, floored so the smallest rung stays legible.
@@ -2797,9 +2800,9 @@ function drawPhotoStamp(ctx: CanvasRenderingContext2D, width: number, height: nu
   ctx.fillStyle = 'rgba(0,0,0,0.62)';
   ctx.fillRect(0, top, boxW, boxH);
   ctx.fillStyle = '#FFFFFF';
-  for(let i = 0; i < lines.length; i++){
-    ctx.fillText(lines[i], pad, top + pad + lead * i);
-  }
+  lines.forEach((line, i)=>{
+    ctx.fillText(line, pad, top + pad + lead * i);
+  });
   ctx.restore();
 }
 
@@ -2817,14 +2820,15 @@ function encodeToBudget(source: PixelSource, naturalW: number, naturalH: number,
   // guarantees the budget even for a frame that will not compress (dense noise,
   // heavy texture, a shot of a screen) so a catch can never be rejected for
   // being unstorable.
-  let dim = PHOTO_STEPS[PHOTO_STEPS.length-1].dim;
+  // The ladder is never empty; with no last rung there would simply be no tail.
+  const lastRung = PHOTO_STEPS[PHOTO_STEPS.length-1];
+  let dim = lastRung ? lastRung.dim : 0;
   while(dim > 240){
     dim = Math.round(dim * 0.8);
     attempts.push({ dim: dim, q: 0.3 });
   }
   let out = '';
-  for(let i=0;i<attempts.length;i++){
-    const step = attempts[i];
+  for(const step of attempts){
     let w = naturalW, h = naturalH;
     if(w > h && w > step.dim){ h = h*(step.dim/w); w = step.dim; }
     else if(h > step.dim){ w = w*(step.dim/h); h = step.dim; }
@@ -2870,18 +2874,18 @@ function resizeImage(file: Blob, stamp: PhotoStamp | null){
 
 // `win` is [x, y, w, h] in fractions of the source; omitted means the whole
 // frame, which is what every caller but the hash wants.
-function greyscaleFrom(img: PixelSource, w: number, h: number, win?: number[]){
+function greyscaleFrom(img: PixelSource, w: number, h: number, win?: FrameWindow){
   const canvas = document.createElement('canvas');
   canvas.width = w; canvas.height = h;
   const ctx = context2d(canvas);
-  const r = win || [0, 0, 1, 1];
+  const r: FrameWindow = win || [0, 0, 1, 1];
   ctx.drawImage(img,
     img.width * r[0], img.height * r[1], img.width * r[2], img.height * r[3],
     0, 0, w, h);
   const data = ctx.getImageData(0, 0, w, h).data;
   const grey = new Float64Array(w*h);
   for(let i=0;i<w*h;i++){
-    grey[i] = 0.299*data[i*4] + 0.587*data[i*4+1] + 0.114*data[i*4+2];
+    grey[i] = 0.299*(data[i*4] ?? 0) + 0.587*(data[i*4+1] ?? 0) + 0.114*(data[i*4+2] ?? 0);
   }
   return grey;
 }
@@ -2889,13 +2893,15 @@ function greyscaleFrom(img: PixelSource, w: number, h: number, win?: number[]){
 // Difference hash: 9x8 greyscale, compare each pixel to its right neighbour.
 // Two photos of the same fish in the same pose hash within a few bits of each
 // other even after resaving, which is what makes duplicate detection work.
-function dHashOf(img: PixelSource, win?: number[]){
+function dHashOf(img: PixelSource, win?: FrameWindow){
   const w = 9, h = 8;
   const grey = greyscaleFrom(img, w, h, win);
+  // Every index is inside the 9x8 grid; see greyscaleFrom.
+  const at = (i: number)=> grey[i] ?? 0;
   let bits = '';
   for(let y=0;y<h;y++){
     for(let x=0;x<w-1;x++){
-      bits += grey[y*w+x] > grey[y*w+x+1] ? '1' : '0';
+      bits += at(y*w+x) > at(y*w+x+1) ? '1' : '0';
     }
   }
   let hex = '';
@@ -2942,11 +2948,11 @@ function photoHashDistance(a: PhotoAnalysis | null | undefined, b: PhotoAnalysis
   return { distance: best, cropped: cropped };
 }
 
-function hammingHex(a: string, b: string){
+function hammingHex(a: string | undefined, b: string | undefined){
   if(!a || !b || a.length !== b.length) return 64;
   let d = 0;
   for(let i=0;i<a.length;i++){
-    let x = parseInt(a[i],16) ^ parseInt(b[i],16);
+    let x = parseInt(a.charAt(i),16) ^ parseInt(b.charAt(i),16);
     while(x){ d += x & 1; x >>= 1; }
   }
   return d;
@@ -2956,14 +2962,16 @@ function exposureAndSharpness(img: PixelSource){
   const w = 64, h = 64;
   const g = greyscaleFrom(img, w, h);
   let sum = 0;
-  for(let i=0;i<g.length;i++) sum += g[i];
+  for(const v of g) sum += v;
   const brightness = sum / g.length;
 
-  // Variance of the Laplacian - the standard cheap focus measure.
+  // Variance of the Laplacian - the standard cheap focus measure. Every index
+  // is inside the 64x64 grid; see greyscaleFrom.
+  const at = (i: number)=> g[i] ?? 0;
   const lap: number[] = [];
   for(let y=1;y<h-1;y++){
     for(let x=1;x<w-1;x++){
-      lap.push(-4*g[y*w+x] + g[(y-1)*w+x] + g[(y+1)*w+x] + g[y*w+x-1] + g[y*w+x+1]);
+      lap.push(-4*at(y*w+x) + at((y-1)*w+x) + at((y+1)*w+x) + at(y*w+x-1) + at(y*w+x+1));
     }
   }
   const mean = lap.reduce((s,v)=>s+v, 0) / lap.length;
@@ -2981,8 +2989,10 @@ function analyzePhoto(dataUrl: string, srcWidth: number, srcHeight: number){
         const hashes = photoHashes(img);
         resolve({
           // hashes[0] IS hash - kept as its own field so nothing that reads
-          // the old shape has to know windows happened.
-          hash: hashes[0],
+          // the old shape has to know windows happened. There is always a
+          // [0], the whole frame; '' would read as "no fingerprint", which
+          // every reader already handles.
+          hash: hashes[0] ?? '',
           hashes: hashes,
           brightness: Math.round(ex.brightness*10)/10,
           sharpness: Math.round(ex.sharpness*10)/10,
@@ -3047,8 +3057,8 @@ function evaluateFirstPass(c: Catch, allCatches: Catch[], dupCorpus: Catch[]): F
       .filter(x=> x.distance <= (x.cropped ? PRECHECK_DUP_CROP_MAX_DISTANCE
                                            : PRECHECK_DUP_MAX_DISTANCE))
       .sort((a,b)=> a.distance-b.distance);
-    if(near.length){
-      const hit = near[0];
+    const hit = near[0];
+    if(hit){
       const hitEventId = rowEventId(hit.other);
       const crossEvent = hitEventId !== rowEventId(c);
       const hitEvent = eventById(hitEventId);
@@ -3105,7 +3115,7 @@ function evaluateFirstPass(c: Catch, allCatches: Catch[], dupCorpus: Catch[]): F
       .sort((a,b)=> a-b);
     if(field.length >= 5){
       const median = field[Math.floor(field.length/2)];
-      if(c.length > median * 1.5){
+      if(median !== undefined && c.length > median * 1.5){
         checks.push({ level:'review', label:'Well above the rest of the field',
           detail: c.length+'" vs a '+median.toFixed(1)+'" median across '+field.length+' approved '+c.species.toLowerCase()+'. Not wrong, just worth a second look.' });
       }
@@ -3314,7 +3324,8 @@ async function srcToBlob(src: string | null | undefined){
 
 function dataUrlToBlob(dataUrl: string){
   const m = /^data:([^;]+);base64,(.*)$/.exec(dataUrl || '');
-  if(!m) return null;
+  // Both groups are there whenever the pattern matched.
+  if(!m || m[1] === undefined || m[2] === undefined) return null;
   const bin = atob(m[2]);
   const bytes = new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
@@ -4595,10 +4606,13 @@ function sampleFrame(){
   const grey = greyscaleFrom(video, w, h);
 
   // Motion: mean absolute difference against the previous sample.
+  // Every index is inside the 64x64 grid; see greyscaleFrom.
+  const at = (i: number)=> grey[i] ?? 0;
   let motion = 0;
   if(autoPrevFrame){
+    const prev = autoPrevFrame;
     let diff = 0;
-    for(let i=0;i<grey.length;i++) diff += Math.abs(grey[i] - autoPrevFrame[i]);
+    for(let i=0;i<grey.length;i++) diff += Math.abs(at(i) - (prev[i] ?? 0));
     motion = diff / grey.length;
   } else {
     motion = 999; // no baseline yet
@@ -4606,13 +4620,13 @@ function sampleFrame(){
   autoPrevFrame = grey;
 
   let brightness = 0;
-  for(let i=0;i<grey.length;i++) brightness += grey[i];
+  for(const v of grey) brightness += v;
   brightness /= grey.length;
 
   const lap: number[] = [];
   for(let y=1;y<h-1;y++){
     for(let x=1;x<w-1;x++){
-      lap.push(-4*grey[y*w+x] + grey[(y-1)*w+x] + grey[(y+1)*w+x] + grey[y*w+x-1] + grey[y*w+x+1]);
+      lap.push(-4*at(y*w+x) + at((y-1)*w+x) + at((y+1)*w+x) + at(y*w+x-1) + at(y*w+x+1));
     }
   }
   const lapMean = lap.reduce((a,b)=>a+b,0)/lap.length;

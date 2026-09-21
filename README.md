@@ -192,8 +192,8 @@ it had to assume.
 |---|---|---|
 | `strictNullChecks` | **on** | 524 when switched on, all resolved rather than silenced |
 | `noImplicitAny` | **on** | 984 when measured, typed an area at a time, all resolved |
-| `noUncheckedIndexedAccess` | **in progress** | 200 when measured; 182 left, one area done |
-| `+ the rest of strict, and the unused checks` | | 210 running total |
+| `noUncheckedIndexedAccess` | **in progress** | 200 when measured; 123 left, two areas done |
+| `+ the rest of strict, and the unused checks` | | 151 running total |
 
 The counts do not simply add up - each check changes what the next can infer -
 so they are running totals, measured against the source as it stands.
@@ -541,7 +541,9 @@ on the roster. 200 findings when measured, done the same way as the last check
 1. **The data layer and the event lookups** - done. The code every screen reads
    through: which event is live, its dates, its species, a catch or an angler
    by id. 18 findings, none of them a crash in practice.
-2. **The photo checks** - the stamp, the fingerprints, the first pass.
+2. **The photo checks** - done. The stamp, the encode ladder, the fingerprints,
+   the first pass, the camera guide and Fish-I's prompt. 59 findings, again
+   none a crash in practice.
 3. **Anglers, catches and scoring.**
 4. **The director's tools, and everything else.** Then the switch.
 
@@ -560,6 +562,23 @@ The rules this pass follows:
   items, same order.
 - **A lookup that can miss is handled where it misses.** Those are the ones
   this check exists to find.
+- **A pixel read inside the frame gets `?? 0`.** The fingerprint and camera
+  loops only ever index inside the image, so the fallback never applies and
+  never changes a value. It is how the type system hears that; `NonEmpty<T>`
+  and `FrameWindow` say the rest - a list with a first item, and a photo window
+  that is always four numbers.
+
+**The photo checks had to come out identical to the bit, and did.**
+Fingerprints are compared against catches from earlier events, so a hash that
+moved by one bit would quietly break duplicate detection across years. The old
+build and the new were run on the same generated photos - eight of them,
+including two crops - and compared value by value: every fingerprint, the
+brightness and focus, the shrunk-and-stamped photo itself, 64 fingerprint
+comparisons, six first-pass verdicts (a duplicate, a crop, a photo from another
+event, an implausible length), nine frames through the camera guide, and 60
+random handles from the same random numbers. **All identical.** Two of lint's
+checks read the window code by its wording and now allow a type annotation;
+both were broken on purpose afterwards to confirm they still catch a real fault.
 
 ## What was actually tested, and what was not
 
@@ -616,7 +635,7 @@ and `test/lint.mjs` fails if the page loads something the shell leaves out.
 
 - **Two of the compiler's checks are still off.** `strictNullChecks` and
   `noImplicitAny` are on; `noUncheckedIndexedAccess` and the rest of `strict`
-  are worth about 210 more findings between them, and the first of those is
+  are worth about 151 more findings between them, and the first of those is
   under way - see the table under "TypeScript".
 - **The app is one 10,600-line file**, `src/livewire.ts`, in one global scope.
   Splitting it means modules, which the test harness cannot run - see

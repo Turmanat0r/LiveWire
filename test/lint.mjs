@@ -893,7 +893,7 @@ if (/anglerName:\s*angler\s*\?/.test(script)) {
   const grey = (script.match(/function greyscaleFrom\([^)]*\)(?::[^{]+)?\{([\s\S]*?)\n\}/) || ['', ''])[1];
   if (!grey) {
     note('duplicates', 'greyscaleFrom is gone');
-  } else if (!/const r = win \|\|/.test(grey) || !/img\.width \* r\[0\]/.test(grey)) {
+  } else if (!/const r(?::[^=]+)? = win \|\|/.test(grey) || !/img\.width \* r\[0\]/.test(grey)) {
     note('duplicates', 'greyscaleFrom no longer crops to the window it was handed, so ' +
       'every window hashes the whole frame and they all come out identical');
   }
@@ -907,7 +907,7 @@ if (/anglerName:\s*angler\s*\?/.test(script)) {
   }
   // Index 0 of the window list is load-bearing: it is what gets stored as
   // .hash, and photoHashDistance uses it as "the whole photo" on both sides.
-  const wins = (script.match(/const PRECHECK_HASH_WINDOWS = \[([\s\S]*?)\];/) || ['', ''])[1];
+  const wins = (script.match(/const PRECHECK_HASH_WINDOWS(?::[^=]+)? = \[([\s\S]*?)\];/) || ['', ''])[1];
   if (!wins) note('duplicates', 'PRECHECK_HASH_WINDOWS is gone - nothing to compare crops through');
   else {
     const first = (wins.match(/\[([^\]]*)\]/) || ['', ''])[1].split(',').map((x) => parseFloat(x));
