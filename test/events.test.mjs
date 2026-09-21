@@ -4876,8 +4876,10 @@ check('a long haul drops the decimal', t.lagText(14 * 3600000), '14 hr');
 
 // The badges end up in innerHTML, so a species or a source that ever carried a
 // quote has to come out escaped.
+// Its colours are a class now - the policy drops a style attribute - so the
+// tone rides on the class list.
 check('badge text is escaped',
-  t.captureBadgeHtml({ timestamp: NOW }).indexOf('<span class="badge"') === 0, true);
+  t.captureBadgeHtml({ timestamp: NOW }).indexOf('<span class="badge tone-plain">') === 0, true);
 
 // ---- the drawing ----
 // There is no canvas here, so this checks the contract rather than the pixels:

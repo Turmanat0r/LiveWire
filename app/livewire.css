@@ -1676,3 +1676,96 @@
     .lightbox{display:none !important;}
     @page{margin:12mm;}
   }
+
+  /* ---- what used to be style="..." ---------------------------------------
+     The Content-Security-Policy does not allow style attributes: with
+     'unsafe-inline' on style-src it could not tell the page's own from one
+     injected through a chat message or an angler's handle. So every one moved
+     here - 218 of them, 148 in index.html and 70 in HTML the app builds - each
+     class being one declaration exactly as it was written.
+
+     THEY ARE !important, AND THAT IS THE POINT. An inline style beat every
+     rule in this file, whatever its selector; a plain class would lose to
+     `.field label` or `.hint` and quietly change the page. !important is
+     how a class keeps the win the attribute had. Nothing in the app sets
+     these properties from code, so nothing is being locked out.
+
+     THE ONE EXCEPTION IS .start-hidden, which is not !important. The app
+     shows those elements by setting style.display from code, and an
+     !important class would beat that and keep them hidden for good. It comes
+     after every rule it competes with, so it wins every tie. */
+  .start-hidden{display:none;}
+  .u-block{display:block !important;}
+
+  .u-m-0{margin:0 !important;}
+  .u-mt-0{margin-top:0 !important;}
+  .u-mt-4{margin-top:4px !important;}
+  .u-mt-5{margin-top:5px !important;}
+  .u-mt-6{margin-top:6px !important;}
+  .u-mt-8{margin-top:8px !important;}
+  .u-mt-10{margin-top:10px !important;}
+  .u-mt-12{margin-top:12px !important;}
+  .u-mt-14{margin-top:14px !important;}
+  .u-mb-0{margin-bottom:0 !important;}
+  .u-mb-4{margin-bottom:4px !important;}
+  .u-mb-6{margin-bottom:6px !important;}
+  .u-mb-8{margin-bottom:8px !important;}
+  .u-mb-12{margin-bottom:12px !important;}
+  .u-mb-14{margin-bottom:14px !important;}
+  .u-ml-6{margin-left:6px !important;}
+  .u-ml-8{margin-left:8px !important;}
+  /* The shorthands, named top-right-bottom as written - left follows right. */
+  .u-m-4-0-0{margin:4px 0 0 !important;}
+  .u-m-6-0-0{margin:6px 0 0 !important;}
+  .u-m-8-0-0{margin:8px 0 0 !important;}
+  .u-m-0-0-8{margin:0 0 8px !important;}
+  .u-m-0-0-12{margin:0 0 12px !important;}
+  .u-m-0-0-16{margin:0 0 16px !important;}
+  .u-m-12-0-6{margin:12px 0 6px !important;}
+
+  .u-p-10-16{padding:10px 16px !important;}
+  .u-w-auto{width:auto !important;}
+  .u-radius-6{border-radius:6px !important;}
+
+  .u-size-13{font-size:13px !important;}
+  .u-weight-400{font-weight:400 !important;}
+  .u-weight-600{font-weight:600 !important;}
+  .u-upright{font-style:normal !important;}
+  .u-dim{opacity:.75 !important;}
+  .u-danger{color:var(--danger) !important;}
+  /* The danger red written out, as one error line always had it. Unlike
+     var(--danger) it does not change in dark mode - kept exactly as it was. */
+  .u-red{color:#A3372A !important;}
+
+  /* A checkbox with its words beside it rather than above. */
+  .check-label{display:flex !important;align-items:center !important;gap:8px !important;font-weight:400 !important;}
+  /* Registration closed, on the registration screen. */
+  .notice-box{background:var(--paper-2) !important;padding:10px !important;border-radius:4px !important;}
+  /* The camera's warning that this phone's clock is out. */
+  .clock-warning{
+    background:#F1D6D0 !important;color:#7A2018 !important;padding:9px 11px !important;
+    border-left:3px solid var(--danger) !important;
+  }
+
+  /* Badge colours. The first four are a catch photo's stamp - see
+     CAPTURE_TONES; the rest are the boundary verdict, "filed by", and an
+     event's Live and Archived tags. */
+  .tone-ok{background:#DCE7DA !important;color:#3B5A34 !important;}
+  .tone-warn{background:#F3E4C4 !important;color:var(--gold-deep) !important;}
+  .tone-bad{background:#F1D6D0 !important;color:var(--danger) !important;}
+  .tone-plain{background:#E4E1D8 !important;color:#6B6963 !important;}
+  .tone-good{background:#DDE6D5 !important;color:#3D6A50 !important;}
+  .tone-out{background:#F1D6D0 !important;color:#A3372A !important;}
+  .tone-filed{background:#F1E3C6 !important;color:#7A5B14 !important;}
+
+  /* Editing a donation, in the director's payouts. */
+  .donation-edit{flex-wrap:wrap !important;align-items:flex-start !important;}
+  .donation-edit-wide{flex:1 1 100% !important;margin-bottom:8px !important;}
+  .donation-edit-amount{flex:1 !important;min-width:90px !important;margin-bottom:8px !important;}
+  .donation-edit-note{flex:2 !important;min-width:120px !important;margin-bottom:8px !important;}
+  .donation-edit-actions{flex:1 1 100% !important;display:flex !important;gap:6px !important;}
+  .donation-input{
+    width:100% !important;padding:8px !important;border:1px solid var(--line) !important;
+    border-radius:4px !important;background:var(--paper) !important;color:var(--ink) !important;
+    font-family:inherit !important;
+  }
