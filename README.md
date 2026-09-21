@@ -127,6 +127,12 @@ Fish-I listed as unavailable and every local photo check keeps working.
 | `sql/` | the database schema and its row policies, applied in order |
 | `test/` | three Node scripts, no framework |
 
+`sql/`, `test/` and `src/` are served along with the app, because the site is
+the repository root. That is no extra exposure: **the repository is public on
+GitHub**, so they are published either way. Nothing in them is a secret - the
+anon key ships in the page by design, and what protects the data is the
+database's row policies, not their text being hard to find.
+
 `app/` holds both generated and written files, which is the one muddy corner:
 the `.js` in it is build output and gitignored, the `.css` beside it is
 hand-written and committed. `test/lint.mjs` checks both directions against
@@ -612,13 +618,6 @@ and `test/lint.mjs` fails if the page loads something the shell leaves out.
   `noImplicitAny` are on; `noUncheckedIndexedAccess` and the rest of `strict`
   are worth about 210 more findings between them, and the first of those is
   under way - see the table under "TypeScript".
-- **`sql/` and `test/` are publicly downloadable**, and always have been:
-  the whole repository root is what gets served. Nothing there is a secret -
-  the anon key ships in the page by design and the row policies are enforced by
-  the database, not by being hard to read - but it does hand anyone a map of
-  the schema and the exact policy logic, including the rollback script. Fixing
-  it means building into a directory that holds only what should be public,
-  rather than serving the repository root.
 - **The app is one 10,600-line file**, `src/livewire.ts`, in one global scope.
   Splitting it means modules, which the test harness cannot run - see
   "TypeScript" for why.

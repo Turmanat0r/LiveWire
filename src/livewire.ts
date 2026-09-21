@@ -1190,9 +1190,9 @@ function applyDirectorState(){
   renderAdminAuthBanner();
 }
 
-// Says plainly which of the two ways in was used, because they are about to
-// stop being equivalent: once ownership policies are enforced, the passcode
-// opens the panel but the server refuses the writes.
+// Says plainly which of the two ways in was used, because they are not
+// equivalent: the passcode opens the panel, but the database's ownership
+// policies refuse its writes. Only a director's sign-in is accepted.
 function renderAdminAuthBanner(){
   const el = pageEl('admin-auth-banner');
   if(!el) return;
@@ -1205,8 +1205,8 @@ function renderAdminAuthBanner(){
   }
   el.className = 'syncbanner level-warn';
   el.textContent = authMode === 'signed-in'
-    ? 'Signed in, but this account is not marked as a director. Director changes will be refused once ownership policies are switched on.'
-    : 'Opened with the passcode, not signed in. You can look around, but director changes will be refused once ownership policies are switched on. Sign in above to make changes stick.';
+    ? 'Signed in, but this account is not marked as a director, so the server refuses director changes from it.'
+    : 'Opened with the passcode, not signed in. You can look around, but the server refuses director changes made this way. Sign in above to make changes stick.';
 }
 
 async function signInDirector(){

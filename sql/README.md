@@ -85,6 +85,12 @@ select 'step 3 co_owners clause',
 `open-access policies left` is the one that matters most and the one nobody
 thinks to look for.
 
+**Last run against production: 2026-09-21.** Director accounts 1, anonymous
+devices 75, open-access policies left 0, step 3 co_owners clause yes - every
+one as it must be. The ownership policies are on, so a passcode opens the
+director panel but the server refuses its writes; only the director's sign-in
+is accepted.
+
 There is also a read-only smoke test that needs no SQL editor at all. Ask the
 API for `signals` with the plain anon key: enforced, it returns `[]`, because an
 angler's position is director-and-owner only. Open, it hands back the whole
