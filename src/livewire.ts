@@ -282,6 +282,13 @@ const AUTOCAP_BRIGHT_MAX = 235;
 const AUTOCAP_STABLE_SAMPLES = 3;   // consecutive good samples before arming
 const AUTOCAP_COUNTDOWN = 3;        // ticks shown before the shutter fires
 function eventDates(){ return activeEvent().dates; }
+// The key each contest day's check-ins are filed under: 'day1', 'day2', one per
+// date in the live event. The one place that names them - registration, the
+// check-in screen and the director's contestant list all read these, so a
+// three-day event gets three days of each. They used to be a fixed two, which
+// left day 3 of a longer event with nowhere to check in and nobody the overdue
+// list could ever name.
+function eventDayKeys(): string[] { return eventDates().map((_, i)=> 'day' + (i + 1)); }
 function isRegistrationClosed(){
   return Date.now() >= new Date(activeEvent().registrationClose).getTime();
 }
@@ -4018,7 +4025,6 @@ bindEl('reg-submit','click', async ()=>{
   // Prefixed per event, so MKWO-001 and MKWO28-001 are different anglers even
   // though entry numbering restarts from 1 for each event.
   const tournamentId = activeEvent().prefix + '-' + pad3(entryNumber);
-  const freshCheckins = ()=>({ day1:{in:null,out:null}, day2:{in:null,out:null} });
 
   // One pool for the whole registration, so the captain's code, the partner's
   // and the team's cannot collide with each other before any of them is saved.
@@ -4138,6 +4144,23 @@ async function renderRoster(){
 // partner in - the partner's record lives on the captain's phone. It is NOT a
 // shared tablet that can check the whole field in: populateAnglerSelect scopes
 // the list to this device's own entries, and the handler re-checks.
+// A new entry's check-ins: one empty day per contest day.
+function freshCheckins(): Checkins {
+  const out: Checkins = {};
+  eventDayKeys().forEach(k=>{ out[k] = { in:null, out:null }; });
+  return out;
+}
+
+// Record a check-in or a check-out, making that day's entry if the record has
+// none yet - a day added to the event after they registered, or a record from
+// before check-ins were kept at all.
+function markCheckin(angler: Angler, dayKey: string, act: string, now: number){
+  if(!angler.checkins) angler.checkins = {};
+  const day = angler.checkins[dayKey] || (angler.checkins[dayKey] = { in:null, out:null });
+  if(act === 'in') day.in = now;
+  else day.out = now;
+}
+
 async function renderCheckin(){
   await populateAnglerSelect('checkin-angler', 'checkin-angler-note');
   await renderCheckinBody();
@@ -4151,8 +4174,8 @@ async function renderCheckinBody(){
   const el = pageEl('checkin-body');
   if(!me){ el.innerHTML = '<p class="empty">Register an angler first to check in.</p>'; return; }
 
-  el.innerHTML = ['day1','day2'].map((dayKey,i)=>{
-    const rec = me.checkins[dayKey] || {in:null,out:null};
+  el.innerHTML = eventDayKeys().map((dayKey,i)=>{
+    const rec = (me.checkins && me.checkins[dayKey]) || {in:null,out:null};
     const dayDate = eventDates()[i];
     const label = 'Day ' + (i+1) + (dayDate ? ' &middot; ' + eventDayText(dayDate) : '');
     let statusText = 'Not checked in';
@@ -4182,13 +4205,11 @@ async function renderCheckinBody(){
       // back, which is what the overdue list is read off at dusk.
       const guard = actionGuard(anglerId, anglers, activeEvent().name);
       if(!guard.ok){ setText('checkin-angler-note', guard.message); return; }
-      const idx = anglers.findIndex(a=>a.id===anglerId);
-      if(idx===-1) return;
+      const angler = anglers.find(a=>a.id===anglerId);
+      if(!angler) return;
       const dayKey = (btn as HTMLElement).dataset.day;
       if(!dayKey) return;
-      if(!anglers[idx].checkins) anglers[idx].checkins = { day1:{in:null,out:null}, day2:{in:null,out:null} };
-      if((btn as HTMLElement).dataset.act==='in') anglers[idx].checkins[dayKey].in = Date.now();
-      else anglers[idx].checkins[dayKey].out = Date.now();
+      markCheckin(angler, dayKey, (btn as HTMLElement).dataset.act || '', Date.now());
       await saveAnglers(anglers);
       renderCheckinBody();
     });
@@ -10146,7 +10167,7 @@ function contestantRowHtml(d: ContestantRow, catches: Catch[]){
   const teamLabel = a.division==='team'
     ? 'Team with '+escapeHtml(a.partner || '\u2014')+(a.role==='partner' ? ' (partner)' : '')
     : 'Solo';
-  const checked = ['day1','day2'].map((k,i)=>{
+  const checked = eventDayKeys().map((k,i)=>{
     const r = (a.checkins && a.checkins[k]) || {};
     if(r.in && r.out) return 'D'+(i+1)+' complete';
     if(r.in) return 'D'+(i+1)+' on water';

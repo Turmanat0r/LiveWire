@@ -77,6 +77,7 @@ globalThis.__t = {
   feePaid, normPhone, pendingNoticeHtml, bigFishEntrants, poolCounts,
   outstandingFees, unpaidInTheMoney, FEE_SOLO, FEE_TEAM, FEE_BIGFISH,
   overdueCheckouts, sortOverdue, eventTimeParts, FINAL_CHECKIN_SECONDS,
+  eventDayKeys, freshCheckins, markCheckin, renderCheckinBody, contestantRowHtml,
   claimEntry, claimErrorText, syncViewportInset,
   CODE_ALPHABET, CODE_LENGTH, duplicateEntryError, rosterIsLoaded, wipeEventData,
   countsSentence, SHARED_COLLECTIONS,
@@ -4032,6 +4033,73 @@ check('the oldest position comes first, and no position at all comes before that
 check('with no signals at all it falls back to alphabetical',
   t.sortOverdue(three, []).map(x => x.angler.name), ['Fresh', 'Never', 'Stale']);
 check('an empty list sorts to an empty list', t.sortOverdue([], sigs), []);
+
+// ---- the event's own days, not a fixed two ----
+// The event form accepts one to seven days. Check-in used to be two, always:
+// registration made day1 and day2, the screen drew two rows, the director's
+// summary said D1 and D2. So on day 3 of a longer event nobody could check in,
+// and the overdue list - which does read the event's dates - had nobody it
+// could ever name.
+const savedConfig = t.liveCache.config, savedAnglers = t.liveCache.anglers;
+const eventOf = (id, dates) => ({ name: id, nameHtml: id, presenter: '', prefix: id.toUpperCase().slice(0, 6), dates,
+  timeZone: 'America/Denver', courseLabel: 'x', courseLabelLong: 'x', registrationClose: '2029-01-01T00:00:00-07:00',
+  targetSpecies: 'Walleye', recordInches: 36, course: { kind: 'none' } });
+t.liveCache.config = Object.assign({}, savedConfig, {
+  events: { 'three-day': eventOf('three-day', ['2029-09-14', '2029-09-15', '2029-09-16']),
+            'one-day':   eventOf('one-day',   ['2029-10-06']) },
+  activeEventId: 'three-day'
+});
+check('a three-day event has three check-in days', t.eventDayKeys(), ['day1', 'day2', 'day3']);
+check('and a new entry starts with all three', Object.keys(t.freshCheckins()), ['day1', 'day2', 'day3']);
+check('each of them empty', t.freshCheckins().day3, { in: null, out: null });
+
+t.liveCache.anglers = [
+  { id: 'tri', eventId: 'three-day', name: 'Tri Angler', division: 'solo', role: 'solo', checkins: t.freshCheckins() },
+  { id: 'old', eventId: 'three-day', name: 'Old Record', division: 'solo', role: 'solo' }      // no check-ins at all
+];
+getEl('checkin-angler').value = 'tri';
+await t.renderCheckinBody();
+check('the check-in screen offers day 3', /Day 3/.test(getEl('checkin-body').innerHTML), true);
+check('with a button for it', /data-day="day3"/.test(getEl('checkin-body').innerHTML), true);
+getEl('checkin-angler').value = 'old';
+let threwOnOld = false;
+try { await t.renderCheckinBody(); } catch (e) { threwOnOld = true; }
+check('a record with no check-ins at all draws, rather than stopping the screen', threwOnOld, false);
+check('and reads as not checked in', /Not checked in/.test(getEl('checkin-body').innerHTML), true);
+
+// Registered before a third day was added: the record has two days, and the
+// third is made when it is first used.
+const before = { id: 'b', checkins: { day1: { in: null, out: null }, day2: { in: null, out: null } } };
+t.markCheckin(before, 'day3', 'in', 100);
+check('checking in on a day the record never had makes that day', before.checkins.day3, { in: 100, out: null });
+t.markCheckin(before, 'day3', 'out', 200);
+check('and checking out completes it', before.checkins.day3, { in: 100, out: 200 });
+check('without touching the other days', before.checkins.day1, { in: null, out: null });
+const bare = { id: 'bare' };
+t.markCheckin(bare, 'day1', 'in', 5);
+check('a record with no check-ins at all gets one', bare.checkins, { day1: { in: 5, out: null } });
+
+// The point of all of it: on day 3, somebody still out is on the list.
+const stillOutDay3 = [{ id: 'd3', name: 'Late Three', checkins: { day3: { in: 1, out: null } } }];
+check('on day 3, someone still out after the deadline is listed',
+  t.overdueCheckouts(stillOutDay3, atEventTime('2029-09-16', '15:30')).map((x) => x.angler.id), ['d3']);
+check("and the director's summary shows day 3",
+  /D3 on water/.test(t.contestantRowHtml({ angler: stillOutDay3[0], mine: [], approved: 0, pending: 0, rejected: 0, best: 0, rank: 0 }, [])), true);
+
+// A one-day event offers one day, not a second with no date on it.
+t.liveCache.config = Object.assign({}, t.liveCache.config, { activeEventId: 'one-day' });
+check('a one-day event has one check-in day', t.eventDayKeys(), ['day1']);
+t.liveCache.anglers = [{ id: 'uno', eventId: 'one-day', name: 'Uno', division: 'solo', role: 'solo', checkins: t.freshCheckins() }];
+getEl('checkin-angler').value = 'uno';
+await t.renderCheckinBody();
+check('and no Day 2 row', /Day 2/.test(getEl('checkin-body').innerHTML), false);
+
+// The built-in events are two days, and stay exactly as they were.
+t.liveCache.config = savedConfig;
+t.liveCache.anglers = savedAnglers;
+check('the built-in event keeps its two days', t.eventDayKeys(), ['day1', 'day2']);
+check('and a new entry there still starts with exactly those two',
+  t.freshCheckins(), { day1: { in: null, out: null }, day2: { in: null, out: null } });
 }
 
 // ============================================================
