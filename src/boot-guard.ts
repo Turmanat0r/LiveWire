@@ -33,7 +33,7 @@
   var BACKSTOP_MS = 12000;
 
   var decided = false;
-  var failedSrc = null;
+  var failedSrc: string | null = null;
 
   // Resource load failures do not bubble, but they do reach a capture-phase
   // listener on window. This is how we can tell "the file never arrived" from

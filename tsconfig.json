@@ -11,7 +11,7 @@
   // thousand-line diff nobody could review.
   //
   // The flags to turn on, in the order they are worth doing:
-  //   strictNullChecks            524 findings, mostly getElementById null
+  //   strictNullChecks            ON - was 524 findings, all resolved
   //   + noImplicitAny            1,441 running total, untyped parameters
   //   + noUncheckedIndexedAccess 1,485 running total
   //   + the rest of strict       1,501 running total, catch variables
@@ -75,7 +75,12 @@
     // run the app through `new Function()`, which is not strict.
     "strict": false,
     "noImplicitAny": false,
-    "strictNullChecks": false
+
+    // ON. The first of the real checks, and the one that asks the question most
+    // worth asking of this app: does the code check a thing is there before it
+    // uses it? 524 findings when first switched on, every one resolved rather
+    // than silenced - see README, "TypeScript".
+    "strictNullChecks": true
   },
   "include": ["src/**/*.ts", "types/**/*.d.ts"]
 }

@@ -155,22 +155,73 @@ file through `new Function()`, which cannot execute module syntax at all. One
 top-level `export` breaks all of that at once, so `test/lint.mjs` fails if one
 appears.
 
-**The compiler settings are deliberately permissive and this is not finished.**
-The first pass changed the toolchain without changing the app: same code, same
-behaviour, and a browser pass confirming it renders and runs exactly as before.
-Switching every check on at the same time would have buried that in about 1,500
-findings nobody could review. What is left, in the order it is worth doing:
+**Part of the way there, one check at a time.** The first pass changed the
+toolchain without changing the app. The second turned on `strictNullChecks`,
+the check that asks the question most worth asking of this app: does the code
+make sure a thing is there before it uses it?
 
-Measured against the source as it stands, turning them on one at a time. They
-do not simply add up - each one changes what the next can infer - so these are
-cumulative totals rather than separate piles:
-
-| Turn on | Findings, running total | Mostly |
+| Check | State | Findings |
 |---|---|---|
-| `strictNullChecks` | 524 | `getElementById` returning null |
-| `+ noImplicitAny` | 1,441 | untyped function parameters |
-| `+ noUncheckedIndexedAccess` | 1,485 | array and record access |
-| `+ the rest of strict, and the unused checks` | 1,501 | `catch` variables typed `unknown` |
+| `strictNullChecks` | **on** | 524 when switched on, all resolved rather than silenced |
+| `noImplicitAny` | next | 984 |
+| `+ noUncheckedIndexedAccess` | | 1,029 running total |
+| `+ the rest of strict, and the unused checks` | | 1,047 running total |
+
+The counts do not simply add up - each check changes what the next can infer -
+so they are running totals, measured against the source as it stands.
+
+### What strictNullChecks changed, and what it did not
+
+**Nothing on an intact page.** Every change is either erased at compile time or
+takes the same path the old code did whenever the thing being checked is there.
+All 14 screens, all 8 director tools, the boundary editor, the FWP report form,
+the camera controls and the photo canvas were walked in a real browser
+afterwards, with no exceptions.
+
+What it changed is **what a failure says**. Two small helpers carry most of it:
+
+- **`pageEl('reg-name')`** finds an element the page is built to have. In 169
+  places the code reads an element straight away without checking it
+  was there, because it is in `index.html` and always has been. If one ever goes
+  missing, the phone now says *LiveWire cannot find #reg-name* instead of
+  *Cannot read properties of null (reading 'value')*, which named nothing.
+  Elements that are sometimes absent - the error banner, the update prompt, the
+  director's edit form - still use `getElementById` and check the result.
+- **`context2d(canvas)`** gets a drawing surface for the photo pipeline. The
+  browser is allowed to refuse one, and genuinely does on a phone short of
+  memory - which used to fail part-way through filing a catch with a message
+  about `drawImage` of null.
+
+**`pageEl` cannot be tested by the test suite**, and that is worth knowing. The
+fake DOM in `events.test.mjs` invents an element for any id it is asked for, so
+`pageEl` never throws there. What stands between a mistyped id and a phone that
+fails at startup is `test/lint.mjs`, which checks every `pageEl` id is a plain
+literal, is in `index.html`, and is not one of the elements the script builds
+for itself. Each of those three was broken on purpose to confirm it fails.
+
+The compiler found two more mistakes in types drafted during the first pass:
+`ReportDayRow.hours` is null when the clock times do not make a span, not
+always a number; and until a boundary was written down as one of three shapes,
+nothing could see that a circle always has a centre.
+
+### Placeholders, and why they are named
+
+Three stand-ins in `types/globals.d.ts` mark values whose shape is not written
+down yet. They are named, rather than plain `any`, so the next pass can find
+them - `noImplicitAny` only reports an `any` nobody wrote.
+
+- **`Unshaped`** - exactly `any`. Every empty `[]` inferred as a list that
+  could hold nothing once strictNullChecks was on.
+- **`UnshapedObject`** - an object of unknown fields, but never null by itself.
+  `Unshaped | null` would not do: a union with `any` is just `any`, and would
+  quietly switch null-checking off for the app's nullable state - the backend,
+  the Supabase client, the boundary being drawn - which is exactly what this
+  check exists to look at.
+- **`MaybeId`** - the id of whatever is selected, or nothing, in both of
+  nothing's forms: reset to `null` in code, and read as `undefined` from a
+  missing `data-` attribute.
+
+`test/lint.mjs` prints how many remain on every run. It is 48 now.
 
 Worth knowing before you start: `noUncheckedIndexedAccess` on its own reports
 nothing at all, because it has no effect without `strictNullChecks`. And a CLI
