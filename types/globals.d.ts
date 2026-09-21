@@ -607,6 +607,8 @@ type FiledBy = {
 type AiReview = {
   reviewedAt: number;
   error?: string;
+  /** The species Fish-I thinks it is looking at. */
+  species?: string;
   /** Does the fish in the photo match the species that was claimed? */
   matchesClaim?: boolean;
   /** 0 to 1. */
@@ -617,6 +619,8 @@ type AiReview = {
   fishFlat?: boolean;
   handBlocking?: boolean;
   concerns?: string[];
+  /** Anything else it wanted to say, in a sentence. */
+  notes?: string;
 };
 
 /** A catch known to have a position. */
@@ -671,3 +675,165 @@ type StandingsGroup = { key: string; name: string; fish: Catch[]; anglerIds: str
  * sources with no width or height, and the photo analysis needs both.
  */
 type PixelSource = HTMLImageElement | HTMLVideoElement | HTMLCanvasElement;
+
+// ============================================================================
+// THE DIRECTOR'S TOOLS
+// ============================================================================
+
+/**
+ * What the director enters on the Montana FWP contest report form, as saved.
+ *
+ * Every field is optional: the form is filled in over the course of an event,
+ * and saved as it goes. The filer's details also carry over from the last
+ * report filed, so a director does not type their own address twice.
+ *
+ * `boats` and `minLength` arrive from a text box and are stored as typed, so
+ * they can be a string, a number or blank - the report reads them through
+ * Number() and treats blank as "not set".
+ */
+type ReportSettings = {
+  filerName?: string;
+  filerAddress?: string;
+  filerEmail?: string;
+  filerPhone?: string;
+  sponsor?: string;
+  region?: string;
+  waterbody?: string;
+  boats?: string | number | null;
+  minLength?: string | number | null;
+  airTemp?: string;
+  waterTemp?: string;
+  waterLevel?: string;
+  clarity?: string;
+  otherInfo?: string;
+  comments?: string;
+  /** Fish that died, by species. The only mortality the director records. */
+  died?: Record<string, number>;
+  /** Clock times the director corrected, by contest day. */
+  hours?: Record<string, { start?: string; stop?: string }>;
+  savedAt?: number;
+};
+
+/**
+ * A tournament: dates, water, species, boundary. The built-in ones are written
+ * into EVENTS; a director can add more, and edit either kind. Built-ins cannot
+ * be deleted, only archived.
+ */
+type TournamentEvent = {
+  id: string;
+  name: string;
+  /** The name with a line break in it, for the home screen's two-line title. */
+  nameHtml: string;
+  presenter: string;
+  /** Leads every tournament id this event hands out - MKWO-001 and so on. */
+  prefix: string;
+  /** 'YYYY-MM-DD', one per contest day, in order. */
+  dates: string[];
+  /** An IANA name, 'America/Denver'. Every clock in the event is read in this. */
+  timeZone: string;
+  courseLabel: string;
+  courseLabelLong: string;
+  targetSpecies: string;
+  recordInches: number;
+  course: Boundary;
+  /** An ISO instant. Registration closes at the very start of it. */
+  registrationClose: string;
+  /** Written into EVENTS rather than added by the director. */
+  builtIn?: boolean;
+  /** Out of the event switcher, with everything it holds kept. */
+  archived?: boolean;
+};
+
+/**
+ * The boundary the director is drawing, before it is saved.
+ *
+ * NOT a Boundary, on purpose. A saved boundary is exactly one shape; a draft
+ * keeps what it has of every shape at once, so switching a circle to an outline
+ * and back again does not throw away the centre that was already placed.
+ * normalizeBoundary() is what turns one of these into a Boundary.
+ */
+type BoundaryDraft = {
+  /** Set from the mode buttons, which carry 'none', 'circle' or 'polygon'. */
+  kind: string;
+  /** Null once cleared, rather than removed. */
+  center?: LatLng | null;
+  radiusMiles?: number;
+  points?: LatLng[];
+};
+
+/** One species an event scores, and the length past which a catch is implausible. */
+type SpeciesEntry = { name: string; recordInches: number };
+
+/**
+ * Money given towards the payouts, and which pot it goes into. `target` is a
+ * key of DONATION_TARGET_LABEL - the general fund, or one division's pool.
+ */
+type Donation = {
+  id: string;
+  target: string;
+  amount: number;
+  note: string;
+  timestamp: number;
+};
+
+/**
+ * A Leaflet map event, as far as the app reads one: where it happened. Leaflet
+ * itself is an honest `any` - see `L` above - so this is the part in use.
+ */
+type LeafletEvent = { latlng: LatLng; target: UnshapedObject };
+
+/** A boundary that actually draws something: a circle or an outline, never 'none'. */
+type UsableBoundary = Exclude<Boundary, { kind: 'none' }>;
+
+/**
+ * One row of the director's contestant list: an angler, their catches, and
+ * how those stand. `best` is the longest approved LENGTH, in inches - 0 with
+ * none - not the catch itself. `rank` is 0 for a disqualified angler.
+ */
+type ContestantRow = {
+  angler: Angler;
+  mine: Catch[];
+  approved: number;
+  pending: number;
+  rejected: number;
+  best: number;
+  rank: number;
+};
+
+/**
+ * One finishing place in a tournament's result - who, and what they caught -
+ * as the result stores it. Slimmer than a live standings row on purpose: a
+ * frozen result is permanent, so it keeps only what it has to show. `top3` is
+ * the sum of their three longest fish.
+ */
+type ResultPlace = { key: string; anglerIds: string[]; best: number; top3: number };
+
+/**
+ * Something the director still has to do before registration opens, as the
+ * setup list shows it. `severity` says whether it blocks opening or only
+ * matters; `deadline` is registration close, which the list counts down to.
+ */
+type SetupTodo = {
+  id: string;
+  title: string;
+  detail: string;
+  deadline: number;
+  severity: string;
+};
+
+/**
+ * One species' row in an FWP size table: how many fish fell in each inch.
+ * The key is the inch mark; the last column also holds everything above it.
+ */
+type SizeRow = {
+  species: string;
+  counts: Record<number, number>;
+  /** Set on both halves of a species too spread out for one table. */
+  split?: boolean;
+};
+
+/**
+ * One line of the event form's dates box: the date it parsed to, or the text
+ * that would not parse, so the form can point at exactly the line that is wrong.
+ */
+type ParsedDateLine = { key?: string; bad?: string };

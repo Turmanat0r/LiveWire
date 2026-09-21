@@ -163,7 +163,7 @@ make sure a thing is there before it uses it?
 | Check | State | Findings |
 |---|---|---|
 | `strictNullChecks` | **on** | 524 when switched on, all resolved rather than silenced |
-| `noImplicitAny` | **in progress** | 984 when measured; 563 left, two areas done |
+| `noImplicitAny` | **in progress** | 984 when measured; 301 left, three areas done |
 | `+ noUncheckedIndexedAccess` | | 1,029 running total |
 | `+ the rest of strict, and the unused checks` | | 1,047 running total |
 
@@ -221,7 +221,7 @@ them - `noImplicitAny` only reports an `any` nobody wrote.
   nothing's forms: reset to `null` in code, and read as `undefined` from a
   missing `data-` attribute.
 
-`test/lint.mjs` prints how many remain on every run. It is 32 now, from 48.
+`test/lint.mjs` prints how many remain on every run. It is 13 now, from 48.
 
 ### noImplicitAny, one area at a time
 
@@ -232,7 +232,7 @@ there is nothing left for it to find. In order:
 
 1. **The data layer** - done. Sync, the outbox, both backends, the caches.
 2. **Anglers and catches** - done. Registration, submission, the leaderboard, scoring.
-3. **The director's tools** - payouts, results, the FWP report, the boundary.
+3. **The director's tools** - done. Payouts, results, the FWP report, the boundary.
 4. **Everything else**, and then the switch goes on.
 
 **The data layer went first because a wrong shape there loses a catch.** It
@@ -316,6 +316,49 @@ a photo, and production has none. Each is identical by construction, and none
 is covered by a behaviour test. Proving them needs a catch filed with a photo,
 and the preview shares production's database, so that is real data;
 `sql/reset-test-data.sql` clears it afterwards.
+
+**The director's tools** went from 235 findings to none, and `noImplicitAny`
+across the app from 563 to 301. Placeholders fell from 32 to 13; the one left in
+this area is Leaflet's own map object, which stays as honest as Leaflet does.
+
+Two of the biggest shapes are **derived rather than written out**:
+`ReportModel` is `ReturnType<typeof buildReportModel>` and `ResultsRecord` is
+`ReturnType<typeof buildResults>`. The screen, the printed sheet and the copied
+text all read the report from one object, and a frozen result has to match a
+freshly built one - a second hand-written copy of either shape would be exactly
+the kind of thing that drifts.
+
+What the compiler corrected, this time:
+
+- `isScoringSpecies` takes a species **or a list of them**. A frozen result
+  stores a list, but one frozen by an older build stored a single name, and the
+  function has always handled both. I had typed it as taking one.
+- A frozen result keeps a **slimmer row** than the live standings - who, their
+  best and their top three - because it is permanent and shows only that.
+- The boundary being drawn is **not a Boundary**. A saved boundary is one
+  shape; a draft keeps what it has of every shape, so switching a circle to an
+  outline and back does not lose the centre. It has a type of its own.
+- `boundaryIsUsable` now tells the compiler what "usable" has always meant: a
+  circle with a real centre and radius, or an outline of three corners or more.
+- A contestant's `best` is a length in inches, not a catch; a size row can be
+  split across both FWP tables; every setup to-do counts down to registration
+  close.
+
+Two changes worth knowing about, both identical in behaviour:
+
+- **Clearing an event cannot run without an event id**, and now says so where
+  the compiler can see it. It never could - a missing id found no event and
+  returned a line later - but this is the one action there that deletes.
+- The review buttons check for a catch id **only where one is used**, not at the
+  top: the same handler serves the Fish-I retry button.
+
+And two of my own tools were wrong, both caught before they did harm. The script
+that annotates parameters turned `.map(id=> ...)` into `id: string=>`, which
+is not valid - the compiler refused it as a syntax error. And **lint's check for
+calls to functions that do not exist had quietly stopped recognising every typed
+parameter**: its pattern read `act: string` as not-a-name. It only surfaced when
+a typed parameter was *called*; it finds parameter lists by matching brackets
+now, and still catches a genuinely missing function.
 
 **One thing the tests cannot tell apart yet.** The live database is empty until
 there is a tournament in it, so a browser pass against production syncs every

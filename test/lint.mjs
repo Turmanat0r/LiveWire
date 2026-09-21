@@ -172,17 +172,51 @@ for (const m of code.matchAll(/^\s*(?:async\s+)?([A-Za-z_$][\w$]*)\s*\([^()]*\)\
 // Parameter names, from both `function f(a, b)` and `(a, b) =>`. Without these
 // a Promise executor's resolve/reject, or any callback argument, reads as an
 // undefined call the moment it is invoked.
-for (const m of code.matchAll(/\bfunction\s*[\w$]*\s*\(([^()]*)\)/g)) {
-  for (const part of m[1].split(',')) {
-    const n = part.trim().replace(/[={].*$/, '').replace(/^\.\.\./, '').trim();
+//
+// FOUND BY BRACKET-MATCHING, NOT BY A FLAT PATTERN, and the reason is types.
+// This used to read the list with `\(([^()]*)\)`, and once parameters gained
+// types that quietly stopped working twice over: `act: string` is not a bare
+// name, so every typed parameter was dropped; and a type with brackets of its
+// own - `onArm: ((id: string) => void) | null` - stopped the pattern matching
+// the list at all. It surfaced only when a typed parameter was CALLED, which
+// onArm was first to be. Walking the brackets handles both.
+function parensInside(src, open) {
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '(') depth++;
+    else if (src[i] === ')' && --depth === 0) return src.slice(open + 1, i);
+  }
+  return '';
+}
+function parensBefore(src, close) {
+  let depth = 0;
+  for (let i = close; i >= 0; i--) {
+    if (src[i] === ')') depth++;
+    else if (src[i] === '(' && --depth === 0) return src.slice(i + 1, close);
+  }
+  return '';
+}
+// Split on the commas that separate parameters - not the ones inside a type.
+function addParamNames(list) {
+  let depth = 0, cur = '';
+  const parts = [];
+  for (const ch of list) {
+    if ('([{'.includes(ch)) depth++;
+    else if (')]}'.includes(ch)) depth--;
+    if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; } else cur += ch;
+  }
+  parts.push(cur);
+  for (const part of parts) {
+    // `...rest`, `name?: Type = default` - keep only the name.
+    const n = part.trim().replace(/^\.\.\./, '').replace(/\??\s*[:=][\s\S]*$/, '').trim();
     if (/^[A-Za-z_$][\w$]*$/.test(n)) defined.add(n);
   }
 }
-for (const m of code.matchAll(/\(([^()]*)\)\s*=>/g)) {
-  for (const part of m[1].split(',')) {
-    const n = part.trim().replace(/[={].*$/, '').replace(/^\.\.\./, '').trim();
-    if (/^[A-Za-z_$][\w$]*$/.test(n)) defined.add(n);
-  }
+for (const m of code.matchAll(/\bfunction\s*[\w$]*\s*(?:<[^>]*>)?\s*\(/g)) {
+  addParamNames(parensInside(code, m.index + m[0].length - 1));
+}
+for (const m of code.matchAll(/\)\s*(?::[^=]+)?=>/g)) {
+  addParamNames(parensBefore(code, m.index));
 }
 for (const m of code.matchAll(/(?:^|[^.\w$])([A-Za-z_$][\w$]*)\s*=>/g)) defined.add(m[1]);
 
