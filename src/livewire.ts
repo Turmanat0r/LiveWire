@@ -108,7 +108,7 @@ const ADMIN_PASS = "lilac-hazel-15";
 // Boundary checks are approximate (straight-line radius from the point below,
 // not the actual shoreline course) and are meant to flag catches for director
 // review, not to auto-reject them.
-const EVENTS = [
+const EVENTS: TournamentEvent[] = [
   {
     id: 'mkwo-2027',
     name: 'Montana Kayak Walleye Open',
@@ -184,7 +184,7 @@ function visibleEvents(){
   const active = activeEventId();
   return allEvents().filter(e=> !e.archived || e.id === active);
 }
-function eventById(id){
+function eventById(id: string | null | undefined): TournamentEvent | null {
   const list = allEvents();
   for(let i=0;i<list.length;i++){ if(list[i].id === id) return list[i]; }
   return null;
@@ -454,9 +454,9 @@ function distanceToPolygonEdgeMiles(lat, lng, points){
   return best;
 }
 
-function boundaryIsUsable(b){
+function boundaryIsUsable(b: BoundaryDraft | null | undefined): b is UsableBoundary {
   if(!b || b.kind === 'none') return false;
-  if(b.kind === 'circle') return !!(b.center && isFinite(b.center.lat) && isFinite(b.center.lng) && b.radiusMiles > 0);
+  if(b.kind === 'circle') return !!(b.center && isFinite(b.center.lat) && isFinite(b.center.lng) && (b.radiusMiles || 0) > 0);
   if(b.kind === 'polygon') return Array.isArray(b.points) && b.points.length >= 3;
   return false;
 }
@@ -525,9 +525,9 @@ function boundaryCenter(b){
   }
   // Nothing set yet - fall back to whatever the event was shipped with, so the
   // director starts looking at roughly the right water.
-  const dflt = (activeEvent().course || {});
-  if(dflt.center) return dflt.center;
-  if(dflt.points && dflt.points.length) return dflt.points[0];
+  const dflt = activeEvent().course;
+  if(dflt && dflt.kind === 'circle') return dflt.center;
+  if(dflt && dflt.kind === 'polygon' && dflt.points.length) return dflt.points[0];
   return { lat: 46.38917, lng: -111.57556 };
 }
 
@@ -1102,7 +1102,7 @@ function activeEventId(){
   if(remembered && eventById(remembered)) return remembered;
   return DEFAULT_EVENT_ID;
 }
-function activeEvent(){ return eventById(activeEventId()) || EVENTS[0]; }
+function activeEvent(): TournamentEvent { return eventById(activeEventId()) || EVENTS[0]; }
 
 // Which event a stored record belongs to. Records written before this app knew
 // about events carry no eventId, and they are all from the first event - so the
@@ -2024,7 +2024,7 @@ async function loadCatches(): Promise<Catch[]> { return cachedRows('catches') as
 // check exists to catch, and scoping it to the live event would blind it to the
 // strongest case there is. Everything that scores, ranks or pays uses
 // loadCatches() instead.
-async function loadCatchesAllEvents(){ return deepClone(allRows('catches')); }
+async function loadCatchesAllEvents(): Promise<Catch[]> { return deepClone(allRows('catches')) as Catch[]; }
 // Same again for the roster, and for the same narrow reason: the trophy case
 // shows YOUR history across every tournament, and an entry id only means
 // something inside one event. Nothing that scores, ranks or pays reads either
@@ -2032,7 +2032,7 @@ async function loadCatchesAllEvents(){ return deepClone(allRows('catches')); }
 async function loadAnglersAllEvents(){ return deepClone(allRows('anglers')); }
 async function loadBetsAllEvents(){ return deepClone(allRows('bets')); }
 async function saveCatches(list: Row[]){ return await saveCollection('catches', list); }
-async function loadDonations(){ return cachedRows('donations'); }
+async function loadDonations(): Promise<Donation[]> { return cachedRows('donations') as Donation[]; }
 async function loadMessages(){ return cachedRows('messages'); }
 async function saveMessages(list: Row[]){ return await saveCollection('messages', list); }
 // One row per angler, keyed by their id, so this table stays the size of the
@@ -2204,7 +2204,7 @@ const OTHER_SPECIES = 'Other';
 //
 // Making this one function polymorphic is what let multiple species reach
 // thirteen call sites without touching any of them.
-function isScoringSpecies(name: string, target?: string){
+function isScoringSpecies(name: string, target?: string | string[]){
   // OTHER_SPECIES is the sentinel an angler picks to say "this is not one of
   // the scoring species". A function called isScoringSpecies answering true for
   // it would be wrong on its face, so it is refused here and not only filtered
@@ -4966,9 +4966,9 @@ async function renderLivewellList(){
 //
 // Each item says what is missing, what it costs to leave it, and the date it
 // stops being possible to fix cheaply.
-function setupTodos(evt, anglers, now?){
+function setupTodos(evt: TournamentEvent, anglers: Angler[], now?: number){
   const at = now === undefined ? Date.now() : now;
-  const out: Unshaped[] = [];
+  const out: SetupTodo[] = [];
   const closeMs = new Date((evt && evt.registrationClose) || 0).getTime();
   const open = isFinite(closeMs) && at < closeMs;
   if(!open) return out;
@@ -4979,7 +4979,7 @@ function setupTodos(evt, anglers, now?){
   // trophy case showing fish neither of them caught alone. Fixing that means
   // real accounts, and the only moment it can be done without splitting a
   // history in half is BEFORE a registration window opens.
-  const shared = {};
+  const shared: Record<string, number> = {};
   (anglers || []).forEach(a=>{
     const k = personKey(a);
     if(k) shared[k] = (shared[k] || 0) + 1;
@@ -5026,11 +5026,11 @@ function setupTodos(evt, anglers, now?){
 // So the director freezes the result once the reviewing is done, and from then
 // on the trophy case reads the frozen copy. Deriving stays the fallback for any
 // event nobody has frozen - including every event from before this existed.
-function frozenResults(eventId){
+function frozenResults(eventId: string): ResultsRecord | null {
   const all = (liveCache.config && liveCache.config.results) || {};
   return all[eventId || activeEventId()] || null;
 }
-async function saveFrozenResults(eventId, record){
+async function saveFrozenResults(eventId: string, record: ResultsRecord | null){
   const all = Object.assign({}, (liveCache.config && liveCache.config.results) || {});
   if(record) all[eventId] = record; else delete all[eventId];
   return await saveConfig({ results: all });
@@ -5039,8 +5039,8 @@ async function saveFrozenResults(eventId, record){
 // Who took the Big Fish pot. Derived here and stored at freeze time, because
 // nothing records it as it happens - it is a running answer to "who is winning"
 // right up until the moment it becomes a result.
-function bigFishWinner(anglers, catches, target){
-  const inPot = {};
+function bigFishWinner(anglers: Angler[], catches: Catch[], target?: string | string[]){
+  const inPot: Record<string, boolean> = {};
   bigFishEntrants(anglers || []).forEach(a=>{ inPot[a.id] = true; });
   const best = (catches || [])
     .filter(c=> c && c.status === 'approved' && isScoringSpecies(c.species, target) && inPot[c.anglerId])
@@ -5051,8 +5051,13 @@ function bigFishWinner(anglers, catches, target){
 // Enough to answer "where did I come and what did I win" without ever going
 // back to the catches. Deliberately small: the fish themselves are still on
 // record, this is only the verdict on them.
-function buildResults(anglers, catches, bets, target){
-  const divisions = {};
+// A tournament's result, as a type - taken from the function that builds it, so
+// the frozen copy and a freshly built one cannot drift apart. targetSpecies may
+// be one name or a list: a result frozen by an older build stored just one.
+type ResultsRecord = ReturnType<typeof buildResults>;
+
+function buildResults(anglers: Angler[], catches: Catch[], bets: Row[], target: string | string[]){
+  const divisions: Record<string, ResultPlace[]> = {};
   (['solo', 'team'] as const).forEach(div=>{
     divisions[div] = standingsFor(div, catches || [], anglers || [], target)
       .map(row=> ({ key: row.key, anglerIds: row.anglerIds.slice(),
@@ -5121,12 +5126,12 @@ async function renderResultsAdmin(){
   if(freezeBtn) freezeBtn.textContent = frozen ? 'Re-freeze from the catches as they stand' : 'Freeze this year\u2019s results';
   if(thawBtn) thawBtn.style.display = frozen ? '' : 'none';
 
-  const podium = (div)=>{
+  const podium = (div: Division)=>{
     const rows = (view.divisions && view.divisions[div]) || [];
     if(rows.length === 0) return '<p class="hint" style="margin:4px 0 0;">Nobody ranked.</p>';
     return rows.slice(0, 3).map((r, i)=>
       '<div class="lbrow"><div class="rank">' + (i + 1) + '</div><div class="who"><div class="name">' +
-      escapeHtml(r.anglerIds.map(id=> displayHandle(byId[id])).join(' & ')) +
+      escapeHtml(r.anglerIds.map((id: string)=> displayHandle(byId[id])).join(' & ')) +
       '</div></div><div class="len">' + Number(r.best).toFixed(2) + '&quot;</div></div>').join('');
   };
   const bf = view.bigFish;
@@ -5531,7 +5536,7 @@ async function renderTrophyCase(){
 // screens, which is where deciding about them belongs.
 function galleryOrder(catches, anglers, myIds){
   const mine = new Set(myIds || []);
-  const byId = {};
+  const byId: Record<string, Angler> = {};
   (anglers || []).forEach(a=>{ byId[a.id] = a; });
   return (catches || [])
     .filter(c=>{
@@ -6014,7 +6019,7 @@ function bySmallestThenEarliest(a: Catch, b: Catch): number {
 // Shared ranking used by BOTH the public leaderboard and the director's
 // contestant view, so "current standing" can never drift between the two.
 // Disqualified anglers are excluded here, which removes them everywhere at once.
-function standingsFor(division: Division, catches: Catch[], anglers: Angler[], target?: string){
+function standingsFor(division: Division, catches: Catch[], anglers: Angler[], target?: string | string[]){
   const anglerById: Record<string, Angler> = {};
   anglers.forEach(a=>{ anglerById[a.id] = a; });
 
@@ -6579,7 +6584,7 @@ const BET_STAKE_MAX = 40;
 const BET_OPEN_MAX = 3;      // per angler, so one person cannot flood the screen
 const BET_SCORING = ['smallest', 'most', 'first', 'manual'];
 
-function betRecords(rows){ return rows.filter(r=> r.kind === 'bet'); }
+function betRecords(rows: Row[]): Row[] { return rows.filter(r=> r.kind === 'bet'); }
 function betJoins(rows, betId){ return rows.filter(r=> r.kind === 'join' && r.betId === betId); }
 function betHasJoined(rows, betId, anglerId){
   return rows.some(r=> r.kind === 'join' && r.betId === betId && r.anglerId === anglerId);
@@ -6599,7 +6604,7 @@ function betStanding(bet, rows, catches, anglerById){
   if(eligible.length === 0) return null;
 
   if(bet.scoring === 'most'){
-    const counts = {};
+    const counts: Record<string, number> = {};
     eligible.forEach(c=>{ counts[c.anglerId] = (counts[c.anglerId] || 0) + 1; });
     let bestId: string | null = null, best = -1;
     Object.keys(counts).forEach(id=>{ if(counts[id] > best){ best = counts[id]; bestId = id; } });
@@ -6799,7 +6804,7 @@ let adminUnlocked = false;
 // so that is what the panel opens on.
 let activeAdminTool = 'review';
 
-function showAdminTool(name){
+function showAdminTool(name: string){
   activeAdminTool = name;
   document.querySelectorAll('[data-admin-tool]').forEach(btn=>{
     btn.classList.toggle('active', (btn as HTMLElement).dataset.adminTool===name);
@@ -6816,7 +6821,10 @@ function showAdminTool(name){
 }
 
 document.querySelectorAll('[data-admin-tool]').forEach(btn=>{
-  btn.addEventListener('click', ()=>showAdminTool((btn as HTMLElement).dataset.adminTool));
+  btn.addEventListener('click', ()=>{
+    const tool = (btn as HTMLElement).dataset.adminTool;
+    if(tool) showAdminTool(tool);
+  });
 });
 
 function tryAdminUnlock(){
@@ -6844,13 +6852,13 @@ function tryAdminUnlock(){
 }
 bindEl('admin-unlock','click', tryAdminUnlock);
 bindEl('admin-signin','click', signInDirector);
-bindEl('admin-email','keydown', (e)=>{ if(e.key === 'Enter') pageEl('admin-password').focus(); });
-bindEl('admin-password','keydown', (e)=>{ if(e.key === 'Enter') signInDirector(); });
+bindEl('admin-email','keydown', (e: KeyboardEvent)=>{ if(e.key === 'Enter') pageEl('admin-password').focus(); });
+bindEl('admin-password','keydown', (e: KeyboardEvent)=>{ if(e.key === 'Enter') signInDirector(); });
 bindEl('admin-signout','click', signOutDirector);
 // Phone keyboards show "go" on this field; without this it did nothing.
-bindEl('admin-pass','keydown', (e)=>{ if(e.key === 'Enter') tryAdminUnlock(); });
+bindEl('admin-pass','keydown', (e: KeyboardEvent)=>{ if(e.key === 'Enter') tryAdminUnlock(); });
 
-function renderGpsCheck(catches){
+function renderGpsCheck(catches: Catch[]){
   // withinBounds is true / false / null - null meaning no boundary was set when
   // the catch was logged. Only an explicit false is out of bounds.
   const inBounds = catches.filter(c=>c.location && c.location.withinBounds === true).length;
@@ -7154,7 +7162,7 @@ const FEE_BIGFISH = 10;
 // Money the roster implies that nobody has matched a payment to yet. The pools
 // only ever count what arrived - this is the gap, shown next to them so it is a
 // number the director can act on rather than a silent absence.
-function outstandingFees(anglers){
+function outstandingFees(anglers: Angler[]){
   const owing = (anglers || []).filter(a=> !feePaid(a));
   const solo = owing.filter(a=> a.division === 'solo').length;
   // One fee per team, so the partner record is not billed a second time.
@@ -7191,7 +7199,7 @@ function unpaidInTheMoney(anglers, catches){
     });
   });
 
-  const inPot = {};
+  const inPot: Record<string, boolean> = {};
   bigFishEntrants(roster).forEach(a=>{ inPot[a.id] = true; });
   const best = (catches || [])
     .filter(c=> c.status === 'approved' && isScoringSpecies(c.species) && inPot[c.anglerId])
@@ -7247,11 +7255,11 @@ const FWP_DEADLINE_DAYS = 30;
 
 // Per-event, in the shared config, so the half-finished form is on every one of
 // the director's devices rather than the one they started it on.
-function reportSettings(id?){
+function reportSettings(id?: string){
   const all = (liveCache.config && liveCache.config.fwpReports) || {};
   return Object.assign({}, all[id || activeEventId()] || {});
 }
-async function saveReportSettings(patch){
+async function saveReportSettings(patch: ReportSettings){
   const all = Object.assign({}, (liveCache.config && liveCache.config.fwpReports) || {});
   const id = activeEventId();
   all[id] = Object.assign({}, all[id] || {}, patch, { savedAt: Date.now() });
@@ -7261,18 +7269,18 @@ async function saveReportSettings(patch){
 // A director's name, address and phone do not change between tournaments, so
 // next year's form opens already holding this year's answers. Only the contact
 // block is carried - water temperature and fish counts obviously are not.
-const REPORT_FILER_FIELDS = ['filerName','filerAddress','filerEmail','filerPhone','sponsor','region'];
+const REPORT_FILER_FIELDS: (keyof ReportSettings)[] = ['filerName','filerAddress','filerEmail','filerPhone','sponsor','region'];
 function lastFiledDetails(){
   const all = (liveCache.config && liveCache.config.fwpReports) || {};
   const here = activeEventId();
-  let best: UnshapedObject | null = null;
+  let best: ReportSettings | null = null;
   Object.keys(all).forEach(key=>{
     if(key === here) return;
     const r = all[key];
     if(!r || !r.filerName) return;
     if(!best || (r.savedAt || 0) > (best.savedAt || 0)) best = r;
   });
-  const out = {};
+  const out: ReportSettings = {};
   const chosen = best;
   if(chosen) REPORT_FILER_FIELDS.forEach(f=>{ if(chosen[f]) out[f] = chosen[f]; });
   return out;
@@ -7282,8 +7290,8 @@ function lastFiledDetails(){
 // existed reads as unknown. Filing them as non-residents would be a guess on a
 // form that goes to the state, so they are counted apart and named - the
 // director can set them from the report screen.
-function residencyCounts(anglers){
-  const out = { resident:0, nonresident:0, unknown:0, unknownAnglers: [] as Unshaped[] };
+function residencyCounts(anglers: Angler[]){
+  const out = { resident:0, nonresident:0, unknown:0, unknownAnglers: [] as Angler[] };
   // Everyone on the roster. The state is counting people who fished, not
   // people whose PayPal has been matched up.
   (anglers || []).forEach(a=>{
@@ -7296,7 +7304,7 @@ function residencyCounts(anglers){
 
 // The head of the form. `anglers` is people, `teams` is entries - a team of two
 // is one entry and two anglers, and the form asks for both.
-function reportFieldCounts(anglers){
+function reportFieldCounts(anglers: Angler[]){
   const list = anglers || [];
   const settled = list.filter(feePaid);
   return {
@@ -7316,24 +7324,24 @@ function reportFieldCounts(anglers){
 // would report more fish to the state than came out of the water. Pending is
 // counted - by filing time it means reviewed-and-fine far more often than it
 // means unreviewed, and reportWarnings() flags any that are still open.
-function reportableCatches(catches){
+function reportableCatches(catches: Catch[]){
   return (catches || []).filter(c=> c && c.status !== 'rejected');
 }
 
 // A catch belongs to the day it was landed read in the EVENT's time zone. A
 // 9pm Montana catch is not the next day, whatever the phone reading this is
 // set to.
-function catchDayKey(c){
+function catchDayKey(c: Catch){
   return eventTimeParts(new Date(c.timestamp)).dateKey;
 }
 
 // HOURS FISHED. The form wants the hours the field was actually on the water,
 // and check-in to check-out is exactly that: first line in, last boat off.
-function contestDayHours(anglers, dates){
+function contestDayHours(anglers: Angler[], dates: string[]){
   const confirmed = (anglers || []);
-  return (dates || []).map((dateKey, i)=>{
+  return (dates || []).map((dateKey: string, i)=>{
     const dayKey = 'day' + (i + 1);
-    let start = null, stop = null;
+    let start: number | null = null, stop: number | null = null;
     confirmed.forEach(a=>{
       const rec = (a.checkins && a.checkins[dayKey]) || {};
       if(rec.in && (start === null || rec.in < start)) start = rec.in;
@@ -7349,8 +7357,8 @@ function contestDayHours(anglers, dates){
 // Fish per day, plus a count of anything landed outside the event dates. Those
 // are almost always test entries, and they are reported rather than dropped -
 // a total that does not add up should be visible, not tidied away.
-function catchesPerDay(catches, dates){
-  const counts = {};
+function catchesPerDay(catches: Catch[], dates: string[]){
+  const counts: Record<string, number> = {};
   (dates || []).forEach(d=>{ counts[d] = 0; });
   let offDays = 0;
   reportableCatches(catches).forEach(c=>{
@@ -7365,7 +7373,7 @@ function catchesPerDay(catches, dates){
 // this is a catch-photo-release tournament, so the app has no field for a fish
 // that did not swim away, and zero is the honest default rather than an
 // assumption dressed up as data.
-function speciesTally(catches, died){
+function speciesTally(catches: Catch[], died?: Record<string, number>){
   const deaths = died || {};
   const rows = new Map();
   reportableCatches(catches).forEach(c=>{
@@ -7393,8 +7401,8 @@ const SIZE_SMALL_MAX = 23;
 const SIZE_LARGE_MIN = 12;
 const SIZE_LARGE_MAX = 30;   // the last column is "30+", so anything longer folds into it
 
-function sizeDistribution(catches){
-  const byName = new Map();
+function sizeDistribution(catches: Catch[]){
+  const byName = new Map<string, number[]>();
   let under8 = 0;
   reportableCatches(catches).forEach(c=>{
     const len = Number(c.length);
@@ -7404,19 +7412,20 @@ function sizeDistribution(catches){
     const inch = Math.floor(len);
     if(inch < SIZE_SMALL_MIN){ under8++; return; }
     const name = c.species || 'Unknown';
-    if(!byName.has(name)) byName.set(name, []);
-    byName.get(name).push(inch);
+    let list = byName.get(name);
+    if(!list){ list = []; byName.set(name, list); }
+    list.push(inch);
   });
 
-  const tally = (list, max)=> list.reduce((m, i)=>{
+  const tally = (list: number[], max: number)=> list.reduce((m: Record<number, number>, i)=>{
     const col = Math.min(i, max);
     m[col] = (m[col] || 0) + 1;
     return m;
   }, {});
 
-  const small: Unshaped[] = [], large: Unshaped[] = [];
+  const small: SizeRow[] = [], large: SizeRow[] = [];
   [...byName.keys()].sort().forEach(name=>{
-    const inches = byName.get(name);
+    const inches = byName.get(name) || [];
     const min = Math.min.apply(null, inches);
     const max = Math.max.apply(null, inches);
     const needsSmall = min < SIZE_LARGE_MIN;     // has a fish only the 8-23 table has a column for
@@ -7438,8 +7447,8 @@ function sizeDistribution(catches){
 // SIZE OF WINNING FISH. The same test the standings use - approved, the species
 // this event scores, and not from an entry that was disqualified or never
 // confirmed - so the form can never disagree with the trophy.
-function winningFish(catches, anglers){
-  const byId = {};
+function winningFish(catches: Catch[], anglers: Angler[]){
+  const byId: Record<string, Angler> = {};
   (anglers || []).forEach(a=>{ byId[a.id] = a; });
   return (catches || []).filter(c=>{
     if(c.status !== 'approved' || !isScoringSpecies(c.species)) return false;
@@ -7451,21 +7460,21 @@ function winningFish(catches, anglers){
 }
 
 // Thirty days from the last day fished.
-function reportDueDate(evt){
+function reportDueDate(evt: TournamentEvent){
   const dates = ((evt || activeEvent()).dates) || [];
   if(dates.length === 0) return null;
   const last = new Date(dates[dates.length - 1] + 'T00:00:00Z');
   if(isNaN(last.getTime())) return null;
   return new Date(last.getTime() + FWP_DEADLINE_DAYS * 86400000);
 }
-function reportDueText(evt, now?){
+function reportDueText(evt: TournamentEvent, now?: number){
   const due = reportDueDate(evt);
   if(!due) return 'This event has no dates set, so there is no deadline to count from.';
   // Formatted in UTC to match the bare YYYY-MM-DD it was built from - see
   // eventDayText() for the same trap.
   const on = due.toLocaleDateString('en-US', { timeZone:'UTC', month:'long', day:'numeric', year:'numeric' });
   const days = Math.ceil((due.getTime() - (now === undefined ? Date.now() : now)) / 86400000);
-  const plural = (n)=> Math.abs(n) === 1 ? 'day' : 'days';
+  const plural = (n: number)=> Math.abs(n) === 1 ? 'day' : 'days';
   if(days < 0) return 'Was due ' + on + ' — ' + Math.abs(days) + ' ' + plural(days) + ' ago.';
   if(days === 0) return 'Due today, ' + on + '.';
   return 'Due ' + on + ' — ' + days + ' ' + plural(days) + ' from now.';
@@ -7474,8 +7483,8 @@ function reportDueText(evt, now?){
 // Everything the report knows it cannot vouch for. This is the part that keeps
 // the form honest: a number that had to leave records out says so here rather
 // than quietly being wrong.
-function reportWarnings(anglers, catches, dates){
-  const out: Unshaped[] = [];
+function reportWarnings(anglers: Angler[], catches: Catch[], dates: string[]){
+  const out: string[] = [];
   const counts = reportFieldCounts(anglers);
   const res = residencyCounts(anglers);
   if(counts.unpaid > 0){
@@ -7507,13 +7516,13 @@ function reportWarnings(anglers, catches, dates){
 // "07:15", in the event's own time zone - which is also the format a time input
 // reads and writes, so a derived time and a typed one are the same string and
 // can be compared, saved and totalled without a second code path.
-function reportClockText(ms){
+function reportClockText(ms: number | null){
   if(!ms) return '';
   return new Date(ms).toLocaleTimeString('en-US', {
     timeZone: activeEvent().timeZone, hour:'2-digit', minute:'2-digit', hourCycle:'h23'
   });
 }
-function clockToMinutes(hhmm){
+function clockToMinutes(hhmm: string){
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm == null ? '' : hhmm).trim());
   if(!m) return null;
   const h = Number(m[1]), min = Number(m[2]);
@@ -7523,7 +7532,7 @@ function clockToMinutes(hhmm){
 // One day's row. A saved override beats the check-in times, and the total is
 // always recomputed from whichever pair is in force - a corrected stop time
 // sitting next to a stale total is worse than no total at all.
-function reportDayRow(day, settings): ReportDayRow {
+function reportDayRow(day: ReturnType<typeof contestDayHours>[number], settings?: ReportSettings): ReportDayRow {
   const saved = ((settings || {}).hours || {})[day.dayKey] || {};
   const start = saved.start || reportClockText(day.start);
   const stop  = saved.stop  || reportClockText(day.stop);
@@ -7543,7 +7552,7 @@ function reportDayRow(day, settings): ReportDayRow {
 // for the same field, because nothing is saved until the box loses focus and a
 // director who agreed with a default never touched it. A form going to the
 // state cannot say one thing on screen and another on paper.
-function reportWithDefaults(cfg){
+function reportWithDefaults(cfg: ReportSettings){
   const evt = activeEvent();
   const out = Object.assign({}, lastFiledDetails(), cfg || {});
   // These two are not guesses: the presenter line IS the sponsor, and the
@@ -7563,7 +7572,7 @@ function reportWithDefaults(cfg){
 // ---- the whole report, in one object ----
 // The screen, the printed sheet and the copied text all read from this, so the
 // three of them cannot drift apart.
-function buildReportModel(anglers, catches, settings){
+function buildReportModel(anglers: Angler[], catches: Catch[], settings?: ReportSettings){
   const evt = activeEvent();
   const dates = evt.dates || [];
   const cfg = reportWithDefaults(settings || reportSettings());
@@ -7609,6 +7618,11 @@ function buildReportModel(anglers, catches, settings){
   };
 }
 
+// The whole report, as a type - taken from the function that builds it rather
+// than written out a second time, so the two cannot drift apart. The screen,
+// the printed sheet and the copied text all take one of these.
+type ReportModel = ReturnType<typeof buildReportModel>;
+
 // ---- rendering ----
 // Split three ways so a phone never loses a keystroke: the fixed fields are
 // static markup filled once when the tool opens, the per-day and per-species
@@ -7627,16 +7641,16 @@ function resetReportForm(){
   reportHoursShape = '';
 }
 
-function reportValue(v){ return v === undefined || v === null ? '' : String(v); }
+function reportValue(v: unknown){ return v === undefined || v === null ? '' : String(v); }
 
-function fillReportInputs(cfg, anglerCount){
+function fillReportInputs(cfg: ReportSettings, anglerCount: number){
   const values = reportWithDefaults(cfg);
   document.querySelectorAll('#admin-tool-report [data-fwp]').forEach(el=>{
     // reportValue() rather than `|| ''`, so a saved zero reaches the box as a
     // zero instead of being wiped by its own falsiness.
     const key = (el as HTMLElement).dataset.fwp;
     if(!key) return;
-    (el as ValueElement).value = reportValue(values[key]);
+    (el as ValueElement).value = reportValue(values[key as keyof ReportSettings]);
   });
   // Boats is the one field left showing its default as a PLACEHOLDER. It is
   // derived from the roster rather than carried, so writing it in would freeze
@@ -7646,7 +7660,7 @@ function fillReportInputs(cfg, anglerCount){
   if(boats && !reportValue(values.boats)) (boats as PlaceholderElement).placeholder = String(anglerCount || 0);
 }
 
-function renderReportHours(days, cfg){
+function renderReportHours(days: ReturnType<typeof contestDayHours>, cfg: ReportSettings){
   const el = pageEl('report-hours');
   if(!el) return;
   const shape = days.map(d=> d.dayKey + ':' + d.dateKey).join('|');
@@ -7671,7 +7685,7 @@ function renderReportHours(days, cfg){
   }).join('');
 }
 
-function renderReportDied(species, cfg){
+function renderReportDied(species: ReportModel['species'], cfg: ReportSettings){
   const el = pageEl('report-died');
   if(!el) return;
   const shape = species.map(s=> s.species).join('|');
@@ -7692,7 +7706,7 @@ function renderReportDied(species, cfg){
   ).join('');
 }
 
-function renderReportResidency(res){
+function renderReportResidency(res: ReportModel['residency']){
   const el = pageEl('report-residency');
   if(!el) return;
   if(res.unknown === 0){
@@ -7731,17 +7745,17 @@ const FWP_FOOTER = 'Send to: MT Fish, Wildlife and Parks - Attn: Fishing Contest
 // the print stylesheet so the posted copy has a genuinely empty box in it -
 // which is what the paper form would have had.
 const SHEET_BLANK = 'not filled in';
-function sheetValue(v, blank){
+function sheetValue(v: unknown, blank?: string){
   const s = reportValue(v).trim();
   return s === '' ? [blank || SHEET_BLANK, true] : [s, false];
 }
-function fwpValue(v, blank?){
+function fwpValue(v: unknown, blank?: string){
   const [text, missing] = sheetValue(v, blank);
   return missing ? '<span class="rblank">' + escapeHtml(text) + '</span>' : escapeHtml(text);
 }
 // Blank rows, so a short tournament still prints a form the same shape as the
 // one it is copied onto.
-function fwpPad(have, want, cols){
+function fwpPad(have: number, want: number, cols: number){
   let out = '';
   for(let i = have; i < want; i++){
     out += '<tr>' + new Array(cols + 1).join('<td>&nbsp;</td>') + '</tr>';
@@ -7750,22 +7764,22 @@ function fwpPad(have, want, cols){
 }
 // The form's fill-in-the-blank options - Up / Down / Normal and the rest. The
 // answer goes in as an X on the blank, the way it would be written by hand.
-function fwpTick(actual, option){
+function fwpTick(actual: unknown, option: string){
   const on = String(actual || '').toLowerCase() === option.toLowerCase();
   return '<span class="fwp-box">' + (on ? 'X' : '&nbsp;') + '</span> ' + escapeHtml(option);
 }
-function fwpFill(v, blank?){
+function fwpFill(v: unknown, blank?: string){
   return '<span class="fwp-fill">' + fwpValue(v, blank) + '</span>';
 }
 
-function sizeColumns(min, max){
-  const out: Unshaped[] = [];
+function sizeColumns(min: number, max: number){
+  const out: number[] = [];
   for(let i = min; i <= max; i++) out.push(i);
   return out;
 }
 // One of page two's two tables. `plusLast` labels the final column "30+",
 // which is how the form writes its catch-all.
-function sizeTableHtml(rows, min, max, plusLast, padTo){
+function sizeTableHtml(rows: ReportModel['sizes']['small'], min: number, max: number, plusLast: boolean, padTo: number){
   const cols = sizeColumns(min, max);
   const head =
     '<tr><th rowspan="2" class="fwp-species-col">List Species</th>' +
@@ -7780,7 +7794,7 @@ function sizeTableHtml(rows, min, max, plusLast, padTo){
     fwpPad(rows.length, padTo, cols.length + 1) + '</table></div>';
 }
 
-function renderReportSheet(model){
+function renderReportSheet(model: ReportModel){
   const el = pageEl('report-sheet');
   if(!el) return;
   const cfg = model.settings;
@@ -7913,10 +7927,10 @@ function renderReportSheet(model){
 
 // What the form has no box for, said on screen only. The sheet above is a copy
 // of a state form and stays one; this is where the app gets to explain itself.
-function renderReportNotes(model){
+function renderReportNotes(model: ReportModel){
   const el = pageEl('report-notes');
   if(!el) return;
-  const out: Unshaped[] = [];
+  const out: string[] = [];
   if(model.died > 0){
     out.push('Released is left blank per day: the app records which species did not survive, ' +
       'not which day it happened on. Split the ' + model.died + ' across the day rows yourself.');
@@ -7938,10 +7952,10 @@ function renderReportNotes(model){
 
 // The same sheet as plain text. Printing needs a printer; this needs nothing,
 // and pastes straight into an email to the region office.
-function reportSheetText(model){
+function reportSheetText(model: ReportModel){
   const el = pageEl('report-sheet');
   const html = el ? el.innerHTML : '';
-  const lines: Unshaped[] = [];
+  const lines: string[] = [];
   html.split(/<\/(?:div|tr|p|h3)>/i).forEach(chunk=>{
     const text = stripEntities(chunk.replace(/<[^>]*>/g, '\t'))
       .replace(/\t+/g, '\t').replace(/^\t|\t$/g, '').trim();
@@ -7987,8 +8001,8 @@ async function renderFwpReport(){
 // One delegated listener for the whole card: the day and species fields are
 // rebuilt from time to time, and a listener bound to each of them would be lost
 // the moment they were.
-bindEl('admin-tool-report', 'change', async (e)=>{
-  const el = e.target;
+bindEl('admin-tool-report', 'change', async (e: Event)=>{
+  const el = e.target as ValueElement | null;
   if(!el || !el.dataset) return;
   const cfg = reportSettings();
 
@@ -8013,8 +8027,9 @@ bindEl('admin-tool-report', 'change', async (e)=>{
   await renderFwpReport();
 });
 
-bindEl('admin-tool-report', 'click', async (e)=>{
-  const btn = e.target && e.target.closest ? e.target.closest('[data-fwp-res]') : null;
+bindEl('admin-tool-report', 'click', async (e: Event)=>{
+  const t = e.target as HTMLElement | null;
+  const btn = t && t.closest ? t.closest<HTMLElement>('[data-fwp-res]') : null;
   if(!btn) return;
   const anglers = await loadAnglers();
   const idx = anglers.findIndex(a=> a.id === btn.dataset.angler);
@@ -8074,7 +8089,7 @@ function reportSpillPages(){
   const sheet = document.getElementById('report-sheet');
   if(!sheet || !sheet.querySelectorAll) return [];
   const pages = sheet.querySelectorAll('.fwp-page');
-  const out: Unshaped[] = [];
+  const out: number[] = [];
   for(let i = 0; i < pages.length; i++){
     const page = pages[i];
     if(page.classList) page.classList.remove('overflowing');
@@ -8092,7 +8107,7 @@ function reportSpillPages(){
 
 // Said in sheets of paper rather than pixels, because that is the decision:
 // how many pages am I about to put in an envelope.
-function spillText(pages){
+function spillText(pages: number[]){
   if(pages.length === 0) return '';
   const which = pages.length === 1
     ? 'Page ' + pages[0] + ' holds'
@@ -8110,7 +8125,7 @@ function renderReportSpill(){
   el.innerHTML = '<div class="rspill">' + escapeHtml(spillText(pages)) + '</div>';
 }
 
-function setReportPageView(on){
+function setReportPageView(on: boolean){
   reportPageView = !!on;
   const sheet = document.getElementById('report-sheet');
   if(sheet && sheet.classList) sheet.classList.toggle('pageview', reportPageView);
@@ -8137,7 +8152,7 @@ bindEl('report-copy', 'click', async ()=>{
   const anglers = await loadAnglers();
   const catches = await loadCatches();
   const text = reportSheetText(buildReportModel(anglers, catches, reportSettings()));
-  const say = (msg)=>{ if(note){ note.textContent = msg; note.style.display = 'block'; } };
+  const say = (msg: string)=>{ if(note){ note.textContent = msg; note.style.display = 'block'; } };
   try{
     await navigator.clipboard.writeText(text);
     say('Copied. Paste it into an email or a document.');
@@ -8164,7 +8179,7 @@ const PAYOUT_SHARES = [
   { place: '2nd', share: 0.30 },
   { place: '3rd', share: 0.20 }
 ];
-function splitFor(eligible, pool){
+function splitFor(eligible: number, pool: number){
   // Only pay out places the field can actually fill (a 1-entry division has no
   // 2nd or 3rd place to award).
   const paid = Math.min(Math.max(0, Number(eligible) || 0), PAYOUT_SHARES.length);
@@ -8199,7 +8214,7 @@ async function renderPayoutCalculator(){
   // already counts each real person once with no special-casing needed.
   const bigfishAnglerCount = counts.bigfish;
 
-  function donatedTo(target){
+  function donatedTo(target: string){
     return donations.filter(d=>d.target===target).reduce((s,d)=>s+d.amount, 0);
   }
   const soloDonated = donatedTo('solo');
@@ -8213,7 +8228,7 @@ async function renderPayoutCalculator(){
 
   // `entries` is everyone who paid in (the pool); `eligible` excludes
   // disqualified anglers, who forfeit their place but not their entry fee.
-  function divisionHtml(name, entries, pool, donated, eligible){
+  function divisionHtml(name: string, entries: number, pool: number, donated: number, eligible: number){
     const splits = splitFor(eligible, pool);
     const rows = splits.length===0
       ? '<p class="hint" style="margin:6px 0 0;">No entries yet.</p>'
@@ -8279,13 +8294,13 @@ async function renderPayoutCalculator(){
 // Director-only. Two things: how much the roster implies is still to come, and
 // the one case that has to be settled before any money moves - somebody in the
 // money who has not paid in.
-function renderOutstandingFees(anglers, catches){
+function renderOutstandingFees(anglers: Angler[], catches: Catch[]){
   const el = pageEl('payout-outstanding');
   if(!el) return;
   const owed = outstandingFees(anglers);
   if(owed.entries === 0){ el.innerHTML = ''; return; }
 
-  const bits: Unshaped[] = [];
+  const bits: string[] = [];
   if(owed.solo) bits.push(owed.solo + ' solo');
   if(owed.teams) bits.push(owed.teams + ' team');
   if(owed.bigfish) bits.push(owed.bigfish + ' Big Fish');
@@ -8309,10 +8324,10 @@ function renderOutstandingFees(anglers, catches){
     '</div>';
 }
 
-const DONATION_TARGET_LABEL = { general:'General fund', solo:'Solo pool', team:'Team pool', bigfish:'Big Fish pot' };
+const DONATION_TARGET_LABEL: Record<string, string> = { general:'General fund', solo:'Solo pool', team:'Team pool', bigfish:'Big Fish pot' };
 let editingDonationId: MaybeId = null;
 
-function renderDonationList(donations){
+function renderDonationList(donations: Donation[]){
   const el = pageEl('don-list');
   if(!el) return;
   if(donations.length===0){
@@ -8372,7 +8387,7 @@ function renderDonationList(donations){
   });
 }
 
-function donationEditRowHtml(d){
+function donationEditRowHtml(d: Donation){
   const opts = Object.keys(DONATION_TARGET_LABEL).map(key=>
     '<option value="'+key+'"'+(key===d.target?' selected':'')+'>'+DONATION_TARGET_LABEL[key]+'</option>'
   ).join('');
@@ -8387,8 +8402,8 @@ function donationEditRowHtml(d){
   '</div>';
 }
 
-bindEl('awards-budget','change', async (e)=>{
-  const amount = parseFloat(e.target.value);
+bindEl('awards-budget','change', async (e: Event)=>{
+  const amount = parseFloat((e.target as ValueElement).value);
   await saveAwardsBudget(amount>0 ? amount : 0);
   renderPayoutCalculator();
 });
@@ -8414,11 +8429,11 @@ bindEl('don-add','click', async ()=>{
 // ---- event switcher ----
 // Counts read the WHOLE cache rather than going through cachedRows(), because
 // the point of this panel is to show what the other events hold too.
-function eventRowCounts(id){
-  const count = (name)=> allRows(name).filter(r=> rowEventId(r) === id).length;
+function eventRowCounts(id: string){
+  const count = (name: SharedCollection)=> allRows(name).filter(r=> rowEventId(r) === id).length;
   return { anglers: count('anglers'), catches: count('catches'), donations: count('donations') };
 }
-function eventLabel(evt){ return evt.name + ' · ' + eventDateRangeText(evt); }
+function eventLabel(evt: TournamentEvent){ return evt.name + ' · ' + eventDateRangeText(evt); }
 
 function renderEventAdmin(){
   const activeId = activeEventId();
@@ -8440,7 +8455,7 @@ function renderEventAdmin(){
       const c = eventRowCounts(e.id);
       const isLive = e.id === activeId;
       const total = c.anglers + c.catches + c.donations;
-      const tags: Unshaped[] = [];
+      const tags: string[] = [];
       if(isLive) tags.push('<span class="badge" style="background:#DDE6D5;color:#3D6A50;">Live</span>');
       if(e.archived) tags.push('<span class="badge" style="background:#E4E1D8;color:#6B6963;">Archived</span>');
       if(!e.builtIn) tags.push('<span class="badge">Added here</span>');
@@ -8569,7 +8584,7 @@ const SPECIES_PRESETS = [
 ];
 const SPECIES_CUSTOM = '__custom__';
 
-function speciesPreset(name){
+function speciesPreset(name: string){
   for(const g of SPECIES_PRESETS){
     for(const it of g.items){ if(it.name === name) return it; }
   }
@@ -8592,7 +8607,7 @@ function chosenSpeciesName(){
 // The FIRST one is marked primary: it is the default selection on the submit
 // screen and the one the camera guide is drawn for, and saying so beats leaving
 // the director to wonder why order matters.
-function speciesRowsHtml(list){
+function speciesRowsHtml(list: SpeciesEntry[]){
   if(list.length === 0){
     return '<p class="empty">No scoring species set. Nothing an angler submits ' +
       'can be ranked, placed or paid until there is at least one.</p>';
@@ -8615,7 +8630,10 @@ function renderSpeciesAdmin(){
   if(listEl){
     listEl.innerHTML = speciesRowsHtml(speciesList(s));
     listEl.querySelectorAll('[data-sp-remove]').forEach(btn=>{
-      btn.addEventListener('click', ()=> removeScoringSpecies((btn as HTMLElement).dataset.spRemove));
+      btn.addEventListener('click', ()=>{
+        const name = (btn as HTMLElement).dataset.spRemove;
+        if(name) removeScoringSpecies(name);
+      });
     });
   }
   if(!sel) return;
@@ -8641,7 +8659,7 @@ function renderSpeciesAdmin(){
 // Taking a species off the list does not delete anything: the catches keep the
 // name they were filed under, and simply stop counting. That is worth saying out
 // loud with a number attached, because it silently changes the standings.
-async function removeScoringSpecies(name){
+async function removeScoringSpecies(name: string){
   const errEl = pageEl('species-err');
   errEl.style.display = 'none';
   const list = speciesList();
@@ -8670,7 +8688,7 @@ async function removeScoringSpecies(name){
 // targetSpecies and recordInches are written alongside the list, so an older
 // copy of the app - a phone that has not reloaded since - still reads the
 // primary species rather than finding nothing at all.
-async function saveSpeciesList(list){
+async function saveSpeciesList(list: SpeciesEntry[]){
   return await saveEventSettings({
     speciesList: list,
     targetSpecies: list.length ? list[0].name : '',
@@ -8744,8 +8762,8 @@ bindEl('species-save','click', async ()=>{
 // edited. The id itself is never editable: records point at it.
 let evEditing: MaybeId = null;
 
-function parseDateLines(text){
-  const out: Unshaped[] = [];
+function parseDateLines(text: string){
+  const out: ParsedDateLine[] = [];
   String(text||'').split('\n').forEach(line=>{
     const t = line.trim();
     if(!t) return;
@@ -8762,7 +8780,7 @@ function parseDateLines(text){
   });
   return out;
 }
-function isValidTimeZone(tz){
+function isValidTimeZone(tz: string){
   if(!tz) return false;
   try{ new Intl.DateTimeFormat('en-US', { timeZone: tz }); return true; }
   catch(e){ return false; }
@@ -8770,7 +8788,7 @@ function isValidTimeZone(tz){
 // The form takes a plain date - the last day anyone may enter. The stored value
 // is the instant registration STOPS, i.e. the start of the following day in the
 // event's own zone, which is what isRegistrationClosed() compares against.
-function registrationCloseFromDate(dateStr, tz){
+function registrationCloseFromDate(dateStr: string, tz: string){
   const m = String(dateStr||'').trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if(!m) return null;
   const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
@@ -8785,7 +8803,7 @@ function registrationCloseFromDate(dateStr, tz){
   const off = (parts && parts.value.match(/GMT([+-]\d{2}:\d{2})/) || [])[1] || '+00:00';
   return key + 'T00:00:00' + off;
 }
-function registrationCloseToDate(iso, tz){
+function registrationCloseToDate(iso: string, tz: string){
   const t = new Date(iso);
   if(isNaN(t.getTime())) return '';
   // One millisecond earlier is the last day entries are open.
@@ -8815,7 +8833,7 @@ function renderEventForm(){
       '</optgroup>').join('');
   }
 
-  const fill = (id, value)=>{
+  const fill = (id: string, value: string)=>{
     const el = document.getElementById(id);
     if(el && document.activeElement !== el) (el as ValueElement).value = value;
   };
@@ -8839,7 +8857,7 @@ function renderEventForm(){
 //
 // toEntities() below is the way back, and only has to escape the ampersand:
 // nothing typed into a text box arrives as a tag.
-function stripEntities(s){
+function stripEntities(s: string){
   return String(s == null ? '' : s)
     .replace(/<br\s*\/?>/gi, ' ')
     .replace(/&middot;/g, '·').replace(/&nbsp;/g, ' ')
@@ -8854,7 +8872,7 @@ function stripEntities(s){
     .replace(/&amp;/g, '&')
     .trim();
 }
-function toEntities(s){
+function toEntities(s: string){
   return String(s).replace(/&/g, '&amp;');
 }
 
@@ -8897,7 +8915,8 @@ bindEl('ev-save','click', async ()=>{
 
   const bad = parsed.find(p=> p.bad);
   if(bad) return fail('"'+bad.bad+'" is not a date I can read. Use YYYY-MM-DD, one per line.');
-  const dates = parsed.map(p=> p.key).sort();
+  // A line that would not parse has already returned, so every key is here.
+  const dates = parsed.map(p=> p.key).filter((k): k is string => !!k).sort();
   if(dates.length === 0) return fail('Add at least one event day.');
   if(dates.length > 7) return fail('That is more than seven days — check the dates.');
   if(new Set(dates).size !== dates.length) return fail('One of those days is listed twice.');
@@ -8945,7 +8964,7 @@ bindEl('ev-save','click', async ()=>{
     'Added ' + name + '. It is not live yet — pick it in the switcher above when you are ready.');
 });
 
-function countsSentence(c){
+function countsSentence(c: ReturnType<typeof eventRowCounts>){
   return 'It holds ' + c.anglers + ' angler' + (c.anglers===1?'':'s') + ', ' +
          c.catches + ' catch' + (c.catches===1?'':'es') + ' and ' +
          c.donations + ' donation' + (c.donations===1?'':'s') + '.';
@@ -8954,7 +8973,7 @@ function countsSentence(c){
 // Typing the name, not clicking OK. These wipe a season's records and cannot be
 // undone, and a confirm dialog on a phone is one tap away from the button that
 // opened it - which is exactly the mis-tap this has to survive.
-function confirmByName(evt, verb, detail){
+function confirmByName(evt: TournamentEvent, verb: string, detail: string){
   const typed = window.prompt(
     verb + ' "' + evt.name + '" — this cannot be undone.\n\n' + detail +
     '\n\nType the event name exactly to confirm:', '');
@@ -8972,7 +8991,7 @@ function confirmByName(evt, verb, detail){
 // saveCollection cannot do this: it is scoped to the live event by design, so
 // it would read another event's rows as nothing to delete. These ops are built
 // directly and the cache is trimmed to match.
-async function wipeEventData(id){
+async function wipeEventData(id: string){
   const doomed: Record<string, Set<string>> = {};
   const ops: OutboxOp[] = [];
   for(const coll of SHARED_COLLECTIONS){
@@ -9002,6 +9021,8 @@ function wireEventListActions(){
   document.querySelectorAll('#event-list [data-ev-act]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       const id = (btn as HTMLElement).dataset.evId;
+      // No id, no event, and above all no wipe: the one action here that deletes.
+      if(!id) return;
       const act = (btn as HTMLElement).dataset.evAct;
       const evt = eventById(id);
       if(!evt) return;
@@ -9066,7 +9087,7 @@ function wireEventListActions(){
 // ---- boundary editor (director) ----
 // bndDraft is a scratch copy. Nothing reaches the shared config, and so nothing
 // reaches an angler's phone, until Save.
-let bndDraft: UnshapedObject | null = null;
+let bndDraft: BoundaryDraft | null = null;
 let bndFitted = false;
 let bndDragging = false;
 // Where the radius handle sits around the circle, in radians from north. Kept
@@ -9078,16 +9099,16 @@ let bndRadiusBearing = Math.PI / 2;
 // stored, rather than straight into bndDraft, because deepClone() hands back
 // `any` and assigning that would make TypeScript forget the null check just
 // above. This way the compiler proves the promise instead of being told it.
-function ensureBndDraft(): UnshapedObject {
+function ensureBndDraft(): BoundaryDraft {
   if(!bndDraft){
-    const fresh: UnshapedObject = deepClone(courseBoundary() || { kind:'none' });
+    const fresh: BoundaryDraft = deepClone(courseBoundary() || { kind:'none' });
     if(!fresh.kind) fresh.kind = 'none';
     bndDraft = fresh;
   }
   return bndDraft;
 }
-function parsePointLines(text){
-  const pts: Unshaped[] = [];
+function parsePointLines(text: string){
+  const pts: LatLng[] = [];
   String(text||'').split('\n').forEach(line=>{
     const parts = line.trim().split(/[\s,]+/).filter(Boolean);
     if(parts.length < 2) return;
@@ -9096,17 +9117,17 @@ function parsePointLines(text){
   });
   return pts;
 }
-function formatPointLines(pts){
+function formatPointLines(pts: LatLng[] | undefined){
   return (pts||[]).map(p=> p.lat.toFixed(5)+', '+p.lng.toFixed(5)).join('\n');
 }
 
-const BND_HELP = {
+const BND_HELP: Record<string, string> = {
   circle:  'Tap the map to drop the launch point. Drag + to move the whole circle, or drag ↔ on the edge to grow and shrink it. Typing the numbers does the same thing.',
   polygon: 'Tap the map to drop each corner, going around the course. Drag any numbered corner to move it. Three or more corners make the shape; the last joins back to the first.',
   none:    'No boundary. Catches still record where they were taken, but nothing is judged in or out.'
 };
 
-function renderBoundaryEditor(opts?){
+function renderBoundaryEditor(opts?: { skipInputs?: boolean }){
   const skipInputs = !!(opts && opts.skipInputs);
   const d = ensureBndDraft();
 
@@ -9124,9 +9145,9 @@ function renderBoundaryEditor(opts?){
     const lngEl = document.getElementById('bnd-lng');
     const radEl = document.getElementById('bnd-radius');
     const ptsEl = document.getElementById('bnd-points');
-    if(latEl && document.activeElement !== latEl) (latEl as ValueElement).value = (d.center && isFinite(d.center.lat)) ? d.center.lat : '';
-    if(lngEl && document.activeElement !== lngEl) (lngEl as ValueElement).value = (d.center && isFinite(d.center.lng)) ? d.center.lng : '';
-    if(radEl && document.activeElement !== radEl) (radEl as ValueElement).value = d.radiusMiles || '';
+    if(latEl && document.activeElement !== latEl) (latEl as ValueElement).value = (d.center && isFinite(d.center.lat)) ? String(d.center.lat) : '';
+    if(lngEl && document.activeElement !== lngEl) (lngEl as ValueElement).value = (d.center && isFinite(d.center.lng)) ? String(d.center.lng) : '';
+    if(radEl && document.activeElement !== radEl) (radEl as ValueElement).value = String(d.radiusMiles || '');
     if(ptsEl && document.activeElement !== ptsEl) (ptsEl as ValueElement).value = formatPointLines(d.points);
   }
 
@@ -9138,12 +9159,12 @@ function renderBoundaryEditor(opts?){
   if(entry){
     if(!entry.wiredBoundary){
       entry.wiredBoundary = true;
-      entry.map.on('click', (e)=>{
+      entry.map.on('click', (e: LeafletEvent)=>{
         const draft = ensureBndDraft();
         const lat = Number(e.latlng.lat.toFixed(5)), lng = Number(e.latlng.lng.toFixed(5));
         if(draft.kind === 'circle'){
           draft.center = { lat, lng };
-          if(!(draft.radiusMiles > 0)) draft.radiusMiles = 1;
+          if(!((draft.radiusMiles || 0) > 0)) draft.radiusMiles = 1;
         } else if(draft.kind === 'polygon'){
           if(!Array.isArray(draft.points)) draft.points = [];
           draft.points.push({ lat, lng });
@@ -9166,7 +9187,7 @@ function renderBoundaryEditor(opts?){
 
 // The draggable bits: a numbered handle per corner of an outline, or a centre
 // and a radius handle for a circle.
-function buildBoundaryHandles(entry, d){
+function buildBoundaryHandles(entry: UnshapedObject, d: BoundaryDraft){
   entry.pins.clearLayers();
 
   const startDrag = ()=>{ bndDragging = true; };
@@ -9185,9 +9206,9 @@ function buildBoundaryHandles(entry, d){
         keyboard:false, title:'Corner '+(i+1)+' — drag to move'
       });
       m.on('dragstart', startDrag);
-      m.on('drag', (e)=>{
+      m.on('drag', (e: LeafletEvent)=>{
         const ll = e.target.getLatLng();
-        d.points[i] = { lat: Number(ll.lat.toFixed(5)), lng: Number(ll.lng.toFixed(5)) };
+        if(d.points) d.points[i] = { lat: Number(ll.lat.toFixed(5)), lng: Number(ll.lng.toFixed(5)) };
         live();
       });
       m.on('dragend', endDrag);
@@ -9202,7 +9223,7 @@ function buildBoundaryHandles(entry, d){
       keyboard:false, title:'Launch point — drag to move the whole circle'
     });
     centre.on('dragstart', startDrag);
-    centre.on('drag', (e)=>{
+    centre.on('drag', (e: LeafletEvent)=>{
       const ll = e.target.getLatLng();
       d.center = { lat: Number(ll.lat.toFixed(5)), lng: Number(ll.lng.toFixed(5)) };
       // Carry the radius handle along with the circle it belongs to.
@@ -9213,21 +9234,23 @@ function buildBoundaryHandles(entry, d){
     centre.on('dragend', endDrag);
     centre.addTo(entry.pins);
 
-    if(d.radiusMiles > 0){
+    if((d.radiusMiles || 0) > 0){
       const hp = offsetLatLng(d.center, d.radiusMiles, bndRadiusBearing);
       const rim = L.marker([hp.lat, hp.lng], {
         draggable:true, icon:handleIcon('↔', 'radius'), zIndexOffset:1000,
         keyboard:false, title:'Drag to grow or shrink the circle'
       });
       rim.on('dragstart', startDrag);
-      rim.on('drag', (e)=>{
+      rim.on('drag', (e: LeafletEvent)=>{
         const ll = e.target.getLatLng();
         // Radius is simply how far the handle now sits from the centre, and the
         // handle keeps whatever bearing it was dragged to rather than snapping
         // back to due east on the next redraw.
-        const miles = milesBetween(d.center.lat, d.center.lng, ll.lat, ll.lng);
+        const c = d.center;
+        if(!c) return;
+        const miles = milesBetween(c.lat, c.lng, ll.lat, ll.lng);
         d.radiusMiles = Number(Math.max(0.05, miles).toFixed(3));
-        bndRadiusBearing = bearingFrom(d.center, { lat: ll.lat, lng: ll.lng });
+        bndRadiusBearing = bearingFrom(c, { lat: ll.lat, lng: ll.lng });
         live();
       });
       rim.on('dragend', endDrag);
@@ -9241,7 +9264,7 @@ function buildBoundaryHandles(entry, d){
 
 // Strip a draft down to exactly what the boundary kind needs, so a circle never
 // carries stale polygon points around in the shared config.
-function normalizeBoundary(b): Boundary {
+function normalizeBoundary(b: BoundaryDraft | null | undefined): Boundary {
   if(!b || b.kind === 'none' || !b.kind) return { kind:'none' };
   if(b.kind === 'circle'){
     return { kind:'circle',
@@ -9250,7 +9273,7 @@ function normalizeBoundary(b): Boundary {
   }
   return { kind:'polygon', points: (b.points||[]).map(p=>({ lat:Number(p.lat), lng:Number(p.lng) })) };
 }
-function describeBoundary(b){
+function describeBoundary(b: Boundary | null | undefined){
   if(!boundaryIsUsable(b)) return 'no boundary';
   if(b.kind === 'circle') return b.radiusMiles + ' mile circle around ' +
     b.center.lat.toFixed(4) + ', ' + b.center.lng.toFixed(4);
@@ -9260,9 +9283,10 @@ function describeBoundary(b){
 document.querySelectorAll('#bnd-modes [data-bmode]').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     const d = ensureBndDraft();
-    if(d.kind === (btn as HTMLElement).dataset.bmode) return;
-    d.kind = (btn as HTMLElement).dataset.bmode;
-    if(d.kind === 'circle' && !(d.radiusMiles > 0)) d.radiusMiles = 1;
+    const mode = (btn as HTMLElement).dataset.bmode;
+    if(!mode || d.kind === mode) return;
+    d.kind = mode;
+    if(d.kind === 'circle' && !((d.radiusMiles || 0) > 0)) d.radiusMiles = 1;
     if(d.kind === 'polygon' && !Array.isArray(d.points)) d.points = [];
     bndFitted = false;
     renderBoundaryEditor();
@@ -9297,9 +9321,9 @@ bindEl('bnd-clear','click', ()=>{
   renderBoundaryEditor();
 });
 
-bindEl('bnd-locate','click', async (e)=>{
+bindEl('bnd-locate','click', async (e: Event)=>{
   const errEl = pageEl('bnd-err');
-  const btn = e.currentTarget;
+  const btn = e.currentTarget as HTMLButtonElement;
   errEl.style.display = 'none';
   const was = btn.textContent;
   btn.textContent = 'Finding…'; btn.disabled = true;
@@ -9308,7 +9332,7 @@ bindEl('bnd-locate','click', async (e)=>{
     const d = ensureBndDraft();
     if(d.kind === 'circle'){
       d.center = { lat: Number(pos.lat.toFixed(5)), lng: Number(pos.lng.toFixed(5)) };
-      if(!(d.radiusMiles > 0)) d.radiusMiles = 1;
+      if(!((d.radiusMiles || 0) > 0)) d.radiusMiles = 1;
     } else if(d.kind === 'polygon'){
       if(!Array.isArray(d.points)) d.points = [];
       d.points.push({ lat: Number(pos.lat.toFixed(5)), lng: Number(pos.lng.toFixed(5)) });
@@ -9508,7 +9532,7 @@ async function renderPositionsAdmin(){
 
 // One place the three review actions are applied, used by the list buttons and
 // by the lightbox, so the two can never disagree about what "reject" does.
-async function reviewCatch(id, action){
+async function reviewCatch(id: string, action: string | undefined){
   const catches = await loadCatches();
   const idx = catches.findIndex(c=> c.id === id);
   if(idx === -1) return false;
@@ -9531,7 +9555,7 @@ const LIGHTBOX_PUBLIC = 'public';
 let lightboxCatchId: MaybeId = null;
 let lightboxMode = LIGHTBOX_PUBLIC;
 // The ids the arrows walk, in the order the screen behind is showing them.
-let lightboxSequence: Unshaped[] = [];
+let lightboxSequence: string[] = [];
 // Whether the panel put an entry on the history stack when it opened.
 let lightboxPushed = false;
 
@@ -9569,16 +9593,17 @@ function closeLightbox(){
 
 // Where the current fish sits in the sequence, or -1 when it was opened alone.
 function lightboxIndex(){
-  return lightboxSequence.indexOf(lightboxCatchId);
+  // No fish open is -1 too - it was never in the sequence to be found.
+  return lightboxCatchId ? lightboxSequence.indexOf(lightboxCatchId) : -1;
 }
-function lightboxStep(delta){
+function lightboxStep(delta: number){
   const i = lightboxIndex();
   if(i === -1) return;
   const next = lightboxSequence[i + delta];
   if(next) openLightbox(next, { mode: lightboxMode, sequence: lightboxSequence });
 }
 
-async function openLightbox(catchId, opts){
+async function openLightbox(catchId: string, opts?: { mode?: string; sequence?: string[] }){
   const box = document.getElementById('photo-lightbox');
   if(!box) return;
   const o = opts || {};
@@ -9683,7 +9708,7 @@ async function openLightbox(catchId, opts){
 
 // An object-storage URL can 404 while an upload is still queued on a phone with
 // no signal, which is a normal state here rather than an error.
-function setLightboxMissing(missing){
+function setLightboxMissing(missing: boolean){
   const note = document.getElementById('lightbox-missing');
   if(note) note.hidden = !missing;
   if(missing){
@@ -9703,9 +9728,14 @@ function setLightboxMissing(missing){
   host.addEventListener('click', (e)=>{
     const slot = e.target && (e.target as HTMLElement).closest && (e.target as HTMLElement).closest('[data-photo-for]');
     if(!slot) return;
-    const ids: Unshaped[] = [];
-    host.querySelectorAll('[data-photo-for]').forEach(el=> ids.push((el as HTMLElement).dataset.photoFor));
-    openLightbox((slot as HTMLElement).dataset.photoFor, { mode: pair[1], sequence: ids });
+    const openId = (slot as HTMLElement).dataset.photoFor;
+    if(!openId) return;
+    const ids: string[] = [];
+    host.querySelectorAll<HTMLElement>('[data-photo-for]').forEach(el=>{
+      const pid = el.dataset.photoFor;
+      if(pid) ids.push(pid);
+    });
+    openLightbox(openId, { mode: pair[1], sequence: ids });
   });
 });
 
@@ -9718,8 +9748,9 @@ bindEl('lightbox-img','click', ()=>{
   const box = document.getElementById('photo-lightbox');
   if(box) box.classList.toggle('zoomed');
 });
-bindEl('lightbox-actions','click', async (e)=>{
-  const btn = e.target && e.target.closest && e.target.closest('[data-lb-act]');
+bindEl('lightbox-actions','click', async (e: Event)=>{
+  const t = e.target as HTMLElement | null;
+  const btn = t && t.closest && t.closest<HTMLButtonElement>('[data-lb-act]');
   if(!btn) return;
   const act = btn.dataset.lbAct;
   if(act === 'close'){ closeLightbox(); return; }
@@ -9818,21 +9849,26 @@ async function renderAdmin(){
   // the donation buttons in the payout tool.
   document.querySelectorAll('#admin-pending [data-act], #admin-all [data-act]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
-      if((btn as HTMLElement).dataset.act==='ai-review'){ runAiReview((btn as HTMLElement).dataset.id, btn); return; }
+      if((btn as HTMLElement).dataset.act==='ai-review'){
+        const id = (btn as HTMLElement).dataset.id;
+        if(id) runAiReview(id, btn as DisableableElement);
+        return;
+      }
       if((btn as HTMLElement).dataset.act==='fishi-retry'){
         (btn as DisableableElement).disabled = true; btn.textContent = 'Checking\u2026';
         fishIStarted = true;
         initFishI().then(()=>renderAdmin());
         return;
       }
-      await reviewCatch((btn as HTMLElement).dataset.id, (btn as HTMLElement).dataset.act);
+      const id = (btn as HTMLElement).dataset.id;
+      if(id) await reviewCatch(id, (btn as HTMLElement).dataset.act);
       renderAdmin();
     });
   });
 }
 
 // ---- first-pass review UI (director only) ----
-function firstPassHtml(c, allCatches, dupCorpus){
+function firstPassHtml(c: Catch, allCatches: Catch[], dupCorpus: Catch[]){
   const verdict = evaluateFirstPass(c, allCatches, dupCorpus);
   const labels = { clear:'Clear', review:'Look closer', flag:'Needs review' };
 
@@ -9854,7 +9890,7 @@ function firstPassHtml(c, allCatches, dupCorpus){
       const mismatch = (r.matchesClaim === false)
         ? '<div class="fp-item"><span class="fp-dot level-flag"></span><span>Does not look like the '+escapeHtml(c.species)+' the angler entered.</span></div>'
         : '';
-      const framing: Unshaped[] = [];
+      const framing: string[] = [];
       if(r.boardVisible === false) framing.push('No bump board with a readable scale in frame.');
       if(r.fishFlat === false)     framing.push('Fish is not lying flat along the board.');
       if(r.noseAtStop === false)   framing.push('Nose does not appear to be against the zero stop.');
@@ -9889,7 +9925,7 @@ function firstPassHtml(c, allCatches, dupCorpus){
   '</div>';
 }
 
-async function runAiReview(catchId, btn){
+async function runAiReview(catchId: string, btn: DisableableElement){
   const originalLabel = btn.textContent;
   btn.disabled = true;
   // The default tier thinks before it writes, so this is a 5-60s wait.
@@ -10019,7 +10055,7 @@ async function renderContestants(){
   wireContestantRows();
 }
 
-function contestantRowHtml(d, catches){
+function contestantRowHtml(d: ContestantRow, catches: Catch[]){
   const a = d.angler;
   const open = a.id === expandedContestantId;
   // Rank still wins over an unmatched fee here: they are on the board, so the
@@ -10236,7 +10272,7 @@ function wireContestantRows(){
       btn.textContent = 'Issuing…';
       const anglers = await loadAnglers();
       const pool = takenCodes();
-      const teamCodes = {};
+      const teamCodes: Record<string, string | null> = {};
       // Seed from any team code already issued, so a half-filled team keeps
       // the number its other half is already carrying.
       for(const a of anglers){ if(a.teamId && a.teamCode) teamCodes[a.teamId] = a.teamCode; }
@@ -10265,7 +10301,7 @@ function wireContestantRows(){
   });
 
   // ---- edit / remove ----
-  const arm = (act, onArm)=>{
+  const arm = (act: string, onArm: ((id: string | undefined) => void) | null)=>{
     el.querySelectorAll('[data-act="'+act+'"]').forEach(btn=>{
       btn.addEventListener('click', (e)=>{
         e.stopPropagation();
@@ -10298,16 +10334,16 @@ function wireContestantRows(){
     });
   });
 
-  arm('c-edit',          (id)=>{ editContestantId = id; });
+  arm('c-edit',          (id: string)=>{ editContestantId = id; });
   arm('c-edit-cancel',   null);
-  arm('c-remove',        (id)=>{ removeContestantId = id; });
+  arm('c-remove',        (id: string)=>{ removeContestantId = id; });
   arm('c-remove-cancel', null);
 
   el.querySelectorAll('[data-act="c-edit-save"]').forEach(btn=>{
     btn.addEventListener('click', async (e)=>{
       e.stopPropagation();
       const errEl = document.getElementById('ce-err');
-      const showErr = (m)=>{ if(errEl){ errEl.textContent = m; errEl.style.display = 'block'; } };
+      const showErr = (m: string)=>{ if(errEl){ errEl.textContent = m; errEl.style.display = 'block'; } };
       if(errEl) errEl.style.display = 'none';
 
       const name = ((document.getElementById('ce-name') as ValueElement).value || '').trim();
