@@ -141,11 +141,15 @@ interface GeoFix extends Partial<BoundaryVerdict> {
  * `overridden` records.
  */
 interface ReportDayRow {
-  day: any;
-  dateKey: any;
-  dayKey: any;
-  start: any;
-  stop: any;
+  /** 1 for the first contest day. */
+  day: number;
+  /** 'YYYY-MM-DD'. */
+  dateKey: string;
+  /** 'day1', 'day2' - the key check-ins and the director's corrections are filed under. */
+  dayKey: string;
+  /** Clock text, '05:30', as the form shows it. Empty when nobody checked in. */
+  start: string;
+  stop: string;
   overridden: boolean;
   /**
    * Null when the times do not make a span - a stop before its start, or a
@@ -168,47 +172,19 @@ interface ReportDayRow {
 interface EventRecord {
   name: string;
   nameHtml: string;
-  presenter?: any;
-  prefix?: any;
-  dates: any[];
-  timeZone?: any;
+  presenter: string;
+  prefix: string;
+  /** 'YYYY-MM-DD', one per contest day, in order. */
+  dates: string[];
+  timeZone: string;
   courseLabel: string;
   courseLabelLong: string;
   registrationClose: string;
-  targetSpecies?: any;
+  targetSpecies?: string;
   recordInches?: number;
-  course?: any;
+  /** Only on a new event: an edit never touches the course. */
+  course?: Boundary;
 }
-
-/**
- * A value whose shape has not been written down yet.
- *
- * Exactly `any`, under a name of its own, and the name is the point.
- *
- * Turning on strictNullChecks made every empty `[]` in the app infer as
- * `never[]` - a list that can hold nothing - so the first `push` onto each one
- * failed. The right fix is the real element type, and that is the job of the
- * noImplicitAny pass that comes after this one. Writing plain `any[]` would
- * have compiled just as well, and then been invisible to that pass for ever:
- * noImplicitAny only reports an `any` nobody wrote, and this one somebody did.
- *
- * So every placeholder says what it is. `grep Unshaped` is the list of what is
- * left to describe, and test/lint.mjs prints how many remain on every run.
- */
-type Unshaped = any;
-
-/**
- * An object whose fields are not written down yet - but an object, and never
- * null by itself, so `| null` beside it still means something.
- *
- * `Unshaped | null` would NOT: a union with `any` is just `any`, so it would
- * quietly switch null-checking off for exactly the values strictNullChecks was
- * turned on to check. The Supabase client, the active backend, the boundary
- * being drawn - these are the app's nullable state, and whether the code checks
- * them before using them is the whole question. Any field can still be read off
- * one of these, which is what lets them stand in until the real shape is known.
- */
-type UnshapedObject = Record<string, any>;
 
 /** Whatever setTimeout and setInterval hand back, for clearing later. */
 type TimerId = ReturnType<typeof setTimeout>;
@@ -300,7 +276,7 @@ type CollectionName = SharedCollection | 'config';
 /**
  * The fields of a stored record, apart from the id it is filed under.
  *
- * Loose on purpose, and NOT a placeholder like Unshaped. The data layer moves
+ * Loose on purpose, and not a shape waiting to be written. The data layer moves
  * records without ever looking inside them - which fields a catch or an angler
  * carries is the business of the code that reads one, and those get types of
  * their own when that code does. A layer whose whole job is not to care about

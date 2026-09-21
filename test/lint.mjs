@@ -1320,18 +1320,49 @@ for (const m of script.matchAll(/'(\/api\/[a-z0-9-]+)'/g)) {
   }
 }
 
-// ------------------------------------------------------------------- report
-// How much of the app still has no written-down shape. Not a finding - these
-// are deliberate placeholders, one per value whose type is the noImplicitAny
-// pass's job - so it never fails the run. It is printed every time so the
-// number is seen going down, and so a new one going in is seen too.
+// ------------------------------------------------------------- explicit any
+// tsconfig has noImplicitAny on, so the compiler reports every `any` it had to
+// ASSUME. It says nothing about one somebody WROTE - `const x: any[] = []`
+// compiles clean with it on - and that is how a value goes back to having no
+// shape without anybody noticing. So a hand-written `any` is a finding here.
 //
-// Counted in the source with comments blanked, because the prose explaining
-// what Unshaped is uses the word more often than some of the code does.
-const unshaped = (uncommented.match(/\bUnshaped(Object)?\b/g) || []).length;
-const shapeNote = unshaped ? ` (${unshaped} value${unshaped === 1 ? '' : 's'} still Unshaped)` : '';
+// The exceptions are a short, named list: the three libraries the page loads,
+// which ship no types and install none; what Leaflet hands back, for the same
+// reason; and the data layer's record fields, which are loose because that
+// layer's whole job is not to look inside them. Each is explained where it is
+// declared in types/globals.d.ts. Anything else wants its real shape - or, if
+// it truly comes from outside, a line here saying why.
+const ANY_ALLOWED = [
+  /^declare const (L|supabase|claude): any;$/,
+  /^type LeafletObject = any;$/,
+  /^type RowFields = \{ \[field: string\]: any \};$/
+];
+// Comments and strings blanked, line structure kept, so prose about `any` - and
+// a message telling an angler they can pick any day - is not mistaken for code.
+function codeOnly(text) {
+  const blank = (m) => m.replace(/[^\n]/g, ' ');
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, blank)
+    .replace(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`/g, blank)
+    .replace(/\/\/[^\n]*/g, blank);
+}
+const ROOT_DIR = path.join(HERE, '..');
+const typedFiles = fs.readdirSync(path.join(ROOT_DIR, 'src'))
+  .filter((f) => f.endsWith('.ts')).map((f) => 'src/' + f)
+  .concat(['types/globals.d.ts']);
+for (const rel of typedFiles) {
+  const text = fs.readFileSync(path.join(ROOT_DIR, rel), 'utf8').split('\r\n').join(NL);
+  const code = codeOnly(text).split(NL);
+  code.forEach((line, i) => {
+    if (!/\bany\b/.test(line)) return;
+    const stmt = line.trim();
+    if (rel === 'types/globals.d.ts' && ANY_ALLOWED.some((re) => re.test(stmt))) return;
+    note('explicit-any', rel + ':' + (i + 1) + ' writes `any` by hand: ' + stmt.slice(0, 70) +
+      ' - give it its shape, or if it comes from outside, add it to ANY_ALLOWED in test/lint.mjs');
+  });
+}
 
-if (problems.length === 0) { console.log('lint: clean' + shapeNote); process.exit(0); }
+if (problems.length === 0) { console.log('lint: clean'); process.exit(0); }
 const byKind = {};
 for (const p of problems) (byKind[p.kind] = byKind[p.kind] || []).push(p.msg);
 for (const kind of Object.keys(byKind)) {
