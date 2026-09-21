@@ -186,8 +186,8 @@ it had to assume.
 |---|---|---|
 | `strictNullChecks` | **on** | 524 when switched on, all resolved rather than silenced |
 | `noImplicitAny` | **on** | 984 when measured, typed an area at a time, all resolved |
-| `+ noUncheckedIndexedAccess` | | 200 running total |
-| `+ the rest of strict, and the unused checks` | | 228 running total |
+| `noUncheckedIndexedAccess` | **in progress** | 200 when measured; 182 left, one area done |
+| `+ the rest of strict, and the unused checks` | | 210 running total |
 
 The counts do not simply add up - each check changes what the next can infer -
 so they are running totals, measured against the source as it stands.
@@ -524,6 +524,37 @@ the app exactly as a phone does. An earlier version of this section said the
 tests could not see strict mode at all; that was wrong, and it understated how
 much the suite covers rather than overstating it.
 
+### noUncheckedIndexedAccess, one area at a time
+
+Without this check TypeScript assumes every `list[0]` and every `lookup[id]` is
+there. That assumption is how *Cannot read properties of undefined* reaches a
+phone: the first catch of a day that has none, an angler id that matches nobody
+on the roster. 200 findings when measured, done the same way as the last check
+- area by area with the switch off, the switch last:
+
+1. **The data layer and the event lookups** - done. The code every screen reads
+   through: which event is live, its dates, its species, a catch or an angler
+   by id. 18 findings, none of them a crash in practice.
+2. **The photo checks** - the stamp, the fingerprints, the first pass.
+3. **Anglers, catches and scoring.**
+4. **The director's tools, and everything else.** Then the switch.
+
+The rules this pass follows:
+
+- **No `!`.** It tells the compiler to stop asking, which is the opposite of
+  the point. Every read either proves the item is there, or says what happens
+  when it is not.
+- **A list that is never empty says so in its type.** `EVENTS`, the built-in
+  events, is now "one event, then any more". Four `EVENTS[0]` reads - the legacy
+  id, the default, two fallbacks - are settled at once, and the compiler holds
+  the list to it.
+- **A first or last item after a length check is taken out and checked once.**
+  The same test, in a form the compiler can follow.
+- **A counting loop that only reads the current item becomes `for...of`.** Same
+  items, same order.
+- **A lookup that can miss is handled where it misses.** Those are the ones
+  this check exists to find.
+
 ## What was actually tested, and what was not
 
 Tested on **Windows 11 Home (build 26200)** with **Chrome 153**, served with
@@ -579,8 +610,8 @@ and `test/lint.mjs` fails if the page loads something the shell leaves out.
 
 - **Two of the compiler's checks are still off.** `strictNullChecks` and
   `noImplicitAny` are on; `noUncheckedIndexedAccess` and the rest of `strict`
-  are worth about 228 more findings between them - see the table under
-  "TypeScript".
+  are worth about 210 more findings between them, and the first of those is
+  under way - see the table under "TypeScript".
 - **`sql/` and `test/` are publicly downloadable**, and always have been:
   the whole repository root is what gets served. Nothing there is a secret -
   the anon key ships in the page by design and the row policies are enforced by

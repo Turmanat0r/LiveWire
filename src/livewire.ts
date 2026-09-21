@@ -108,7 +108,11 @@ const ADMIN_PASS = "lilac-hazel-15";
 // Boundary checks are approximate (straight-line radius from the point below,
 // not the actual shoreline course) and are meant to flag catches for director
 // review, not to auto-reject them.
-const EVENTS: TournamentEvent[] = [
+//
+// Typed as ONE EVENT, THEN ANY MORE, because it is never empty and a great deal
+// leans on its first entry: the legacy id, the default, and the fallback when a
+// stored id matches nothing. The compiler holds the list to that.
+const EVENTS: [TournamentEvent, ...TournamentEvent[]] = [
   {
     id: 'mkwo-2027',
     name: 'Montana Kayak Walleye Open',
@@ -312,12 +316,12 @@ function eventDayText(dateKey: string, opts?: Intl.DateTimeFormatOptions){
 // not. Defaults to the live event; the director's event list passes each one.
 function eventDateRangeText(evt?: { dates: string[] }){
   const dates = (evt || activeEvent()).dates;
-  if(dates.length === 0) return '';
-  const year = dates[dates.length-1].slice(0,4);
-  const first = eventDayText(dates[0]);
+  const firstKey = dates[0], last = dates[dates.length-1];
+  if(firstKey === undefined || last === undefined) return '';
+  const year = last.slice(0,4);
+  const first = eventDayText(firstKey);
   if(dates.length === 1) return first + ', ' + year;
-  const last = dates[dates.length-1];
-  const sameMonth = dates[0].slice(0,7) === last.slice(0,7);
+  const sameMonth = firstKey.slice(0,7) === last.slice(0,7);
   const lastText = sameMonth ? eventDayText(last, { month:undefined }) : eventDayText(last);
   return first + '–' + lastText + ', ' + year;
 }
@@ -2176,9 +2180,10 @@ function targetSpecies(){
 // "do not check".
 function recordInches(species: string){
   const list = speciesList();
-  if(species === undefined) return list.length ? list[0].recordInches : 0;
-  for(let i = 0; i < list.length; i++){
-    if(list[i].name === species) return list[i].recordInches;
+  const primary = list[0];
+  if(species === undefined) return primary ? primary.recordInches : 0;
+  for(const s of list){
+    if(s.name === species) return s.recordInches;
   }
   return 0;
 }
@@ -2271,7 +2276,7 @@ async function savePhoto(catchId: string, dataUrl: string){
 
 function catchById(id: string): Catch | null {
   const rows = liveCache.catches || [];
-  for(let i=0;i<rows.length;i++){ if(rows[i].id === id) return rows[i] as Catch; }
+  for(const row of rows){ if(row.id === id) return row as Catch; }
   return null;
 }
 
@@ -2279,7 +2284,7 @@ function catchById(id: string): Catch | null {
 // awaiting a load there would let the guide render a frame behind the picker.
 function anglerById(id: string): Angler | null {
   const rows = liveCache.anglers || [];
-  for(let i=0;i<rows.length;i++){ if(rows[i].id === id) return rows[i] as Angler; }
+  for(const row of rows){ if(row.id === id) return row as Angler; }
   return null;
 }
 
