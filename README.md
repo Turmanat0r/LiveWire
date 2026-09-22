@@ -186,13 +186,15 @@ toolchain without changing the app. The second turned on `strictNullChecks`,
 the check that asks the question most worth asking of this app: does the code
 make sure a thing is there before it uses it? The third turned on
 `noImplicitAny`: every value has a type the compiler can check, rather than one
-it had to assume.
+it had to assume. The fourth turned on `noUncheckedIndexedAccess`: a list item
+or a lookup by id may not be there, and the code has to say what happens when
+it is not.
 
 | Check | State | Findings |
 |---|---|---|
 | `strictNullChecks` | **on** | 524 when switched on, all resolved rather than silenced |
 | `noImplicitAny` | **on** | 984 when measured, typed an area at a time, all resolved |
-| `noUncheckedIndexedAccess` | **in progress** | 200 when measured; none left, all four areas done |
+| `noUncheckedIndexedAccess` | **on** | 200 when measured, resolved an area at a time, no `!` anywhere |
 | `+ the rest of strict, and the unused checks` | | 27 running total |
 
 The counts do not simply add up - each check changes what the next can infer -
@@ -491,12 +493,12 @@ collection and gets no rows back. "Every row has an id" is then true of nothing.
 The behaviour tests are what carry real rows through the merge - breaking it
 fails two of them - so they, not the empty production sync, are the evidence.
 
-Worth knowing before you start: `noUncheckedIndexedAccess` on its own reports
-nothing at all, because it has no effect without `strictNullChecks`. And a CLI
-`--strict` will *not* override a check that `tsconfig.json` turns off by name -
-the specific setting wins over the umbrella one, whichever side it is written
-on. That caught this project out while `noImplicitAny` was still `false`, and
-it is worth remembering whenever a run comes back suspiciously clean.
+Worth knowing for what is left: a CLI `--strict` will *not* override a check
+that `tsconfig.json` turns off by name - the specific setting wins over the
+umbrella one, whichever side it is written on. That caught this project out
+while `noImplicitAny` was still `false`, and it is worth remembering whenever a
+run comes back suspiciously clean. And `noUncheckedIndexedAccess` has no effect
+at all without `strictNullChecks`, so the two stay on together.
 
 Most of what the rest of `strict` adds is catch variables: it types `catch(e)`
 as unknown, so each handler has to check what it caught before reading
@@ -551,7 +553,9 @@ on the roster. 200 findings when measured, done the same way as the last check
    the boundary editor, the state report, payouts, donations, species, the
    event form, review and Fish-I, contestants, the highlight reel, the home
    tiles and the overdue alert. 88 findings, none of them a crash in practice.
-   Then the switch.
+
+Then the switch, in its own commit: with nothing left to find, the check is on
+in `tsconfig.json`, so a new unchecked read fails the build.
 
 The rules this pass follows:
 
@@ -683,10 +687,10 @@ and `test/lint.mjs` fails if the page loads something the shell leaves out.
 
 ## What is still open
 
-- **Two of the compiler's checks are still off.** `strictNullChecks` and
-  `noImplicitAny` are on; `noUncheckedIndexedAccess` and the rest of `strict`
-  are worth about 115 more findings between them, and the first of those is
-  under way - see the table under "TypeScript".
+- **The rest of `strict` is still off.** `strictNullChecks`, `noImplicitAny`
+  and `noUncheckedIndexedAccess` are on; the rest of `strict` and the unused
+  checks are worth 27 more findings, mostly catch variables - see the table
+  under "TypeScript".
 - **The app is one 10,600-line file**, `src/livewire.ts`, in one global scope.
   Splitting it means modules, which the test harness cannot run - see
   "TypeScript" for why.
