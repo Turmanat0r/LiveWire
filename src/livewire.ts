@@ -437,12 +437,21 @@ function projectMiles(lat: number, lng: number, refLat: number): FlatPoint {
 function polygonRefLat(points: LatLng[]){
   return points.reduce((s,p)=> s + p.lat, 0) / points.length;
 }
+// Each edge of a closed ring as [previous corner, this corner], starting with
+// the one that joins the last corner back to the first - the order the classic
+// `j = i++` loop walks them in, without an index that could miss.
+function ringEdges<T>(ring: T[]): [T, T][] {
+  const last = ring[ring.length - 1];
+  if(last === undefined) return [];
+  let prev: T = last;
+  return ring.map(cur=>{ const edge: [T, T] = [prev, cur]; prev = cur; return edge; });
+}
 // Ray casting. Counts crossings of the ray heading east from the point.
 function pointInPolygon(lat: number, lng: number, points: LatLng[]){
   let inside = false;
-  for(let i=0, j=points.length-1; i<points.length; j=i++){
-    const yi = points[i].lat, xi = points[i].lng;
-    const yj = points[j].lat, xj = points[j].lng;
+  for(const [pj, pi] of ringEdges(points)){
+    const yi = pi.lat, xi = pi.lng;
+    const yj = pj.lat, xj = pj.lng;
     const straddles = (yi > lat) !== (yj > lat);
     if(straddles && lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) inside = !inside;
   }
@@ -461,8 +470,8 @@ function distanceToPolygonEdgeMiles(lat: number, lng: number, points: LatLng[]){
   const p = projectMiles(lat, lng, ref);
   const ring = points.map(q=> projectMiles(q.lat, q.lng, ref));
   let best = Infinity;
-  for(let i=0, j=ring.length-1; i<ring.length; j=i++){
-    best = Math.min(best, distanceToSegmentMiles(p, ring[j], ring[i]));
+  for(const [a, b] of ringEdges(ring)){
+    best = Math.min(best, distanceToSegmentMiles(p, a, b));
   }
   return best;
 }
@@ -530,7 +539,7 @@ function bearingFrom(centre: LatLng, point: LatLng){
   return Math.atan2(east, north);
 }
 
-function boundaryCenter(b: BoundaryDraft | null | undefined){
+function boundaryCenter(b: BoundaryDraft | null | undefined): LatLng {
   if(b && b.kind === 'circle' && b.center) return b.center;
   if(b && b.kind === 'polygon' && b.points && b.points.length){
     const n = b.points.length;
@@ -540,7 +549,10 @@ function boundaryCenter(b: BoundaryDraft | null | undefined){
   // director starts looking at roughly the right water.
   const dflt = activeEvent().course;
   if(dflt && dflt.kind === 'circle') return dflt.center;
-  if(dflt && dflt.kind === 'polygon' && dflt.points.length) return dflt.points[0];
+  if(dflt && dflt.kind === 'polygon'){
+    const firstCorner = dflt.points[0];
+    if(firstCorner) return firstCorner;
+  }
   return { lat: 46.38917, lng: -111.57556 };
 }
 
@@ -3673,7 +3685,7 @@ function renderDqNotice(me: Angler | null | undefined){
 // the label, and a Side Bets tile that is olive on Saturday and red on Sunday
 // is a bug as far as the eye is concerned. The upside of deriving it from the
 // name is that a tile added later gets one for free and nobody has to choose.
-const TILE_ACCENTS = ['#C98A2C', '#A3372A', '#5C6B4F', '#3D6A50', '#3D5A66', '#D5A33A'];
+const TILE_ACCENTS: NonEmpty<string> = ['#C98A2C', '#A3372A', '#5C6B4F', '#3D6A50', '#3D5A66', '#D5A33A'];
 
 // 31 rather than any other multiplier for one reason: with the eight tile names
 // this app actually has, it is the one that puts no two identical colours side
@@ -3683,7 +3695,8 @@ function tileAccent(name: string | null | undefined){
   if(!key) return TILE_ACCENTS[0];
   let h = 0;
   for(let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) % 100000;
-  return TILE_ACCENTS[h % TILE_ACCENTS.length];
+  // A remainder of the length, so always an entry - the first stands in only to say so.
+  return TILE_ACCENTS[h % TILE_ACCENTS.length] ?? TILE_ACCENTS[0];
 }
 
 // Painted onto the element as a custom property so the bar itself stays in CSS,
@@ -5037,7 +5050,7 @@ function setupTodos(evt: TournamentEvent, anglers: Angler[], now?: number){
     const k = personKey(a);
     if(k) shared[k] = (shared[k] || 0) + 1;
   });
-  const collisions = Object.keys(shared).filter(k=> shared[k] > 1).length;
+  const collisions = Object.values(shared).filter(count=> count > 1).length;
   out.push({
     id: 'accounts',
     title: 'Angler accounts are not set up',
@@ -5701,11 +5714,11 @@ function reelPlan(rows: GalleryRow[], opts?: { maxShots?: number }){
 function reelSceneAt(plan: ReelPlan | null | undefined, ms: number){
   let acc = 0;
   const scenes = (plan && plan.scenes) || [];
-  for(let i = 0; i < scenes.length; i++){
-    if(ms < acc + scenes[i].ms){
-      return { scene: scenes[i], index: i, progress: (ms - acc) / scenes[i].ms };
+  for(const [index, scene] of scenes.entries()){
+    if(ms < acc + scene.ms){
+      return { scene, index, progress: (ms - acc) / scene.ms };
     }
-    acc += scenes[i].ms;
+    acc += scene.ms;
   }
   return null;
 }
@@ -5726,8 +5739,8 @@ function reelMimeType(){
   if(!R || typeof R.isTypeSupported !== 'function') return '';
   const wanted = ['video/mp4;codecs=avc1.42E01E', 'video/mp4',
                   'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
-  for(let i = 0; i < wanted.length; i++){
-    if(R.isTypeSupported(wanted[i])) return wanted[i];
+  for(const mime of wanted){
+    if(R.isTypeSupported(mime)) return mime;
   }
   return '';
 }
@@ -5806,7 +5819,7 @@ function paintReelFrame(ctx: CanvasRenderingContext2D, plan: ReelPlan, ms: numbe
   const sc = at.scene;
 
   if(sc.kind === 'title' || sc.kind === 'end'){
-    const lines = sc.kind === 'title'
+    const lines: [string, string, string] = sc.kind === 'title'
       ? [m.eventName || 'Tournament', m.dateText || '', m.handle || '']
       : [(m.shots || 0) + (m.shots === 1 ? ' fish' : ' fish'),
          m.best ? 'Best ' + Number(m.best).toFixed(2) + '"' : '',
@@ -5852,9 +5865,9 @@ async function buildHighlightReel(rows: GalleryRow[], meta: ReelMeta, onProgress
 
   const say = (msg: string)=>{ if(onProgress) onProgress(msg); };
   const shots = plan.scenes.filter(sc=> sc.kind === 'shot');
-  for(let i = 0; i < shots.length; i++){
+  for(const [i, shot] of shots.entries()){
     say('Fetching photo ' + (i + 1) + ' of ' + shots.length + '…');
-    shots[i].image = await reelImage(shots[i].row.id);
+    shot.image = await reelImage(shot.row.id);
   }
   const release = ()=> shots.forEach(sc=>{
     if(sc.image && sc.image.revoke) URL.revokeObjectURL(sc.image.revoke);
@@ -6003,12 +6016,13 @@ bindEl('reel-build','click', async ()=>{
   try{
     const evt = activeEvent();
     const me = anglers.find(a=> mineIds.indexOf(a.id) !== -1);
+    const biggest = rows[0];     // reelRows() puts the biggest first
     const meta = {
       eventName: stripEntities(evt.name),
       dateText: eventDateRangeText(evt),
       handle: displayHandle(me),
       shots: Math.min(rows.length, REEL_MAX_SHOTS),
-      best: rows.length ? rows[0].length : 0
+      best: biggest ? biggest.length : 0
     };
     const out = await buildHighlightReel(rows, meta, reelSay);
     if(reelBlobUrl) URL.revokeObjectURL(reelBlobUrl);
@@ -6198,13 +6212,16 @@ async function renderOverdueAlert(){
   if(!el) return;
   const anglers = await loadAnglers();
   const list = overdueCheckouts(anglers, new Date());
-  if(list.length === 0){ el.style.display = 'none'; el.innerHTML = ''; return; }
+  // Everyone on the list missed the same final check-in, so any one of them
+  // says by how long.
+  const first = list[0];
+  if(!first){ el.style.display = 'none'; el.innerHTML = ''; return; }
 
   const signals = await loadSignals();
   const byId: Record<string, Signal> = {};
   signals.forEach(s=>{ byId[s.id] = s; });
   const sorted = sortOverdue(list, signals);
-  const mins = Math.floor(sorted[0].overdueSeconds / 60);
+  const mins = Math.floor(first.overdueSeconds / 60);
 
   const rows = sorted.map(item=>{
     const a = item.angler;
@@ -7449,7 +7466,7 @@ function contestDayHours(anglers: Angler[], dates: string[]){
     const dayKey = 'day' + (i + 1);
     let start: number | null = null, stop: number | null = null;
     confirmed.forEach(a=>{
-      const rec = (a.checkins && a.checkins[dayKey]) || {};
+      const rec: Partial<CheckinDay> = (a.checkins && a.checkins[dayKey]) || {};
       if(rec.in && (start === null || rec.in < start)) start = rec.in;
       if(rec.out && (stop === null || rec.out > stop)) stop = rec.out;
     });
@@ -8116,6 +8133,8 @@ bindEl('admin-tool-report', 'change', async (e: Event)=>{
     await saveReportSettings({ [el.dataset.fwp]: el.value.trim() });
   } else if(el.dataset.fwpHour){
     const [dayKey, edge] = el.dataset.fwpHour.split('.');
+    // The form writes these as "day1.start"; anything else is not one of ours.
+    if(!dayKey || !edge) return;
     const hours = Object.assign({}, cfg.hours || {});
     hours[dayKey] = Object.assign({}, hours[dayKey] || {}, { [edge]: el.value.trim() });
     await saveReportSettings({ hours });
@@ -8138,9 +8157,9 @@ bindEl('admin-tool-report', 'click', async (e: Event)=>{
   const btn = t && t.closest ? t.closest<HTMLElement>('[data-fwp-res]') : null;
   if(!btn) return;
   const anglers = await loadAnglers();
-  const idx = anglers.findIndex(a=> a.id === btn.dataset.angler);
-  if(idx === -1) return;
-  anglers[idx].resident = btn.dataset.fwpRes === 'yes';
+  const angler = anglers.find(a=> a.id === btn.dataset.angler);
+  if(!angler) return;
+  angler.resident = btn.dataset.fwpRes === 'yes';
   if(!await saveAnglers(anglers)){
     setText('report-copied', 'That could not be saved. Check your signal and try again.');
     pageEl('report-copied').style.display = 'block';
@@ -8194,20 +8213,18 @@ function scaleReportPages(){
 function reportSpillPages(){
   const sheet = document.getElementById('report-sheet');
   if(!sheet || !sheet.querySelectorAll) return [];
-  const pages = sheet.querySelectorAll('.fwp-page');
   const out: number[] = [];
-  for(let i = 0; i < pages.length; i++){
-    const page = pages[i];
+  sheet.querySelectorAll('.fwp-page').forEach((page, i)=>{
     if(page.classList) page.classList.remove('overflowing');
     // Only meaningful in the page view: outside it the page has no fixed
     // height to overflow, and every measurement would read as a fit.
-    if(!reportPageView) continue;
+    if(!reportPageView) return;
     // 2px of slack for the sub-pixel rounding a scale transform leaves behind.
     if(page.scrollHeight > PAGE_HEIGHT_PX + 2){
       if(page.classList) page.classList.add('overflowing');
       out.push(i + 1);
     }
-  }
+  });
   return out;
 }
 
@@ -8298,13 +8315,16 @@ function splitFor(eligible: number, pool: number){
   // whole pool.
   const toGive = Math.round(cents * shares.reduce((s, x)=> s + x.share, 0));
   const exact = shares.map(x=> cents * x.share);
-  const out = exact.map(v=> Math.floor(v));
-  let left = toGive - out.reduce((s, v)=> s + v, 0);
-  const byRemainder = exact
+  const left = toGive - exact.reduce((s, v)=> s + Math.floor(v), 0);
+  // The leftover cents go one each to the places rounding down shaved the most
+  // from, and between equal shavings to the higher place.
+  const topUp = new Set(exact
     .map((v, i)=> ({ rem: v - Math.floor(v), i }))
-    .sort((a, b)=> (b.rem - a.rem) || (a.i - b.i));
-  for(let k = 0; k < byRemainder.length && left > 0; k++, left--) out[byRemainder[k].i]++;
-  return shares.map((x, i)=> ({ place: x.place, amount: out[i] / 100 }));
+    .sort((a, b)=> (b.rem - a.rem) || (a.i - b.i))
+    .slice(0, Math.max(0, left))
+    .map(r=> r.i));
+  return shares.map((x, i)=> ({ place: x.place,
+    amount: (Math.floor(cents * x.share) + (topUp.has(i) ? 1 : 0)) / 100 }));
 }
 
 async function renderPayoutCalculator(){
@@ -8478,8 +8498,9 @@ function renderDonationList(donations: Donation[]){
       if(!amount || amount<=0){ window.alert('Enter a donation amount greater than $0.'); return; }
       const list = await loadDonations();
       const idx = list.findIndex(d=>d.id===(btn as HTMLElement).dataset.id);
-      if(idx===-1) return;
-      list[idx] = { ...list[idx], target, amount, note };
+      const was = list[idx];
+      if(!was) return;
+      list[idx] = { ...was, target, amount, note };
       await saveDonations(list);
       editingDonationId = null;
       renderPayoutCalculator();
@@ -8795,10 +8816,11 @@ async function removeScoringSpecies(name: string){
 // copy of the app - a phone that has not reloaded since - still reads the
 // primary species rather than finding nothing at all.
 async function saveSpeciesList(list: SpeciesEntry[]){
+  const primary = list[0];
   return await saveEventSettings({
     speciesList: list,
-    targetSpecies: list.length ? list[0].name : '',
-    recordInches: list.length ? list[0].recordInches : 0
+    targetSpecies: primary ? primary.name : '',
+    recordInches: primary ? primary.recordInches : 0
   });
 }
 
@@ -8837,16 +8859,17 @@ bindEl('species-save','click', async ()=>{
   // two species sharing one leaderboard and nobody would spot why the count was
   // wrong. An exact re-add is treated as editing the ceiling.
   const at = list.findIndex(x=> x.name.toLowerCase() === name.toLowerCase());
-  if(at !== -1){
-    if(list[at].recordInches === ceiling){
-      errEl.textContent = '“' + list[at].name + '” is already on this event, with the ' +
+  const existing = list[at];
+  if(existing){
+    if(existing.recordInches === ceiling){
+      errEl.textContent = '“' + existing.name + '” is already on this event, with the ' +
         'same ceiling. Change the ceiling to update it.';
       errEl.style.display = 'block';
       return;
     }
     // Keep the stored spelling rather than the one just typed: catches already
     // logged carry the old one, and changing it here would drop them.
-    list[at] = { name: list[at].name, recordInches: ceiling };
+    list[at] = { name: existing.name, recordInches: ceiling };
   } else {
     list.push({ name: name, recordInches: ceiling });
   }
@@ -9023,14 +9046,15 @@ bindEl('ev-save','click', async ()=>{
   if(bad) return fail('"'+bad.bad+'" is not a date I can read. Use YYYY-MM-DD, one per line.');
   // A line that would not parse has already returned, so every key is here.
   const dates = parsed.map(p=> p.key).filter((k): k is string => !!k).sort();
-  if(dates.length === 0) return fail('Add at least one event day.');
+  const firstDay = dates[0];
+  if(!firstDay) return fail('Add at least one event day.');
   if(dates.length > 7) return fail('That is more than seven days — check the dates.');
   if(new Set(dates).size !== dates.length) return fail('One of those days is listed twice.');
 
   if(!isValidTimeZone(tz)){
     return fail('"'+tz+'" is not a time zone I recognise. Use an IANA name like America/Denver.');
   }
-  const closeIso = registrationCloseFromDate(regClose || dates[0], tz);
+  const closeIso = registrationCloseFromDate(regClose || firstDay, tz);
   if(!closeIso) return fail('Registration close should be a date, YYYY-MM-DD.');
 
   const record: EventRecord = {
@@ -9049,7 +9073,7 @@ bindEl('ev-save','click', async ()=>{
   record.recordInches = preset ? preset.inches : 0;
 
   const isNew = !evEditing;
-  const id = evEditing || slugifyEventId(name, dates[0].slice(0,4));
+  const id = evEditing || slugifyEventId(name, firstDay.slice(0,4));
 
   if(isNew){
     // Same water next year is the common case, so offer the boundary as a
@@ -9216,9 +9240,9 @@ function ensureBndDraft(): BoundaryDraft {
 function parsePointLines(text: string){
   const pts: LatLng[] = [];
   String(text||'').split('\n').forEach(line=>{
-    const parts = line.trim().split(/[\s,]+/).filter(Boolean);
-    if(parts.length < 2) return;
-    const lat = parseFloat(parts[0]), lng = parseFloat(parts[1]);
+    const [latText, lngText] = line.trim().split(/[\s,]+/).filter(Boolean);
+    if(!latText || !lngText) return;
+    const lat = parseFloat(latText), lng = parseFloat(lngText);
     if(isFinite(lat) && isFinite(lng)) pts.push({ lat, lng });
   });
   return pts;
@@ -9640,10 +9664,11 @@ async function renderPositionsAdmin(){
 // by the lightbox, so the two can never disagree about what "reject" does.
 async function reviewCatch(id: string, action: string | undefined){
   const catches = await loadCatches();
-  const idx = catches.findIndex(c=> c.id === id);
-  if(idx === -1) return false;
-  if(action === 'approve') catches[idx].status = 'approved';
-  else if(action === 'reject') catches[idx].status = 'rejected';
+  const idx = catches.findIndex(x=> x.id === id);
+  const c = catches[idx];
+  if(!c) return false;
+  if(action === 'approve') c.status = 'approved';
+  else if(action === 'reject') c.status = 'rejected';
   else if(action === 'delete') catches.splice(idx, 1);
   else return false;
   await saveCatches(catches);
@@ -9826,10 +9851,10 @@ function setLightboxMissing(missing: boolean){
 // Bound once: every host below is in the static markup, so delegation survives
 // each repaint of the lists inside them. The mode travels with the host, which
 // is what stops a public grid ever opening a director's view of a fish.
-[['admin-pending', LIGHTBOX_DIRECTOR],
- ['admin-all', LIGHTBOX_DIRECTOR],
- ['gallery-grid', LIGHTBOX_PUBLIC]].forEach(pair=>{
-  const host = document.getElementById(pair[0]);
+([['admin-pending', LIGHTBOX_DIRECTOR],
+  ['admin-all', LIGHTBOX_DIRECTOR],
+  ['gallery-grid', LIGHTBOX_PUBLIC]] as const).forEach(([hostId, mode])=>{
+  const host = document.getElementById(hostId);
   if(!host || !host.addEventListener) return;
   host.addEventListener('click', (e)=>{
     const slot = e.target && (e.target as HTMLElement).closest && (e.target as HTMLElement).closest('[data-photo-for]');
@@ -9841,7 +9866,7 @@ function setLightboxMissing(missing: boolean){
       const pid = el.dataset.photoFor;
       if(pid) ids.push(pid);
     });
-    openLightbox(openId, { mode: pair[1], sequence: ids });
+    openLightbox(openId, { mode, sequence: ids });
   });
 });
 
@@ -10037,18 +10062,18 @@ async function runAiReview(catchId: string, btn: DisableableElement){
   // The default tier thinks before it writes, so this is a 5-60s wait.
   btn.textContent = 'Fish-I is looking…';
   const catches = await loadCatches();
-  const idx = catches.findIndex(c=>c.id===catchId);
+  const c = catches.find(x=>x.id===catchId);
   // Catch was deleted from another view mid-check - restore the button
   // instead of leaving it dead and reading "Fish-I is looking".
-  if(idx===-1){ btn.disabled = false; btn.textContent = originalLabel; return; }
+  if(!c){ btn.disabled = false; btn.textContent = originalLabel; return; }
   try{
     const photo = await loadPhoto(catchId);
     if(!photo) throw new Error('No photo is stored with this catch.');
-    const result = await requestAiVisionReview(catches[idx], photo);
-    catches[idx].aiReview = Object.assign({ reviewedAt: Date.now() }, result);
+    const result = await requestAiVisionReview(c, photo);
+    c.aiReview = Object.assign({ reviewedAt: Date.now() }, result);
   }catch(e){
     console.error(e);
-    catches[idx].aiReview = { error: fishIErrorCopy(e), reviewedAt: Date.now() };
+    c.aiReview = { error: fishIErrorCopy(e), reviewedAt: Date.now() };
   }
   await saveCatches(catches);
   renderAdmin();
@@ -10172,7 +10197,7 @@ function contestantRowHtml(d: ContestantRow, catches: Catch[]){
     ? 'Team with '+escapeHtml(a.partner || '\u2014')+(a.role==='partner' ? ' (partner)' : '')
     : 'Solo';
   const checked = eventDayKeys().map((k,i)=>{
-    const r = (a.checkins && a.checkins[k]) || {};
+    const r: Partial<CheckinDay> = (a.checkins && a.checkins[k]) || {};
     if(r.in && r.out) return 'D'+(i+1)+' complete';
     if(r.in) return 'D'+(i+1)+' on water';
     return 'D'+(i+1)+' not in';
@@ -10385,8 +10410,7 @@ function wireContestantRows(){
       for(const a of anglers){
         if(!a.anglerCode) a.anglerCode = makeCode(pool);
         if(a.teamId && !a.teamCode){
-          if(!teamCodes[a.teamId]) teamCodes[a.teamId] = makeCode(pool);
-          a.teamCode = teamCodes[a.teamId];
+          a.teamCode = teamCodes[a.teamId] || (teamCodes[a.teamId] = makeCode(pool));
         }
       }
       await saveAnglers(anglers);
@@ -10460,8 +10484,8 @@ function wireContestantRows(){
       if(!handle) return showErr('An angler needs a handle — that is how they show up publicly.');
 
       const anglers = await loadAnglers();
-      const idx = anglers.findIndex(a=> a.id === (btn as HTMLElement).dataset.id);
-      if(idx === -1) return showErr('That angler is no longer on the roster.');
+      const angler = anglers.find(a=> a.id === (btn as HTMLElement).dataset.id);
+      if(!angler) return showErr('That angler is no longer on the roster.');
 
       const norm = (v: unknown)=> String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
       // Same one-per-person rule the registration form enforces, minus this
@@ -10473,15 +10497,15 @@ function wireContestantRows(){
         return showErr('That handle is already taken. Two anglers sharing one makes the chat unreadable.');
       }
 
-      anglers[idx].name = name;
-      anglers[idx].phone = phone;
-      anglers[idx].handle = handle;
-      anglers[idx].bigfish = bigfish;
+      angler.name = name;
+      angler.phone = phone;
+      angler.handle = handle;
+      angler.bigfish = bigfish;
       // The partner field on the OTHER record carries this angler's name, so a
       // rename has to fix both or the team reads inconsistently.
-      if(anglers[idx].teamId){
-        const mateIdx = anglers.findIndex(a=> a.teamId === anglers[idx].teamId && a.id !== anglers[idx].id);
-        if(mateIdx !== -1) anglers[mateIdx].partner = name;
+      if(angler.teamId){
+        const mate = anglers.find(a=> a.teamId === angler.teamId && a.id !== angler.id);
+        if(mate) mate.partner = name;
       }
       if(!await saveAnglers(anglers)) return showErr('That did not save. Check your storage and try again.');
       editContestantId = null;
@@ -10542,11 +10566,11 @@ function wireContestantRows(){
       const reasonEl = document.getElementById('dq-reason');
       const reason = reasonEl ? (reasonEl as ValueElement).value.trim() : '';
       const anglers = await loadAnglers();
-      const idx = anglers.findIndex(a=>a.id===(btn as HTMLElement).dataset.id);
-      if(idx===-1) return;
-      anglers[idx].disqualified = true;
-      anglers[idx].dqReason = reason;
-      anglers[idx].dqAt = Date.now();
+      const angler = anglers.find(a=>a.id===(btn as HTMLElement).dataset.id);
+      if(!angler) return;
+      angler.disqualified = true;
+      angler.dqReason = reason;
+      angler.dqAt = Date.now();
       await saveAnglers(anglers);
       dqConfirmId = null;
       renderAdmin();
@@ -10558,11 +10582,11 @@ function wireContestantRows(){
       e.stopPropagation();
       if(!window.confirm('Reinstate this angler? They return to the standings immediately.')) return;
       const anglers = await loadAnglers();
-      const idx = anglers.findIndex(a=>a.id===(btn as HTMLElement).dataset.id);
-      if(idx===-1) return;
-      anglers[idx].disqualified = false;
-      anglers[idx].dqReason = '';
-      anglers[idx].dqAt = null;
+      const angler = anglers.find(a=>a.id===(btn as HTMLElement).dataset.id);
+      if(!angler) return;
+      angler.disqualified = false;
+      angler.dqReason = '';
+      angler.dqAt = null;
       await saveAnglers(anglers);
       renderAdmin();
     });

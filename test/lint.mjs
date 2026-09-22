@@ -743,7 +743,7 @@ for (const fn of galleryFns) {
 }
 // The mode travels with the host in the lightbox wiring table. Pairing the
 // gallery with the director's mode would publish real names to the field.
-const wiring = (script.match(/\[\['admin-pending'[\s\S]*?\]\]\.forEach/) || [''])[0];
+const wiring = (script.match(/\[\['admin-pending'[\s\S]*?\]\](?: as const\))?\.forEach/) || [''])[0];
 if (!wiring) {
   note('gallery', 'cannot find the lightbox wiring table - the gallery mode is unchecked');
 } else if (!/\['gallery-grid',\s*LIGHTBOX_PUBLIC\]/.test(wiring)) {
@@ -1136,7 +1136,7 @@ for (const [needle, why] of [
   // "In the palette of the whole site" is checkable only from here: the unit
   // tests are handed the script alone, so all they can do is compare the list
   // against itself. Every accent has to appear somewhere else in the file.
-  const accents = (script.match(/const TILE_ACCENTS = \[([^\]]*)\]/) || ['', ''])[1];
+  const accents = (script.match(/const TILE_ACCENTS(?::[^=]+)? = \[([^\]]*)\]/) || ['', ''])[1];
   for (const m of accents.matchAll(/'(#[0-9A-Fa-f]{3,8})'/g)) {
     const colour = m[1];
     const uses = (all.match(new RegExp(colour.replace('#', '#'), 'gi')) || []).length;
