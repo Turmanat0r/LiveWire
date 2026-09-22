@@ -12,8 +12,8 @@
   // The flags, in the order they are worth doing:
   //   strictNullChecks             ON - was 524 findings, all resolved
   //   noImplicitAny                ON - was 984 findings, all resolved
-  //   noUncheckedIndexedAccess     in progress - 200 found, 88 left
-  //   + the rest of strict, unused 115 running total, catch variables mostly
+  //   noUncheckedIndexedAccess     ON - was 200 findings, all resolved
+  //   + the rest of strict, unused 27 running total, catch variables mostly
   //
   // They do not add up separately - each changes what the next can infer - and
   // noUncheckedIndexedAccess reports nothing without strictNullChecks. See
@@ -93,7 +93,15 @@
     // having no shape without anyone noticing. test/lint.mjs does that half: a
     // hand-written `any` is a finding, apart from a short list of things that
     // come from outside and ship no types of their own.
-    "noImplicitAny": true
+    "noImplicitAny": true,
+
+    // ON. A list item or a lookup by id may not be there - the first catch of
+    // a day that has none, an angler id that matches nobody - and the code has
+    // to say what happens when it is not. 200 findings when measured, resolved
+    // an area at a time - the data layer, the photo checks, anglers and scoring,
+    // the director's tools - with no `!` anywhere, then switched on. It does
+    // nothing without strictNullChecks above.
+    "noUncheckedIndexedAccess": true
   },
   "include": ["src/**/*.ts", "types/**/*.d.ts"]
 }

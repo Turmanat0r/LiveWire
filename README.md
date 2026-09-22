@@ -186,14 +186,16 @@ toolchain without changing the app. The second turned on `strictNullChecks`,
 the check that asks the question most worth asking of this app: does the code
 make sure a thing is there before it uses it? The third turned on
 `noImplicitAny`: every value has a type the compiler can check, rather than one
-it had to assume.
+it had to assume. The fourth turned on `noUncheckedIndexedAccess`: a list item
+or a lookup by id may not be there, and the code has to say what happens when
+it is not.
 
 | Check | State | Findings |
 |---|---|---|
 | `strictNullChecks` | **on** | 524 when switched on, all resolved rather than silenced |
 | `noImplicitAny` | **on** | 984 when measured, typed an area at a time, all resolved |
-| `noUncheckedIndexedAccess` | **in progress** | 200 when measured; 88 left, three areas done |
-| `+ the rest of strict, and the unused checks` | | 115 running total |
+| `noUncheckedIndexedAccess` | **on** | 200 when measured, resolved an area at a time, no `!` anywhere |
+| `+ the rest of strict, and the unused checks` | | 27 running total |
 
 The counts do not simply add up - each check changes what the next can infer -
 so they are running totals, measured against the source as it stands.
@@ -491,12 +493,12 @@ collection and gets no rows back. "Every row has an id" is then true of nothing.
 The behaviour tests are what carry real rows through the merge - breaking it
 fails two of them - so they, not the empty production sync, are the evidence.
 
-Worth knowing before you start: `noUncheckedIndexedAccess` on its own reports
-nothing at all, because it has no effect without `strictNullChecks`. And a CLI
-`--strict` will *not* override a check that `tsconfig.json` turns off by name -
-the specific setting wins over the umbrella one, whichever side it is written
-on. That caught this project out while `noImplicitAny` was still `false`, and
-it is worth remembering whenever a run comes back suspiciously clean.
+Worth knowing for what is left: a CLI `--strict` will *not* override a check
+that `tsconfig.json` turns off by name - the specific setting wins over the
+umbrella one, whichever side it is written on. That caught this project out
+while `noImplicitAny` was still `false`, and it is worth remembering whenever a
+run comes back suspiciously clean. And `noUncheckedIndexedAccess` has no effect
+at all without `strictNullChecks`, so the two stay on together.
 
 Most of what the rest of `strict` adds is catch variables: it types `catch(e)`
 as unknown, so each handler has to check what it caught before reading
@@ -547,7 +549,13 @@ on the roster. 200 findings when measured, done the same way as the last check
 3. **Anglers, catches and scoring** - done. Check-in, the overdue list, an
    angler's own catches, standings and rank, side bets, the trophy case and
    chat. 29 findings, and one real gap found beside them - see below.
-4. **The director's tools, and everything else.** Then the switch.
+4. **The director's tools, and everything else** - done. The course map and
+   the boundary editor, the state report, payouts, donations, species, the
+   event form, review and Fish-I, contestants, the highlight reel, the home
+   tiles and the overdue alert. 88 findings, none of them a crash in practice.
+
+Then the switch, in its own commit: with nothing left to find, the check is on
+in `tsconfig.json`, so a new unchecked read fails the build.
 
 The rules this pass follows:
 
@@ -606,6 +614,26 @@ built-in events are two days, and are exactly as they were. Against the old
 behaviour, six of the new checks fail and the seventh crashes outright checking
 in on a day the record has no entry for.
 
+**Area 4 was checked the same two ways.** The parts that are pure calculation -
+whether a point is inside the course and how far from its edge, where a map
+opens, each home tile's colour, the reel's running order, the payout split to
+the cent, hours fished per day, typed boundary corners, the video format picked
+and the director's to-do list - were run on the old build and the new on 20,000
+random rounds: 417,792 results, **no differences**. The same comparison run
+against a copy of the new build with two small faults planted found 1,045, so
+a clean result means something. Where both builds throw, on an event course
+record missing its corner list entirely, the count is reported on its own.
+
+The screens were compared too: all 81 states the style change was checked
+against - every screen, every director tool, the report printed, dark mode -
+snapshotted on both builds with the database and map tiles blocked at the
+browser, 175,285 elements, **identical**.
+
+Two of lint's checks read the code by its wording - the lightbox wiring table
+and the tile palette - and one test pinned the director's edit form by a
+variable name. All three now find what they guard however it is written, and
+each was broken on purpose afterwards to confirm it still fails.
+
 ## What was actually tested, and what was not
 
 Tested on **Windows 11 Home (build 26200)** with **Chrome 153**, served with
@@ -659,10 +687,10 @@ and `test/lint.mjs` fails if the page loads something the shell leaves out.
 
 ## What is still open
 
-- **Two of the compiler's checks are still off.** `strictNullChecks` and
-  `noImplicitAny` are on; `noUncheckedIndexedAccess` and the rest of `strict`
-  are worth about 115 more findings between them, and the first of those is
-  under way - see the table under "TypeScript".
+- **The rest of `strict` is still off.** `strictNullChecks`, `noImplicitAny`
+  and `noUncheckedIndexedAccess` are on; the rest of `strict` and the unused
+  checks are worth 27 more findings, mostly catch variables - see the table
+  under "TypeScript".
 - **The app is one 10,600-line file**, `src/livewire.ts`, in one global scope.
   Splitting it means modules, which the test harness cannot run - see
   "TypeScript" for why.

@@ -2950,8 +2950,11 @@ section('34. handles are fixed once chosen');
 const appSrc = source.script;
 const handleWrites = (appSrc.match(/\.handle\s*=/g) || []).length;
 check('exactly one place assigns a handle after the fact', handleWrites, 1);
-check('and it is the director edit form',
-  /anglers\[idx\]\.handle = handle;/.test(appSrc), true);
+// Found inside the edit form's save handler - from its binding to the next one
+// - rather than by the name of whatever variable holds the angler there.
+const editSaveAt = appSrc.indexOf(`'[data-act="c-edit-save"]'`);
+const editSave = editSaveAt === -1 ? '' : appSrc.slice(editSaveAt, appSrc.indexOf('el.querySelectorAll(', editSaveAt));
+check('and it is the director edit form', /\.handle = handle;/.test(editSave), true);
 
 // ============================================================
 section('35. position signals');
