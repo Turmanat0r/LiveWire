@@ -1,0 +1,68 @@
+body {
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+}
+
+h1 {
+  font-size: var(--text-2xl);
+  text-transform: uppercase;
+}
+
+h2 {
+  font-size: var(--text-xl);
+}
+
+h3 {
+  font-size: var(--text-lg);
+}
+
+a {
+  color: var(--accent-text);
+  text-underline-offset: 0.15em;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Numbers that sit in columns line up. */
+table,
+time,
+data {
+  font-variant-numeric: tabular-nums;
+}
+
+code,
+kbd {
+  font-family: var(--font-mono);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms;
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+  }
+}
+
+/* index.html's own text, before the app has drawn. */
+.boot-note {
+  max-inline-size: var(--measure);
+  margin: var(--space-7) auto;
+  padding-inline: var(--space-4);
+  color: var(--text-muted);
+}
