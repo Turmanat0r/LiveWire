@@ -1,0 +1,129 @@
+/*
+  Design tokens: the only file allowed to name a colour (stylelint enforces
+  it). Components use the role tokens (--surface, --text, --accent), never the
+  palette directly, so dark mode and per-screen themes are each one block here.
+*/
+:root {
+  color-scheme: light dark;
+
+  /* Palette: the LiveWire colours, carried over from the old app. */
+  --palette-ink: #16201f;
+  --palette-paper: #f1ece0;
+  --palette-paper-2: #e7e0cf;
+  --palette-deep: #24404d;
+  --palette-night: #0b0f10;
+  --palette-night-2: #151c1e;
+  --palette-steel: #3d5a66;
+  --palette-mist: #b9cbd1;
+  --palette-gold: #c98a2c;
+  --palette-gold-deep: #8f5f16;
+  --palette-gold-light: #e2b05f;
+  --palette-olive: #5c6b4f;
+  --palette-line: #c9c0a9;
+  --palette-line-dark: #2c3a3f;
+  --palette-red: #a3372a;
+  --palette-red-light: #e8735f;
+  --palette-green: #3d6a50;
+  --palette-green-light: #7fc39a;
+  --palette-white: #fbf9f3;
+
+  /* Roles. */
+  --surface: var(--palette-paper);
+  --surface-raised: var(--palette-white);
+  --surface-sunken: var(--palette-paper-2);
+  --text: var(--palette-ink);
+  --text-muted: var(--palette-steel);
+  --border: var(--palette-line);
+  --accent: var(--palette-gold);
+  --accent-text: var(--palette-gold-deep);
+  --on-accent: var(--palette-ink);
+  --chrome: var(--palette-deep);
+  --chrome-text: var(--palette-white);
+  --chrome-muted: var(--palette-mist);
+  --danger: var(--palette-red);
+  --ok: var(--palette-green);
+  --focus-ring: var(--palette-gold);
+
+  /* Type. Inter for reading, Oswald for the scoreboard. */
+  --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', roboto, sans-serif;
+  --font-display: 'Oswald', 'Arial Narrow', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', menlo, consolas, monospace;
+
+  /* A modular scale; nothing goes below 0.8125rem (13px). */
+  --text-sm: 0.8125rem;
+  --text-base: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: clamp(1.5rem, 1.2rem + 1.5vw, 1.875rem);
+  --text-2xl: clamp(1.875rem, 1.4rem + 2.4vw, 2.5rem);
+
+  /* Space, on a 4px grid. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+
+  --radius: 0.5rem;
+  --radius-sm: 0.25rem;
+  --tap-target: 3rem;
+  --measure: 34rem;
+  --tab-bar-height: 4rem;
+  --shadow: 0 1px 2px rgb(0 0 0 / 8%), 0 2px 8px rgb(0 0 0 / 6%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: var(--palette-night);
+    --surface-raised: var(--palette-night-2);
+    --surface-sunken: var(--palette-night);
+    --text: var(--palette-white);
+    --text-muted: var(--palette-mist);
+    --border: var(--palette-line-dark);
+    --accent: var(--palette-gold-light);
+    --accent-text: var(--palette-gold-light);
+    --danger: var(--palette-red-light);
+    --ok: var(--palette-green-light);
+    --chrome: var(--palette-night-2);
+    --shadow: none;
+  }
+}
+
+/*
+  Per-screen accents. The shell sets data-theme from the route, so a screen
+  can recolour itself without a line of its own CSS. Each --accent-text is
+  checked against WCAG AA (4.5:1) on the light and dark surfaces it sits on.
+*/
+[data-theme='standings'],
+[data-theme='payouts'] {
+  --accent: #d4af37;
+  --accent-text: #7a5f10;
+}
+
+[data-theme='safety'] {
+  --accent: var(--palette-red);
+  --accent-text: var(--palette-red);
+}
+
+[data-theme='director'] {
+  --chrome: #232323;
+  --accent: #b0ada6;
+  --accent-text: #5f5c56;
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-theme='standings'],
+  [data-theme='payouts'] {
+    --accent-text: #e3c25a;
+  }
+
+  [data-theme='safety'] {
+    --accent: var(--palette-red-light);
+    --accent-text: var(--palette-red-light);
+  }
+
+  [data-theme='director'] {
+    --accent-text: #c9c6bf;
+  }
+}

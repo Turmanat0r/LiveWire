@@ -1,0 +1,12 @@
+/*
+  The cascade, in order. A later layer always beats an earlier one, whatever
+  the selector, so specificity never has to be fought and nothing needs
+  !important. Component stylesheets put themselves in `components`.
+*/
+@layer reset, tokens, base, layout, components, utilities;
+
+@import url('./reset.css') layer(reset);
+@import url('./tokens.css') layer(tokens);
+@import url('./fonts.css');
+@import url('./base.css') layer(base);
+@import url('./utilities.css') layer(utilities);

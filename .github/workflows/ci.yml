@@ -1,0 +1,72 @@
+# Every pull request runs all three. A red X on the pull request page means do
+# not merge; the job name says which kind of check failed.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Types, lint, unit tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+
+  parity:
+    name: Rules match the old app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # The old app (Turmanat0r/Live-Wire), at the commit production runs, as
+      # the oracle. Removed at switch-over along with tests/parity.
+      - uses: actions/checkout@v5
+        with:
+          repository: Turmanat0r/Live-Wire
+          ref: 9788664d19633d00e8c078e3aaad63216e8adc7d
+          path: legacy
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - name: Build the old app
+        working-directory: legacy
+        run: npm ci && npm run build
+      - run: npm ci
+      - run: npm run test:parity
+        env:
+          LEGACY_APP_JS: ${{ github.workspace }}/legacy/app/livewire.js
+
+  phones:
+    name: Emulated Android and iPhone
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 14

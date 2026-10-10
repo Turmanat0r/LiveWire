@@ -1,0 +1,25 @@
+@layer components {
+  .card {
+    padding: var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow);
+  }
+
+  .card > * + * {
+    margin-block-start: var(--space-3);
+  }
+
+  .card__title {
+    font-size: var(--text-lg);
+  }
+
+  .card--notice {
+    border-inline-start: 4px solid var(--accent);
+  }
+
+  .card--danger {
+    border-inline-start: 4px solid var(--danger);
+  }
+}

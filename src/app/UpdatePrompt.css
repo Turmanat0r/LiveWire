@@ -1,0 +1,36 @@
+@layer components {
+  .update-prompt {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-4);
+    background: var(--chrome);
+    color: var(--chrome-text);
+  }
+
+  .update-prompt__actions {
+    display: flex;
+    gap: var(--space-2);
+  }
+
+  .update-prompt__go,
+  .update-prompt__later {
+    min-block-size: var(--tap-target);
+    padding-inline: var(--space-4);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .update-prompt__go {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+
+  .update-prompt__later {
+    background: transparent;
+  }
+}

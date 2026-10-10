@@ -1,0 +1,28 @@
+@layer components {
+  .page {
+    inline-size: 100%;
+    max-inline-size: var(--measure);
+    margin-inline: auto;
+    padding: var(--space-5) var(--space-4) var(--space-6);
+  }
+
+  .page__header {
+    margin-block-end: var(--space-5);
+  }
+
+  .page__kicker {
+    color: var(--accent-text);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .page__title:focus {
+    outline: none;
+  }
+
+  .page__body > * + * {
+    margin-block-start: var(--space-4);
+  }
+}
