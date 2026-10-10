@@ -1,5 +1,8 @@
-# Every pull request runs all three. A red X on the pull request page means do
-# not merge; the job name says which kind of check failed.
+# Every pull request runs the checks below. A red X on the pull request page
+# means do not merge; the job name says which kind of check failed.
+#
+# After a merge to main, and only if every check passed, the last job applies
+# any new database changes to the staging database (livewire-staging).
 name: CI
 
 on:
@@ -12,12 +15,14 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push replaces checks still running on a pull request, but never
+  # interrupts main, where a database change may be part-way through applying.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
     name: Types, lint, unit tests, build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -30,7 +35,7 @@ jobs:
 
   parity:
     name: Rules match the old app
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       # The old app (Turmanat0r/Live-Wire), at the commit production runs, as
@@ -54,7 +59,7 @@ jobs:
 
   phones:
     name: Emulated Android and iPhone
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -70,3 +75,55 @@ jobs:
           name: playwright-report
           path: playwright-report
           retention-days: 14
+
+  database:
+    name: Database rules on real Supabase
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # A throwaway Supabase on this machine, with every migration applied.
+      - name: Start Supabase
+        run: npx supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,mailpit
+      # The same tests that run on a PC against the stand-in, here against the
+      # real thing, so the two cannot quietly disagree.
+      - name: Database tests
+        run: npm run test:db
+        env:
+          SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+
+  deploy-staging:
+    name: Apply database changes to staging
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [check, parity, phones, database]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # STAGING_DB_URL is the staging database's session-pooler connection
+      # string, password included. It reaches that one database and nothing
+      # else in the Supabase account. See README, "Database".
+      - name: Check the staging address is set
+        env:
+          STAGING_DB_URL: ${{ secrets.STAGING_DB_URL }}
+        run: |
+          if [ -z "$STAGING_DB_URL" ]; then
+            echo "::error title=No staging address::Add the STAGING_DB_URL secret. See README, Database."
+            exit 1
+          fi
+      - name: What will change
+        env:
+          STAGING_DB_URL: ${{ secrets.STAGING_DB_URL }}
+        run: npx supabase db push --db-url "$STAGING_DB_URL" --dry-run
+      - name: Apply it
+        env:
+          STAGING_DB_URL: ${{ secrets.STAGING_DB_URL }}
+        run: npx supabase db push --db-url "$STAGING_DB_URL" --yes

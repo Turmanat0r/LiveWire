@@ -104,6 +104,22 @@ export default defineConfig({
       {
         extends: true,
         test: {
+          // The database: every migration applied to a fresh Postgres, and every
+          // rule acted out as an angler, a teammate, a stranger and the director.
+          // In CI, SUPABASE_DB_URL points the same tests at the real Supabase.
+          name: 'db',
+          include: ['tests/db/**/*.test.ts'],
+          environment: 'node',
+          // One database per file locally; one shared database in CI, where
+          // "the current event" is a single row, so files run one at a time.
+          fileParallelism: false,
+          testTimeout: 60_000,
+          hookTimeout: 60_000,
+        },
+      },
+      {
+        extends: true,
+        test: {
           // The old app, run as an oracle: the same random tournaments go
           // through both and the answers must match. Needs the old app built
           // (`npm run build` in the repository root). Deleted at cutover.
