@@ -88,9 +88,6 @@
   /* ---- the event ---------------------------------------------------------------- */
 
   .home-event {
-    position: relative;
-    isolation: isolate;
-    overflow: hidden;
     margin-block-start: 8px;
     padding: 12px 14px 14px;
     border: 1px solid var(--line);
@@ -104,19 +101,6 @@
         var(--home-hero-to) 100%
       );
     clip-path: polygon(0 0, 95% 0, 100% 8%, 100% 100%, 0 100%);
-  }
-
-  /* A red ring, mostly off the card's corner. */
-  .home-event::after {
-    position: absolute;
-    inset-block-end: -74px;
-    inset-inline-end: -42px;
-    z-index: -2;
-    inline-size: 180px;
-    block-size: 180px;
-    border: 1px solid var(--home-hero-ring);
-    border-radius: 50%;
-    content: '';
   }
 
   .home-event__top {
@@ -165,22 +149,6 @@
     letter-spacing: 0.06em;
     text-align: end;
     text-transform: uppercase;
-  }
-
-  .home-fishmark {
-    position: absolute;
-    inset-block-start: 30px;
-    inset-inline-end: -21px;
-    z-index: -1;
-    inline-size: 154px;
-    block-size: 96px;
-    color: var(--home-fishmark);
-    transform: rotate(-8deg);
-    fill: none;
-    stroke: currentcolor;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
   }
 
   .home-kicker {
