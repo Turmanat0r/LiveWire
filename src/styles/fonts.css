@@ -1,9 +1,12 @@
 /*
   Self-hosted, so the app draws in its own type out of signal and no third
-  party sits between an angler and filing a fish. Both are variable fonts: one
-  file covers every weight. (The old app shipped each one three times under
-  three names.) Latin only; a name with characters outside it falls back to the
-  system face for those letters.
+  party sits between an angler and filing a fish. Latin only; a name with
+  characters outside it falls back to the system face for those letters.
+
+  The old app's four faces: Inter to read, Oswald for the scoreboard
+  headings, Fraunces for card titles, Space Mono for the small uppercase
+  labels. Inter, Oswald and Fraunces are variable fonts, one file for every
+  weight; Space Mono is used at its regular weight only.
 */
 @font-face {
   font-family: Inter;
@@ -19,4 +22,20 @@
   font-weight: 200 700;
   font-display: swap;
   src: url('../assets/fonts/oswald-latin.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: Fraunces;
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../assets/fonts/fraunces-latin.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Space Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/space-mono-latin.woff2') format('woff2');
 }

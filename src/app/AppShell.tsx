@@ -1,19 +1,25 @@
 import { NavLink, Outlet, useLocation } from 'react-router';
 import { SCREENS, TABS, screen } from './screens';
-import { useRouteFocus } from './useRouteFocus';
 import { SyncStatus } from './SyncStatus';
+import { useRouteFocus } from './useRouteFocus';
 import { UpdatePrompt } from './UpdatePrompt';
 import { Icon } from '../ui/Icon';
 import './AppShell.css';
 
-/** The screen whose address matches, or home. Used for the colour theme. */
+/** The colour theme of the screen whose address matches; an unknown address gets the plain one. */
 function themeFor(pathname: string): string {
+  if (pathname === '/') return 'home';
   const match = SCREENS.filter((s) => s.path !== '/' && pathname.startsWith(s.path)).sort(
     (a, b) => b.path.length - a.path.length,
   )[0];
-  return match?.theme ?? 'home';
+  return match?.theme ?? 'default';
 }
 
+/**
+ * The old app's frame: one column, as wide as a phone and a little wider on a
+ * tablet, tinted by the screen it shows, with the tab bar floating over the
+ * bottom of it.
+ */
 export function AppShell() {
   const { pathname } = useLocation();
   useRouteFocus(pathname);
@@ -23,11 +29,13 @@ export function AppShell() {
       <a className="shell__skip" href="#main">
         Skip to content
       </a>
-      <SyncStatus />
+      <div className="shell__column">
+        <main id="main" className="shell__main">
+          <SyncStatus />
+          <Outlet />
+        </main>
+      </div>
       <UpdatePrompt />
-      <main id="main" className="shell__main">
-        <Outlet />
-      </main>
       <nav className="tab-bar" aria-label="Main">
         <ul className="tab-bar__list">
           {TABS.map(({ id, label }) => {

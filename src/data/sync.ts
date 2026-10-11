@@ -74,6 +74,12 @@ const MANY = 50;
 const SAVE_AFTER_MS = 1000;
 const FIRST_RETRY_MS = 2_000;
 const LAST_RETRY_MS = 60_000;
+/**
+ * Supabase starts relaying signals a few seconds after the first phone of the
+ * day joins. A change in that gap is announced to nobody, so the event is read
+ * once more this long after joining.
+ */
+const RELAY_STARTS_MS = 5_000;
 /** Hidden longer than this, the app reads everything again when it comes back. */
 const STALE_AFTER_HIDDEN_MS = 60_000;
 
@@ -110,6 +116,7 @@ export class Sync {
   private cancelRetry: (() => void) | null = null;
   private cancelSave: (() => void) | null = null;
   private cancelGather: (() => void) | null = null;
+  private cancelSecondLook: (() => void) | null = null;
   private readonly pending = new Map<TableName, Pending>();
   /** One read at a time per table, so an older answer never lands on a newer one. */
   private readonly reads = new Map<TableName, Promise<void>>();
@@ -173,7 +180,13 @@ export class Sync {
     this.stopped = true;
     this.stopListening?.();
     this.stopListening = null;
-    for (const cancel of [this.cancelRetry, this.cancelSave, this.cancelGather]) cancel?.();
+    for (const cancel of [
+      this.cancelRetry,
+      this.cancelSave,
+      this.cancelGather,
+      this.cancelSecondLook,
+    ])
+      cancel?.();
   }
 
   /** Signal is back. */
@@ -283,8 +296,14 @@ export class Sync {
     this.live = status === 'live';
     if (status === 'live') {
       this.update({ connection: 'live', problem: null });
-      // Whatever changed before listening started arrives in this read.
+      // Whatever changed before listening started arrives in this read, and
+      // whatever changed before Supabase's relay was running, in the next.
       void this.readEverything();
+      this.cancelSecondLook?.();
+      this.cancelSecondLook = this.setTimer(() => {
+        this.cancelSecondLook = null;
+        if (this.live) void this.readEverything();
+      }, RELAY_STARTS_MS);
       this.outbox.kick();
     } else if (status === 'lost') {
       // Start over: a channel closed for an expired sign-in is never reopened by itself.

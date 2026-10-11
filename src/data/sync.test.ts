@@ -25,11 +25,12 @@ function setUp(local: LocalStore = new MemoryStore()) {
   return { server, timers, sync, local };
 }
 
-/** Started, listening, and caught up. */
+/** Started, listening, and caught up, including the second look after joining. */
 async function live(setup: ReturnType<typeof setUp>) {
   await setup.sync.start();
   setup.server.status('live');
   await settle();
+  await setup.timers.advance(5000);
   await setup.sync.settled();
   setup.server.reads.length = 0;
 }
@@ -98,6 +99,19 @@ describe('the sync engine', () => {
     await settle();
     await setup.sync.settled();
     expect(catchIds(setup.sync)).toEqual(['while-joining']);
+  });
+
+  it('reads once more a few seconds after joining, for what the relay missed', async () => {
+    const setup = setUp();
+    await setup.sync.start();
+    setup.server.status('live');
+    await settle();
+    await setup.sync.settled();
+    // Changed after the first read, before Supabase relayed anything.
+    setup.server.put('catches', catchRow({ id: 'before-relay' }));
+    await setup.timers.advance(5000);
+    await setup.sync.settled();
+    expect(catchIds(setup.sync)).toEqual(['before-relay']);
   });
 
   it('reads everything again each time listening starts again', async () => {

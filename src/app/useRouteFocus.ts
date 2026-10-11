@@ -10,7 +10,8 @@ export function useRouteFocus(pathname: string): void {
   const first = useRef(true);
   useEffect(() => {
     const heading = document.querySelector<HTMLElement>('[data-route-heading]');
-    document.title = heading?.textContent ? `${heading.textContent} · LiveWire` : 'LiveWire';
+    const name = heading?.textContent ?? '';
+    document.title = name && name !== 'LiveWire' ? `${name} · LiveWire` : 'LiveWire';
     if (first.current) {
       first.current = false;
       return;

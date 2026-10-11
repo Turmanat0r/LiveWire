@@ -126,12 +126,27 @@ describe.skipIf(!running)('the app’s server adapter, on a real Supabase', () =
   it('hears a signal when a row on the event changes', async () => {
     const listener = await join(device, [`event:${eventId}`]);
     expect(listener.status()).toBe('live');
+    const heard = (id: string) =>
+      listener.signals.some((s) => s.table === 'catches' && s.key['id'] === id);
+
+    // Supabase starts relaying a few seconds after the first phone joins (the
+    // app reads everything again then, to cover the gap). Keep changing
+    // things until the relay is running...
+    const filed: string[] = [];
+    const deadline = Date.now() + 30_000;
+    while (!filed.some(heard)) {
+      if (Date.now() > deadline) throw new Error('No signal arrived within 30 seconds');
+      filed.push(await fileCatch(device));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+
+    // ...and from then on, every change is announced.
     const catchId = await fileCatch(device);
     await vi.waitFor(
       () => {
-        expect(listener.signals).toContainEqual({ table: 'catches', key: { id: catchId } });
+        expect(heard(catchId)).toBe(true);
       },
-      { timeout: 20_000, interval: 100 },
+      { timeout: 10_000, interval: 100 },
     );
     listener.stop();
   });

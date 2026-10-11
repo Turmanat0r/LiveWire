@@ -1,28 +1,23 @@
 @layer components {
-  .page {
-    inline-size: 100%;
-    max-inline-size: var(--measure);
-    margin-inline: auto;
-    padding: var(--space-5) var(--space-4) var(--space-6);
+  .page > * + * {
+    margin-block-start: var(--space-4);
   }
 
-  .page__header {
-    margin-block-end: var(--space-5);
-  }
-
-  .page__kicker {
-    color: var(--accent-text);
+  .backlink {
+    display: inline-flex;
+    gap: var(--space-1);
+    align-items: center;
+    min-block-size: var(--tap-target);
+    color: var(--steel);
     font-size: var(--text-sm);
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    text-decoration: none;
+  }
+
+  .page > .backlink + * {
+    margin-block-start: 0;
   }
 
   .page__title:focus {
     outline: none;
-  }
-
-  .page__body > * + * {
-    margin-block-start: var(--space-4);
   }
 }
