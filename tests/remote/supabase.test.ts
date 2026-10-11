@@ -10,7 +10,9 @@ import { registrant, setUpEvent } from '../db/fixtures';
 
 const url = process.env['VITE_SUPABASE_URL'];
 const key = process.env['VITE_SUPABASE_PUBLISHABLE_KEY'];
-const running = Boolean(url && key && process.env['SUPABASE_DB_URL']);
+// Skipped on a PC with no Supabase; in CI, where one is always started, a
+// missing server fails these rather than quietly skipping them.
+const running = Boolean(url && key && process.env['SUPABASE_DB_URL']) || Boolean(process.env['CI']);
 
 function phone(): Remote {
   return supabaseRemote({ url: url ?? '', key: key ?? '' });

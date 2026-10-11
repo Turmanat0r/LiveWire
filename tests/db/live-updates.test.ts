@@ -149,7 +149,7 @@ describe('the app', () => {
   it('knows every table and its primary key, as the database declares them', async () => {
     const keys = await db.admin<{ table: string; columns: string[] }>(`
       select c.relname as table,
-        array_agg(a.attname order by array_position(i.indkey, a.attnum)) as columns
+        array_agg(a.attname::text order by array_position(i.indkey, a.attnum)) as columns
       from pg_index i
       join pg_class c on c.oid = i.indrelid
       join pg_namespace n on n.oid = c.relnamespace

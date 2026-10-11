@@ -7,8 +7,10 @@ import { setUpEvent } from '../db/fixtures';
  * the tournament the director set up, changes on screen the moment the
  * director changes it, and still shows it with no signal.
  */
+// Skipped on a PC with no Supabase. In CI one is always started, so there a
+// missing server fails these rather than quietly skipping them.
 const running = Boolean(process.env['SUPABASE_DB_URL'] && process.env['VITE_SUPABASE_URL']);
-test.skip(!running, 'Needs a Supabase to talk to; CI starts one');
+test.skip(!running && !process.env['CI'], 'Needs a Supabase to talk to; CI starts one');
 
 // Every phone shows the one current event, so tests on the two phones take
 // turns: each holds this lock on the database from setup to finish.
