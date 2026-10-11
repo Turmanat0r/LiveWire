@@ -127,8 +127,11 @@ switch-over, and after any change to the offline setup:
   Live-Wire.
 - **Hosting.** A new Vercel project for this repository, so previews of the
   rebuild never touch the live site. Needed before stage 2.
-- **Staging database.** A second Supabase project (free tier) for previews and
-  tests. Needed before stage 2.
+- **Staging database.** Decided: `livewire-staging`, a free project in the
+  Vercel-managed Supabase area (_turmanat0r's projects_), where my tools can
+  reach it and cannot reach the live database. The old LiveWire project was
+  paused to free the slot. GitHub applies database changes to it after each
+  merge.
 - **Fish-I provider.** Stay on Google's free tier, or pay for a stronger model.
   It is a cost decision; the code will take either.
 - **Fonts.** The rebuild uses Inter for reading and Oswald for headings. It
