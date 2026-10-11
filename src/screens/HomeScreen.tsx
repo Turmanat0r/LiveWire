@@ -2,7 +2,11 @@ import { Link } from 'react-router';
 import { useStatusLine } from '../app/SyncStatus';
 import { useNow } from '../app/useNow';
 import { screen, type ScreenId } from '../app/screens';
+import { useMyEntry, type MyEntry } from '../data/myEntry';
+import { useEventDates } from '../data/selectors';
+import type { Row } from '../data/tables';
 import { useSync } from '../data/useSync';
+import { entryNumberText } from '../domain/identity';
 import { dateRangeText } from '../domain/time';
 import { Icon } from '../ui/Icon';
 import './HomeScreen.css';
@@ -42,10 +46,10 @@ function SignalMark() {
 }
 
 /** The tournament every phone is on, from the phone's own copy: it shows with no signal. */
-function EventCard() {
+function EventCard({ registered }: { readonly registered: boolean }) {
   const loaded = useSync((s) => s.loaded);
   const event = useSync((s) => s.event);
-  const days = useSync((s) => s.tables.event_days);
+  const dates = useEventDates(event);
   const now = useNow();
   if (!loaded) return null;
   if (!event) {
@@ -58,10 +62,6 @@ function EventCard() {
       </section>
     );
   }
-  const dates = [...days.values()]
-    .filter((d) => d.event_id === event.id)
-    .map((d) => d.day)
-    .sort();
   const open = Date.parse(event.registration_closes_at) > now;
   return (
     <section className="home-event" aria-labelledby="home-event-title">
@@ -82,11 +82,9 @@ function EventCard() {
           <span>{event.course_label}</span>
         </p>
       ) : null}
-      {open ? (
-        <Link className="home-register" to={screen('register').path}>
-          Register now
-        </Link>
-      ) : null}
+      <Link className="home-register" to={screen('register').path}>
+        {registered ? 'Registration details' : open ? 'Register now' : 'View roster'}
+      </Link>
     </section>
   );
 }
@@ -104,7 +102,83 @@ function TileLink({ tile, info }: { readonly tile: Tile; readonly info?: boolean
   );
 }
 
+/** "DT" for Daniel Turman. */
+function initials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const first = words[0]?.[0] ?? '';
+  const last = words.length > 1 ? (words.at(-1)?.[0] ?? '') : '';
+  return (first + last).toUpperCase() || '+';
+}
+
+/**
+ * The angler card: who this phone is. Everything on it is the angler's own,
+ * so their real name and both board codes belong here: it is the quickest
+ * thing to reach on the water when someone forgets what to write on the board.
+ */
+function AnglerCard({
+  mine,
+  event,
+}: {
+  readonly mine: MyEntry | null;
+  readonly event: Row<'events'> | null;
+}) {
+  if (!mine || !event) {
+    return (
+      <section className="home-profile" aria-labelledby="home-profile-label">
+        <span className="home-avatar" aria-hidden="true">
+          +
+        </span>
+        <div className="home-profile__copy">
+          <h2 id="home-profile-label" className="home-profile__label">
+            Angler profile
+          </h2>
+          <p className="home-profile__name">Not registered yet</p>
+          <p className="home-profile__sub">Register above to receive your tournament ID</p>
+        </div>
+      </section>
+    );
+  }
+  const { me, partner, details, entry } = mine;
+  const name = me.details?.full_name ?? me.angler.handle;
+  const division = partner
+    ? `Team with ${partner.details?.full_name ?? partner.angler.handle}`
+    : 'Solo division';
+  // Each piece wraps whole, so a code is never split from its label.
+  const codes = [
+    entryNumberText(event.entry_prefix, entry.entry_number),
+    details?.team_code ? `Team ${details.team_code}` : null,
+    me.details?.angler_code ? `Tournament ID ${me.details.angler_code}` : null,
+  ].filter((piece): piece is string => piece !== null);
+  return (
+    <section className="home-profile" aria-labelledby="home-profile-label">
+      <span className="home-avatar" aria-hidden="true">
+        {initials(name)}
+      </span>
+      <div className="home-profile__copy">
+        <h2 id="home-profile-label" className="home-profile__label">
+          Angler profile
+          {details?.fee_paid ? null : <span className="home-profile__flag">Fee not matched</span>}
+        </h2>
+        <p className="home-profile__name">{name}</p>
+        <p className="home-profile__sub">
+          {me.angler.handle} · {division}
+        </p>
+        <p className="home-profile__sub">
+          {codes.map((piece, i) => (
+            <span className="home-profile__piece" key={piece}>
+              {i > 0 ? ' · ' : ''}
+              {piece}
+            </span>
+          ))}
+        </p>
+      </div>
+    </section>
+  );
+}
+
 export function HomeScreen() {
+  const mine = useMyEntry();
+  const event = useSync((s) => s.event);
   return (
     <div className="home">
       <header className="home-topbar">
@@ -122,20 +196,9 @@ export function HomeScreen() {
         <SignalMark />
       </header>
 
-      <EventCard />
+      <EventCard registered={mine !== null} />
 
-      <section className="home-profile" aria-labelledby="home-profile-label">
-        <span className="home-avatar" aria-hidden="true">
-          +
-        </span>
-        <div className="home-profile__copy">
-          <h2 id="home-profile-label" className="home-profile__label">
-            Angler profile
-          </h2>
-          <p className="home-profile__name">Not registered yet</p>
-          <p className="home-profile__sub">Register above to receive your tournament ID</p>
-        </div>
-      </section>
+      <AnglerCard mine={mine} event={event} />
 
       <nav aria-labelledby="home-more">
         <div className="home-sectionhead">

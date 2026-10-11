@@ -43,12 +43,13 @@
   }
 
   .shell[data-theme='home'] .shell__column {
-    padding-block-end: calc(70px + env(safe-area-inset-bottom, 0px));
+    /* The home tab bar is 58px tall, 7px off the bottom edge. */
+    padding-block-end: calc(66px + env(safe-area-inset-bottom, 0px));
     background: linear-gradient(155deg, var(--home-glow), transparent 34%), var(--paper);
   }
 
   .shell[data-theme='home'] .shell__main {
-    padding: 0 12px 6px;
+    padding: 0 10px 4px;
   }
 
   /* The tab bar floats a little above the bottom edge, in the screen's colour. */

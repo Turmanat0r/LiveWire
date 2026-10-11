@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import type { Angler } from './types';
-import { DEFAULT_PAYOUT, eligibleEntries, outstandingFees, paidEntries, splitPool } from './money';
+import {
+  DEFAULT_PAYOUT,
+  dollarsText,
+  eligibleEntries,
+  outstandingFees,
+  paidEntries,
+  splitPool,
+} from './money';
 
 const FEES = { soloCents: 3000, teamCents: 5000, bigFishCents: 1000 };
 
@@ -89,5 +96,13 @@ describe('entry counts and fees', () => {
       ]).teams,
     ).toBe(0);
     expect(eligibleEntries([angler('s', { disqualified: true })]).solo).toBe(0);
+  });
+});
+
+describe('dollars', () => {
+  it('are whole when they can be, and to the cent when not', () => {
+    expect(dollarsText(3000)).toBe('$30');
+    expect(dollarsText(1250)).toBe('$12.50');
+    expect(dollarsText(0)).toBe('$0');
   });
 });

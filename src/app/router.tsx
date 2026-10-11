@@ -1,7 +1,9 @@
 import { createBrowserRouter, type RouteObject } from 'react-router';
 import { AppShell } from './AppShell';
-import { SCREENS } from './screens';
+import { SCREENS, screen } from './screens';
+import { CheckInScreen } from '../screens/CheckInScreen';
 import { HomeScreen } from '../screens/HomeScreen';
+import { RegisterScreen } from '../screens/register/RegisterScreen';
 import { PlannedScreen } from '../screens/PlannedScreen';
 import { NotFoundScreen } from '../screens/NotFoundScreen';
 import { ErrorScreen } from '../screens/ErrorScreen';
@@ -17,7 +19,9 @@ export const routes: RouteObject[] = [
     errorElement: <ErrorScreen />,
     children: [
       { index: true, element: <HomeScreen /> },
-      ...SCREENS.filter((s) => s.id !== 'home').map((s): RouteObject => ({
+      { path: screen('register').path, element: <RegisterScreen /> },
+      { path: screen('check-in').path, element: <CheckInScreen /> },
+      ...SCREENS.filter((s) => s.milestone !== null).map((s): RouteObject => ({
         path: s.path,
         element: <PlannedScreen screen={s} />,
       })),

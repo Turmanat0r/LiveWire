@@ -36,3 +36,8 @@ export function looksLikeCode(input: string): boolean {
   const code = normalizeCode(input);
   return /^\d{4}$/.test(code) || CODE_PATTERN.test(code);
 }
+
+/** "MKWO-001": the event's prefix and the entry's number, as the roster and the board show it. */
+export function entryNumberText(prefix: string, entryNumber: number): string {
+  return `${prefix}-${String(entryNumber).padStart(3, '0')}`;
+}

@@ -1,21 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { routes } from './router';
 import { SCREENS } from './screens';
 import { FakeServer, settle } from '../test/fakes';
-import { dayRow, eventRow } from '../test/rows';
+import { putEntry } from '../test/render';
+import { dayRow, entryRows, eventRow } from '../test/rows';
 import { testSync, WithSync } from '../test/sync';
-
-// The service worker does not exist in a test page.
-vi.mock('virtual:pwa-register/react', () => ({
-  useRegisterSW: () => ({
-    needRefresh: [false, () => undefined],
-    offlineReady: [false, () => undefined],
-    updateServiceWorker: () => Promise.resolve(),
-  }),
-}));
 
 function renderAt(path: string, sync = testSync()) {
   const router = createMemoryRouter(routes, { initialEntries: [path] });
@@ -77,6 +69,18 @@ describe('the app shell', () => {
     renderAt('/standings');
     expect(screen.getByRole('status').textContent).toBe('Not connected to a tournament server');
   });
+
+  it('has one status line on every screen, so nothing else is announced in its place', () => {
+    for (const s of SCREENS) {
+      const { unmount } = render(
+        <WithSync sync={testSync()}>
+          <RouterProvider router={createMemoryRouter(routes, { initialEntries: [s.path] })} />
+        </WithSync>,
+      );
+      expect(screen.getAllByRole('status')).toHaveLength(1);
+      unmount();
+    }
+  });
 });
 
 describe('the home screen', () => {
@@ -110,5 +114,30 @@ describe('the home screen', () => {
       await settle();
     });
     expect(screen.getByRole('heading', { name: 'No tournament yet' })).toBeTruthy();
+  });
+
+  it('shows the angler this phone is, with the codes to write on the board', async () => {
+    const server = new FakeServer();
+    server.put('events', eventRow());
+    putEntry(server, entryRows({ team: true, names: ['Daniel Turman', 'Pat Partner'] }));
+    const sync = testSync(server);
+    renderAt('/', sync);
+    await act(async () => {
+      await sync.start();
+      await settle();
+    });
+
+    expect(screen.getByText('Daniel Turman')).toBeTruthy();
+    expect(screen.getByText('DT')).toBeTruthy();
+    expect(screen.getByText('Salty Bedrock Perch · Team with Pat Partner')).toBeTruthy();
+    // Three pieces that wrap whole, read as one line.
+    expect(
+      screen.getByText(
+        (_, el) =>
+          el?.tagName === 'P' && el.textContent === 'MKWO-001 · Team TQ7M · Tournament ID 7K4M',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText('Fee not matched')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Registration details' })).toBeTruthy();
   });
 });

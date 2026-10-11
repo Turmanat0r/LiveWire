@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { clockText, dateRangeText, dayPhase, formatCountdown, zonedParts } from './time';
+import {
+  clockText,
+  dateRangeText,
+  dayLabelText,
+  dayPhase,
+  formatCountdown,
+  lastDayText,
+  timeOfDayText,
+  zonedParts,
+} from './time';
 
 const DENVER = 'America/Denver';
 const DATES = ['2027-09-18', '2027-09-19'];
@@ -62,6 +71,18 @@ describe('formatting', () => {
     expect(dateRangeText(['2027-09-30', '2027-10-01'])).toBe('Sep 30–Oct 1, 2027');
     expect(dateRangeText(['2027-09-18'])).toBe('Sep 18, 2027');
     expect(dateRangeText([])).toBe('');
+  });
+
+  it('names the last day of registration on the event clock', () => {
+    // Closes at the first instant of June 2, Mountain time.
+    expect(lastDayText(Date.parse('2027-06-02T00:00:00-06:00'), 'America/Denver')).toBe(
+      'June 1, 2027',
+    );
+  });
+
+  it('tells the time on the event clock, wherever the phone is', () => {
+    expect(timeOfDayText(Date.parse('2027-09-18T12:42:00Z'), 'America/Denver')).toBe('6:42 AM');
+    expect(dayLabelText('2027-09-18')).toBe('Sat, Sep 18');
   });
 
   it('writes a time of day on a twelve-hour clock', () => {

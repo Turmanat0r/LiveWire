@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { generateHandle, uniqueHandle } from './handles';
 import {
   CODE_ALPHABET,
+  entryNumberText,
   isCompletePhone,
   looksLikeCode,
   normalizeCode,
@@ -68,5 +69,13 @@ describe('photo fingerprints', () => {
     expect(isDuplicate(match)).toBe(true);
     expect(isDuplicate({ distance: 5, cropped: true })).toBe(false);
     expect(isDuplicate({ distance: 5, cropped: false })).toBe(true);
+  });
+});
+
+describe('entry numbers', () => {
+  it('read as the event prefix and three digits', () => {
+    expect(entryNumberText('MKWO', 1)).toBe('MKWO-001');
+    expect(entryNumberText('MKWO28', 42)).toBe('MKWO28-042');
+    expect(entryNumberText('MKWO', 1234)).toBe('MKWO-1234');
   });
 });

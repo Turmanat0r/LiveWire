@@ -117,3 +117,9 @@ export function eligibleEntries(anglers: readonly Angler[]): { solo: number; tea
   }).length;
   return { solo, teams };
 }
+
+/** "$30", or "$12.50" when there are cents. */
+export function dollarsText(cents: Cents): string {
+  const dollars = cents / 100;
+  return Number.isInteger(dollars) ? `$${String(dollars)}` : `$${dollars.toFixed(2)}`;
+}

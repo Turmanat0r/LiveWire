@@ -80,7 +80,7 @@ jobs:
       - run: npx playwright install --with-deps chromium webkit
       # The built app, signed in to that Supabase, on both phones.
       - run: npm run test:e2e
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: failure()
         with:
           name: playwright-report

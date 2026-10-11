@@ -16,6 +16,7 @@
   --white: #fbf9f3;
   --danger: #a3372a;
   --warn: #d5a33a;
+  --olive: #5c6b4f;
 
   /*
     Each screen's theme: the shell sets data-theme from the route, and every
@@ -30,6 +31,9 @@
   --line: #c9c0a9;
   --steel: #3d5a66;
   --tab-off: #97acb2; /* was #8ca3aa */
+
+  /* Gold words, where gold itself is too faint to read. */
+  --gold-text: #8f5f16;
 
   /* Marks and overlays: hex with alpha, since rgba() is kept out of components. */
   --tab-on: #ffffff1f;
@@ -169,6 +173,7 @@
   --line: #0e0d0b;
   --steel: #55524c;
   --tab-off: #8ca3aa;
+  --gold-text: #926f21; /* was #c9982e, 2.6:1 on white */
 }
 
 /* Home: the dark one. Red where the others have gold. */
