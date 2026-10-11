@@ -1335,6 +1335,7 @@ export type Database = {
         };
         Returns: Json;
       };
+      server_now: { Args: Record<PropertyKey, never>; Returns: string };
       settle_bet: {
         Args: { p_bet_id: string; p_winner_angler_id: string };
         Returns: {

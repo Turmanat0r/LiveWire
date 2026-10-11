@@ -22,6 +22,7 @@ export class FakeServer implements Remote {
   readonly answers = new Map<FunctionName, (args: Readonly<Record<string, Json>>) => Json>();
   readonly calls: { fn: FunctionName; args: Readonly<Record<string, Json>> }[] = [];
   readonly uploads = new Map<string, StoredFile>();
+  readonly removed: string[] = [];
   readonly reads: string[] = [];
   signInsRefused: string | null = null;
   signIns = 0;
@@ -103,6 +104,28 @@ export class FakeServer implements Remote {
     this.reachable();
     this.uploads.set(path, file);
     return Promise.resolve();
+  }
+
+  removePhoto(path: string): Promise<void> {
+    this.reachable();
+    this.uploads.delete(path);
+    this.removed.push(path);
+    return Promise.resolve();
+  }
+
+  /** The time on the phone, as the test runs it. */
+  phoneClock: () => number = Date.now;
+  /** Server minus phone; a test sets it to try a phone whose clock is off. */
+  clockAheadMs = 0;
+
+  serverTime(): Promise<number> {
+    this.reachable();
+    return Promise.resolve(this.phoneClock() + this.clockAheadMs);
+  }
+
+  photoUrl(path: string): Promise<string> {
+    this.reachable();
+    return Promise.resolve(`https://photos.test/${path}`);
   }
 
   listen(

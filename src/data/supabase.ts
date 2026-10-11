@@ -25,6 +25,8 @@ import type { ServerConfig } from './config';
 import { isTableName, KEYS, type FunctionName, type Row, type TableName } from './tables';
 
 const BUCKET = 'catch-photos';
+/** How long a photo address works. The phone asks again after this. */
+export const PHOTO_URL_SECONDS = 3600;
 /** PostgREST's default cap on rows per request. */
 const PAGE = 1000;
 /** Ids per request when reading rows by id, keeping the address well under server limits. */
@@ -177,6 +179,36 @@ class SupabaseRemote implements Remote {
       return; // Stored by an earlier try whose answer never arrived.
     }
     throw new RemoteError(httpFailure(status, error.code ?? 'photo_refused', error.message));
+  }
+
+  async removePhoto(path: string): Promise<void> {
+    // Removing what is not there is not an error to storage, which suits:
+    // a retry after a lost answer finds the photo already gone.
+    const { error } = await this.client.storage.from(BUCKET).remove([path]);
+    if (!error) return;
+    if (!(error instanceof StorageApiError)) throw new RemoteError({ kind: 'offline' });
+    throw new RemoteError(httpFailure(error.status, error.code ?? 'photo_refused', error.message));
+  }
+
+  async serverTime(): Promise<number> {
+    const { data, error, status } = await this.tables.rpc('server_now', {});
+    if (error) throw postgrestFailure(error, status);
+    const at = typeof data === 'string' ? Date.parse(data) : Number.NaN;
+    if (Number.isNaN(at)) throw new RemoteError({ kind: 'unavailable', status });
+    return at;
+  }
+
+  async photoUrl(path: string): Promise<string> {
+    const { data, error } = await this.client.storage
+      .from(BUCKET)
+      .createSignedUrl(path, PHOTO_URL_SECONDS);
+    if (error) {
+      if (!(error instanceof StorageApiError)) throw new RemoteError({ kind: 'offline' });
+      throw new RemoteError(
+        httpFailure(error.status, error.code ?? 'photo_refused', error.message),
+      );
+    }
+    return data.signedUrl;
   }
 
   listen(

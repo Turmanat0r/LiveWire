@@ -7,6 +7,7 @@ import {
   evaluateBoundary,
   milesBetween,
   offsetLatLng,
+  parseBoundary,
   type Boundary,
 } from './geo';
 
@@ -73,5 +74,28 @@ describe('distance and direction', () => {
     expect(compassFrom(LAUNCH, offsetLatLng(LAUNCH, 1, Math.PI / 2))).toBe('E');
     expect(compassFrom(LAUNCH, offsetLatLng(LAUNCH, 1, (-3 * Math.PI) / 4))).toBe('SW');
     expect(bearingFrom(LAUNCH, offsetLatLng(LAUNCH, 1, 1))).toBeCloseTo(1, 3);
+  });
+});
+
+describe('a course as stored', () => {
+  it('reads a circle and a polygon', () => {
+    expect(
+      parseBoundary({ kind: 'circle', center: { lat: 46.4, lng: -111.6 }, radiusMiles: 4 }),
+    ).toEqual({ kind: 'circle', center: { lat: 46.4, lng: -111.6 }, radiusMiles: 4 });
+    const points = [
+      { lat: 1, lng: 1 },
+      { lat: 1, lng: 2 },
+      { lat: 2, lng: 2 },
+    ];
+    expect(parseBoundary({ kind: 'polygon', points })).toEqual({ kind: 'polygon', points });
+  });
+
+  it('reads anything unexpected as no course at all', () => {
+    expect(parseBoundary(null)).toEqual({ kind: 'none' });
+    expect(parseBoundary({ kind: 'circle', center: { lat: 'x' }, radiusMiles: 4 })).toEqual({
+      kind: 'none',
+    });
+    expect(parseBoundary({ kind: 'polygon', points: [{ lat: 1 }] })).toEqual({ kind: 'none' });
+    expect(parseBoundary({ kind: 'hexagon' })).toEqual({ kind: 'none' });
   });
 });

@@ -107,6 +107,19 @@ export default defineConfig(({ mode }) => {
           cleanupOutdatedCaches: true,
           runtimeCaching: [
             {
+              // A catch photo never changes once filed. Its address carries a
+              // token that lapses within the hour, so it is cached by path
+              // alone: a photo seen once shows again with no signal.
+              urlPattern: /\/storage\/v1\/object\/sign\/catch-photos\//,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'catch-photos',
+                matchOptions: { ignoreSearch: true },
+                expiration: { maxEntries: 400, maxAgeSeconds: 60 * 60 * 24 * 60 },
+                cacheableResponse: { statuses: [200] },
+              },
+            },
+            {
               // Map tiles are the one thing that genuinely needs signal. Keep the
               // ones already seen so the course map still draws out on the water.
               urlPattern: /^https:\/\/tile\.openstreetmap\.org\//,

@@ -11,3 +11,7 @@ vi.mock('virtual:pwa-register/react', () => ({
     updateServiceWorker: () => Promise.resolve(),
   }),
 }));
+
+// jsdom cannot make an address for a file; the photo previews need one.
+URL.createObjectURL = () => 'blob:test-photo';
+URL.revokeObjectURL = () => undefined;

@@ -44,6 +44,25 @@
   --banner-bad-bg: #f1d6d0;
   --update-text: #241703;
 
+  /* The camera: drawn over a live picture, so fixed whatever the screen's theme. */
+  --vf-black: #000;
+  --vf-white: #fff;
+  --vf-shade: #0000009e;
+  --vf-shade-light: #00000073;
+  --vf-codes: #0a1a20b8;
+  --vf-cyan: #4fd2e8;
+  --vf-ready: #5fae85;
+  --vf-hold: #e03725;
+
+  /* Catch status badges: dark words on a pale tint, the same on every screen. */
+  --status-pending-bg: #f3e4c4;
+  --status-pending-text: #7a5410;
+  --status-approved-bg: #dde6d5;
+  --status-approved-text: #3d4a33;
+  --status-rejected-bg: #f1d6d0;
+  --status-rejected-text: #8f2c21;
+  --best-bg: #fcf6e9;
+
   /* The page behind the home screen, so an overscroll on a phone shows dark, not paper. */
   --home-page: #07090a;
 
@@ -103,7 +122,7 @@
   --paper: #efeeea;
   --paper-2: #dfdcd3;
   --line: #c8c4b8;
-  --steel: #6c6a64;
+  --steel: #5f5d58; /* was #6c6a64 */
   --tab-off: #9aaeb4; /* was #8ca3aa */
 }
 

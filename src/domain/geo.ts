@@ -168,3 +168,31 @@ export function boundaryCenter(b: Boundary, fallback: LatLng): LatLng {
   }
   return fallback;
 }
+
+function latLngOf(value: unknown): LatLng | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { lat, lng } = value as { lat?: unknown; lng?: unknown };
+  return typeof lat === 'number' && typeof lng === 'number' ? { lat, lng } : null;
+}
+
+/**
+ * An event's course as stored (the database checks the shape too), read
+ * defensively: anything unexpected is no course, never a crash on the water.
+ */
+export function parseBoundary(value: unknown): Boundary {
+  if (typeof value !== 'object' || value === null) return { kind: 'none' };
+  const v = value as { kind?: unknown; center?: unknown; radiusMiles?: unknown; points?: unknown };
+  if (v.kind === 'circle') {
+    const center = latLngOf(v.center);
+    return center && typeof v.radiusMiles === 'number'
+      ? { kind: 'circle', center, radiusMiles: v.radiusMiles }
+      : { kind: 'none' };
+  }
+  if (v.kind === 'polygon' && Array.isArray(v.points)) {
+    const points = v.points.map(latLngOf);
+    return points.every((p): p is LatLng => p !== null)
+      ? { kind: 'polygon', points }
+      : { kind: 'none' };
+  }
+  return { kind: 'none' };
+}
