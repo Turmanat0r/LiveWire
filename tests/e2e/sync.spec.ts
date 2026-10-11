@@ -67,6 +67,10 @@ test('shows the tournament, and changes the moment the director changes it', asy
   await page.goto('/');
   await expect(page.getByRole('heading', { name })).toBeVisible();
   await expect(page.getByRole('status')).toHaveText('Live', { timeout: 20_000 });
+  // The home screen fits on the phone without scrolling.
+  expect(
+    await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight),
+  ).toBeLessThanOrEqual(0);
 
   await rename(`${name}, renamed`);
   // No reload: the change arrives by itself.

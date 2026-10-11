@@ -129,8 +129,15 @@ describe('the home screen', () => {
 
     expect(screen.getByText('Daniel Turman')).toBeTruthy();
     expect(screen.getByText('DT')).toBeTruthy();
-    expect(screen.getByText('Team with Pat Partner · MKWO-001')).toBeTruthy();
-    expect(screen.getByText('Team TQ7M · Tournament ID 7K4M')).toBeTruthy();
+    expect(screen.getByText('Salty Bedrock Perch · Team with Pat Partner')).toBeTruthy();
+    // Three pieces that wrap whole, read as one line.
+    expect(
+      screen.getByText(
+        (_, el) =>
+          el?.tagName === 'P' && el.textContent === 'MKWO-001 · Team TQ7M · Tournament ID 7K4M',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText('Fee not matched')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Registration details' })).toBeTruthy();
   });
 });

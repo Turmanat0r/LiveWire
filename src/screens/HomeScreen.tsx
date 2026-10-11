@@ -143,12 +143,12 @@ function AnglerCard({
   const division = partner
     ? `Team with ${partner.details?.full_name ?? partner.angler.handle}`
     : 'Solo division';
+  // Each piece wraps whole, so a code is never split from its label.
   const codes = [
+    entryNumberText(event.entry_prefix, entry.entry_number),
     details?.team_code ? `Team ${details.team_code}` : null,
     me.details?.angler_code ? `Tournament ID ${me.details.angler_code}` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  ].filter((piece): piece is string => piece !== null);
   return (
     <section className="home-profile" aria-labelledby="home-profile-label">
       <span className="home-avatar" aria-hidden="true">
@@ -157,16 +157,20 @@ function AnglerCard({
       <div className="home-profile__copy">
         <h2 id="home-profile-label" className="home-profile__label">
           Angler profile
+          {details?.fee_paid ? null : <span className="home-profile__flag">Fee not matched</span>}
         </h2>
         <p className="home-profile__name">{name}</p>
-        <p className="home-profile__sub">{me.angler.handle}</p>
         <p className="home-profile__sub">
-          {division} · {entryNumberText(event.entry_prefix, entry.entry_number)}
+          {me.angler.handle} · {division}
         </p>
-        {codes ? <p className="home-profile__sub">{codes}</p> : null}
-        {details?.fee_paid ? null : (
-          <p className="home-profile__sub">Entry fee not matched up yet</p>
-        )}
+        <p className="home-profile__sub">
+          {codes.map((piece, i) => (
+            <span className="home-profile__piece" key={piece}>
+              {i > 0 ? ' · ' : ''}
+              {piece}
+            </span>
+          ))}
+        </p>
       </div>
     </section>
   );
