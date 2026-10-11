@@ -96,9 +96,9 @@ a preview on staging.
 
 | #   | Stage                      | Delivers                                                                                                           |
 | --- | -------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| 1   | **Foundation** (this one)  | Tooling, CI, design tokens, app shell with every screen's address, the rules layer proven identical to the old app |
-| 2   | Database                   | Schema, row rules, server functions, policy tests, the staging project, generated types                            |
-| 3   | Sync and offline           | Sign-in per device, live updates, the outbox, resumable photo upload                                               |
+| 1   | **Foundation** (done)      | Tooling, CI, design tokens, app shell with every screen's address, the rules layer proven identical to the old app |
+| 2   | **Database** (done)        | Schema, row rules, server functions, policy tests, the staging project, generated types                            |
+| 3   | Sync and offline           | Sign-in per device, live updates, the outbox, resumable photo upload, database types generated offline             |
 | 4   | Anglers on the water       | Register, sign in to an entry, check in and out, submit a catch with camera and photo checks, my catches, livewell |
 | 5   | Safety                     | Where am I against the line, beacons the whole field sees, text-the-director, overdue alerts                       |
 | 6   | The board                  | Standings, Big Fish, side bets, payouts, chat                                                                      |
