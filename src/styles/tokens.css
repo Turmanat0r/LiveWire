@@ -1,64 +1,60 @@
 /*
   Design tokens: the only file allowed to name a colour (stylelint enforces
-  it). Components use the role tokens (--surface, --text, --accent), never the
-  palette directly, so dark mode and per-screen themes are each one block here.
+  it). The palette and every screen's theme are the old app's, value for
+  value, with one kind of exception: a few text colours are a shade darker
+  (or a tab label a shade lighter) where the old pair fell short of the 4.5:1
+  contrast that small text needs. Each is marked "was".
+
+  Like the old app, LiveWire looks the same in light and dark mode: the home
+  screen is dark by design, the rest are tinted paper.
 */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
-  /* Palette: the LiveWire colours, carried over from the old app. */
-  --palette-ink: #16201f;
-  --palette-paper: #f1ece0;
-  --palette-paper-2: #e7e0cf;
-  --palette-deep: #24404d;
-  --palette-night: #0b0f10;
-  --palette-night-2: #151c1e;
-  --palette-steel: #3d5a66;
-  --palette-mist: #b9cbd1;
-  --palette-gold: #c98a2c;
-  --palette-gold-deep: #8f5f16;
-  --palette-gold-light: #e2b05f;
-  --palette-olive: #5c6b4f;
-  --palette-line: #c9c0a9;
-  --palette-line-dark: #2c3a3f;
-  --palette-red: #a3372a;
-  --palette-red-light: #e8735f;
-  --palette-green: #3d6a50;
-  --palette-green-light: #7fc39a;
-  --palette-white: #fbf9f3;
+  /* The old app's palette. */
+  --ink: #16201f;
+  --white: #fbf9f3;
+  --danger: #a3372a;
+  --warn: #d5a33a;
 
-  /* Roles. */
-  --surface: var(--palette-paper);
-  --surface-raised: var(--palette-white);
-  --surface-sunken: var(--palette-paper-2);
-  --text: var(--palette-ink);
-  --text-muted: var(--palette-steel);
-  --border: var(--palette-line);
-  --accent: var(--palette-gold);
-  --accent-text: var(--palette-gold-deep);
-  --on-accent: var(--palette-ink);
-  --chrome: var(--palette-deep);
-  --chrome-text: var(--palette-white);
-  --chrome-muted: var(--palette-mist);
-  --danger: var(--palette-red);
-  --ok: var(--palette-green);
-  --focus-ring: var(--palette-gold);
+  /*
+    Each screen's theme: the shell sets data-theme from the route, and every
+    component reads these. This block is the default theme (chat, gallery,
+    trophy case); the screens with their own colours follow.
+  */
+  --deep: #24404d;
+  --gold: #c98a2c;
+  --gold-deep: #8f5f16;
+  --paper: #f1ece0;
+  --paper-2: #e7e0cf;
+  --line: #c9c0a9;
+  --steel: #3d5a66;
+  --tab-off: #97acb2; /* was #8ca3aa */
 
-  /* Marks on --chrome. At least 3.6:1 on every chrome colour, light or dark. */
-  --status-ok: var(--palette-green-light);
-  --status-problem: var(--palette-red-light);
+  /* Marks and overlays: hex with alpha, since rgba() is kept out of components. */
+  --tab-on: #ffffff1f;
+  --float-shadow: 0 8px 24px #00000047, 0 2px 6px #00000026;
+  --frame-shadow: 0 0 44px #16201f17;
+  --banner-warn-bg: #f3e4c4;
+  --banner-warn-text: #7a5410;
+  --banner-bad-bg: #f1d6d0;
+  --update-text: #241703;
 
-  /* Type. Inter for reading, Oswald for the scoreboard. */
-  --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', roboto, sans-serif;
-  --font-display: 'Oswald', 'Arial Narrow', system-ui, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', menlo, consolas, monospace;
+  /* The page behind the home screen, so an overscroll on a phone shows dark, not paper. */
+  --home-page: #07090a;
 
-  /* A modular scale; nothing goes below 0.8125rem (13px). */
+  /* Type. */
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Oswald', 'Arial Narrow', sans-serif;
+  --font-serif: 'Fraunces', georgia, serif;
+  --font-mono: 'Space Mono', ui-monospace, monospace;
+
+  /* Sizes. Nothing goes below 0.8125rem (13px): the old app's labels went to 8px. */
   --text-sm: 0.8125rem;
+  --text-md: 0.875rem;
   --text-base: 1rem;
-  --text-lg: 1.25rem;
-  --text-xl: clamp(1.5rem, 1.2rem + 1.5vw, 1.875rem);
-  --text-2xl: clamp(1.875rem, 1.4rem + 2.4vw, 2.5rem);
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
 
   /* Space, on a 4px grid. */
   --space-1: 0.25rem;
@@ -67,67 +63,152 @@
   --space-4: 1rem;
   --space-5: 1.5rem;
   --space-6: 2rem;
-  --space-7: 3rem;
 
-  --radius: 0.5rem;
-  --radius-sm: 0.25rem;
+  --radius: 6px;
+  --radius-sm: 4px;
   --tap-target: 3rem;
-  --measure: 34rem;
-  --tab-bar-height: 4rem;
-  --shadow: 0 1px 2px rgb(0 0 0 / 8%), 0 2px 8px rgb(0 0 0 / 6%);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --surface: var(--palette-night);
-    --surface-raised: var(--palette-night-2);
-    --surface-sunken: var(--palette-night);
-    --text: var(--palette-white);
-    --text-muted: var(--palette-mist);
-    --border: var(--palette-line-dark);
-    --accent: var(--palette-gold-light);
-    --accent-text: var(--palette-gold-light);
-    --danger: var(--palette-red-light);
-    --ok: var(--palette-green-light);
-    --chrome: var(--palette-night-2);
-    --shadow: none;
-  }
+/* The old app's screen themes, renamed to the new addresses. */
+[data-theme='check-in'] {
+  --deep: #8c3b12;
+  --gold: #f2a93b;
+  --gold-deep: #a95e1b; /* was #b5651d */
+  --paper: #fbf1e4;
+  --paper-2: #f3dfc2;
+  --line: #e3c69c;
+  --steel: #916339; /* was #9c6b3d */
+  --tab-off: #bfccd0; /* was #8ca3aa */
 }
 
-/*
-  Per-screen accents. The shell sets data-theme from the route, so a screen
-  can recolour itself without a line of its own CSS. Each --accent-text is
-  checked against WCAG AA (4.5:1) on the light and dark surfaces it sits on.
-*/
-[data-theme='standings'],
-[data-theme='payouts'] {
-  --accent: #d4af37;
-  --accent-text: #7a5f10;
+[data-theme='catch'] {
+  --deep: #1e4c4f;
+  --gold: #4fbab8;
+  --gold-deep: #2d7d7c; /* was #2d7e7d */
+  --paper: #eaf3f1;
+  --paper-2: #d8e9e6;
+  --line: #b9d6d1;
+  --steel: #3f7472;
+  --tab-off: #a6b8bd; /* was #8ca3aa */
+}
+
+[data-theme='my-catches'] {
+  --deep: #3a3f44;
+  --gold: #9c9284;
+  --gold-deep: #6e6558;
+  --paper: #efeeea;
+  --paper-2: #dfdcd3;
+  --line: #c8c4b8;
+  --steel: #6c6a64;
+  --tab-off: #9aaeb4; /* was #8ca3aa */
+}
+
+[data-theme='livewell'] {
+  --deep: #123b34;
+  --gold: #5fae85;
+  --gold-deep: #357657;
+  --paper: #e9f2ea;
+  --paper-2: #d5e7d9;
+  --line: #b6d3bf;
+  --steel: #3d6a50;
+  --tab-off: #8ca3aa;
 }
 
 [data-theme='safety'] {
-  --accent: var(--palette-red);
-  --accent-text: var(--palette-red);
+  --deep: #183c43;
+  --gold: #64b6b1;
+  --gold-deep: #337b78;
+  --paper: #eaf3f2;
+  --paper-2: #d8e8e6;
+  --line: #b9d3d0;
+  --steel: #426e6b;
+  --tab-off: #8ea5ac; /* was #8ca3aa */
+}
+
+[data-theme='standings'],
+[data-theme='payouts'] {
+  --deep: #2b2116;
+  --gold: #d4af37;
+  --gold-deep: #8a6d1a; /* was #a3811f */
+  --paper: #f7f0dc;
+  --paper-2: #eee1bc;
+  --line: #dcc98c;
+  --steel: #7d693a; /* was #8a7440 */
+  --tab-off: #8ca3aa;
+}
+
+[data-theme='big-fish'],
+[data-theme='side-bets'] {
+  --deep: #3b1f2b;
+  --gold: #c1672b;
+  --gold-deep: #914d1f;
+  --paper: #f6ebe5;
+  --paper-2: #ead3c6;
+  --line: #d8b49e;
+  --steel: #8a5b41;
+  --tab-off: #8ca3aa;
 }
 
 [data-theme='director'] {
-  --chrome: #232323;
-  --accent: #b0ada6;
-  --accent-text: #5f5c56;
+  --deep: #232323;
+  --gold: #b0ada6;
+  --gold-deep: #74716b; /* was #7d7a73 */
+  --paper: #ededea;
+  --paper-2: #dcdad4;
+  --line: #c4c1b8;
+  --steel: #6b6963;
+  --tab-off: #8ca3aa;
 }
 
-@media (prefers-color-scheme: dark) {
-  [data-theme='standings'],
-  [data-theme='payouts'] {
-    --accent-text: #e3c25a;
-  }
+[data-theme='register'] {
+  --deep: #0e0d0b;
+  --gold: #c9982e;
+  --gold-deep: #0e0d0b;
+  --paper: #fefefe;
+  --paper-2: #f4f2ed;
+  --line: #0e0d0b;
+  --steel: #55524c;
+  --tab-off: #8ca3aa;
+}
 
-  [data-theme='safety'] {
-    --accent: var(--palette-red-light);
-    --accent-text: var(--palette-red-light);
-  }
+/* Home: the dark one. Red where the others have gold. */
+[data-theme='home'] {
+  color-scheme: dark;
+  --deep: #07090a;
+  --gold: #e03725;
 
-  [data-theme='director'] {
-    --accent-text: #c9c6bf;
-  }
+  /* White on the brighter red is 3.9:1; buttons and the monogram use this. */
+  --gold-deep: #ce2e1d;
+
+  /* Red words on the dark panels: the old #e03725 was 4.2:1 there. */
+  --gold-text: #e45444;
+  --paper: #07090a;
+  --paper-2: #181c1f;
+  --line: #30363a;
+  --steel: #a5adb1;
+  --white: #f4f1e9;
+  --tab-off: #a5adb1;
+  --home-glow: #e0372514;
+  --home-panel: #111416;
+  --home-tile: #181c1f;
+  --home-avatar: #26363d;
+  --home-tab-bar: #0b0d0e;
+  --home-hero-from: #1c2428;
+  --home-hero-mid: #101416;
+  --home-hero-to: #090b0c;
+  --home-hero-stripe: #ffffff06;
+  --home-hero-ring: #e0372557;
+  --home-fishmark: #f4f1e913;
+  --home-badge-bg: #e037251f;
+  --home-badge-line: #e03725a6;
+  --home-badge-dot-glow: #e0372524;
+  --home-badge-closed-bg: #ffffff0a;
+  --home-float-shadow: 0 8px 24px #00000061;
+
+  /* The coloured bar in each tile's corner, from the old app. */
+  --tile-gold: #d5a33a;
+  --tile-green: #3d6a50;
+  --tile-steel: #3d5a66;
+  --tile-amber: #c98a2c;
+  --tile-olive: #5c6b4f;
 }

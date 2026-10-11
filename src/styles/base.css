@@ -1,39 +1,29 @@
 body {
-  background: var(--surface);
-  color: var(--text);
+  overflow-x: hidden;
+  background: var(--paper);
+  color: var(--ink);
   font-family: var(--font-body);
   font-size: var(--text-base);
+}
+
+body:has(.shell[data-theme='home']) {
+  background: var(--home-page);
 }
 
 h1,
 h2,
 h3 {
-  font-family: var(--font-display);
   font-weight: 600;
   line-height: 1.15;
-  letter-spacing: 0.01em;
-}
-
-h1 {
-  font-size: var(--text-2xl);
-  text-transform: uppercase;
-}
-
-h2 {
-  font-size: var(--text-xl);
-}
-
-h3 {
-  font-size: var(--text-lg);
 }
 
 a {
-  color: var(--accent-text);
+  color: var(--deep);
   text-underline-offset: 0.15em;
 }
 
 :focus-visible {
-  outline: 3px solid var(--focus-ring);
+  outline: 3px solid var(--gold);
   outline-offset: 2px;
 }
 
@@ -61,8 +51,8 @@ kbd {
 
 /* index.html's own text, before the app has drawn. */
 .boot-note {
-  max-inline-size: var(--measure);
-  margin: var(--space-7) auto;
+  max-inline-size: 32rem;
+  margin: var(--space-6) auto;
   padding-inline: var(--space-4);
-  color: var(--text-muted);
+  color: var(--steel);
 }

@@ -93,8 +93,13 @@ describe('the home screen', () => {
     });
 
     expect(screen.getByRole('heading', { name: 'Montana Kayak Walleye Open' })).toBeTruthy();
+    expect(screen.getByText('Big Sky Kayak Anglers presents')).toBeTruthy();
     expect(screen.getByText('Sep 18–19, 2027')).toBeTruthy();
-    expect(screen.getByText('Lines in 7:00 AM, lines out 2:00 PM')).toBeTruthy();
+    // The test event's registration closes in September 2027.
+    expect(screen.getByText('Registration open')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Register now' }).getAttribute('href')).toBe(
+      '/register',
+    );
   });
 
   it('says when there is no tournament yet', async () => {

@@ -58,7 +58,7 @@ change.
 | Each phone scores the tournament on its own                                   | Client-only app                                     | The same rules module runs on phones (live board, offline) and on the server (the official frozen result)                                                                                                     |
 | Photo tamper check compared hashes the owner could also edit                  | Integrity checked on the device                     | Photos cannot be replaced once filed (storage policy). The server records the fingerprint                                                                                                                     |
 | Fish-I finds its AI model by listing and ranking what Google offers           | Free tier, model names change                       | One model, named in configuration                                                                                                                                                                             |
-| 840 KB of fonts                                                               | The same file shipped three times under three names | 70 KB: one variable file per family                                                                                                                                                                           |
+| 840 KB of fonts                                                               | The same file shipped three times under three names | 150 KB: one file per face, the four faces the old app used                                                                                                                                                    |
 | Only Chrome ever checked                                                      | No cross-browser testing                            | Every change tested on emulated Android (Chromium) and iPhone (WebKit). A short manual checklist for a real iPhone                                                                                            |
 | A 700-line README written as a diary                                          | Every fix explained in place                        | A short README for running it. This plan for direction. Comments only where the code cannot speak for itself                                                                                                  |
 
@@ -71,8 +71,8 @@ change.
   while the screen is on. The beacon screen will say so honestly, and will offer a
   one-tap text message to the director with your coordinates filled in. A text
   often gets out where data will not.
-- **Wet hands, gloves and glare.** Tap targets of at least 48px, high contrast
-  checked in light and dark mode, and a large shutter button.
+- **Wet hands, gloves and glare.** Tap targets of at least 48px, contrast
+  checked on every screen's colours, and a large shutter button.
 - **Batteries last one day.** No polling. GPS only when asked, and on a timer only
   while a beacon is up.
 
@@ -125,10 +125,21 @@ switch-over, and after any change to the offline setup:
 
 - **Repository.** Decided: a new repository, this one. The old one was renamed
   Live-Wire.
-- **Hosting.** A new Vercel project for this repository, so previews of the
-  rebuild never touch the live site, with the staging address and publishable
-  key as its two settings. Needed now: stage 3 is the first that has
-  something to show on a phone.
+- **Hosting.** Decided: `livewire-rebuild`, a Vercel project for this
+  repository, with the staging address and publishable key as its two
+  settings. It is the testing site until switch-over.
+- **The final address.** Decided: the one anglers already have,
+  live-wire-three.vercel.app. At switch-over that address moves to the new
+  app (stage 9), with no "rebuild" anywhere in it. Keeping it matters beyond
+  the name: an installed app and everything it saved belong to its address,
+  so a new one would mean every angler reinstalling and bringing their entry
+  back onto their phone.
+- **The look.** Decided: the old app's, screen for screen: the dark home with
+  its red, the tinted screens, the floating tab bar, and its four faces. As
+  in the old app, dark mode on a phone changes nothing. Two departures, both
+  for reading on the water: no text under 13px (the old labels went to 8px),
+  and a few colours a shade off where the old pair was too faint to pass the
+  contrast standard.
 - **Sign-in limit.** Each phone signs itself in once, anonymously. Supabase
   allows 30 such sign-ins an hour from one internet address, and a boat ramp's
   phones can share one through their carrier. Raise it (Authentication, Rate
@@ -140,8 +151,7 @@ switch-over, and after any change to the offline setup:
   merge.
 - **Fish-I provider.** Stay on Google's free tier, or pay for a stronger model.
   It is a cost decision; the code will take either.
-- **Fonts.** The rebuild uses Inter for reading and Oswald for headings. It
-  drops Fraunces (the serif card titles) and Space Mono (the small uppercase
-  labels). Say if either should come back.
+- **Fonts.** Decided: all four of the old app's. Inter to read, Oswald for
+  headings, Fraunces for card titles, Space Mono for the small labels.
 - **The two live problems.** Decided: fixed in the current app (Live-Wire
   pull request 19).

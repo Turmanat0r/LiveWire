@@ -1,63 +1,444 @@
+/*
+  The old app's home screen, rule for rule, with one change throughout: its
+  labels were 8 to 11px, and here nothing is under 13px. Shapes, colours,
+  type and spacing are otherwise its own.
+*/
 @layer components {
-  .tile-grid {
+  .home .icon {
+    inline-size: 18px;
+    block-size: 18px;
+    flex-shrink: 0;
+  }
+
+  /* ---- top bar ---------------------------------------------------------------- */
+
+  .home-topbar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 2px 8px;
+    border-block-end: 1px solid var(--line);
+  }
+
+  .home-brand {
+    display: flex;
+    gap: 9px;
+    align-items: center;
+    min-inline-size: 0;
+  }
+
+  .home-monogram {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 10rem), 1fr));
-    gap: var(--space-3);
+    flex-shrink: 0;
+    place-items: center;
+    inline-size: 38px;
+    block-size: 38px;
+    background: var(--gold-deep);
+    color: var(--white);
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    clip-path: polygon(0 0, 86% 0, 100% 28%, 100% 100%, 14% 100%, 0 72%);
+  }
+
+  .home-brand__copy {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .home-brand__name {
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .home-brand__name:focus {
+    outline: none;
+  }
+
+  .home-brand__tag {
+    margin-block-start: 2px;
+    color: var(--steel);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .home-signal {
+    display: grid;
+    flex-shrink: 0;
+    place-items: center;
+    inline-size: 40px;
+    block-size: 40px;
+    border: 1px solid var(--line);
+    background: var(--home-panel);
+    color: var(--gold);
+  }
+
+  .home-signal--waiting {
+    color: var(--warn);
+  }
+
+  /* ---- the event ---------------------------------------------------------------- */
+
+  .home-event {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    margin-block-start: 8px;
+    padding: 12px 14px 14px;
+    border: 1px solid var(--line);
+    border-inline-start: 5px solid var(--gold);
+    background:
+      repeating-linear-gradient(135deg, transparent 0 12px, var(--home-hero-stripe) 12px 13px),
+      linear-gradient(
+        140deg,
+        var(--home-hero-from) 0%,
+        var(--home-hero-mid) 60%,
+        var(--home-hero-to) 100%
+      );
+    clip-path: polygon(0 0, 95% 0, 100% 8%, 100% 100%, 0 100%);
+  }
+
+  /* A red ring, mostly off the card's corner. */
+  .home-event::after {
+    position: absolute;
+    inset-block-end: -74px;
+    inset-inline-end: -42px;
+    z-index: -2;
+    inline-size: 180px;
+    block-size: 180px;
+    border: 1px solid var(--home-hero-ring);
+    border-radius: 50%;
+    content: '';
+  }
+
+  .home-event__top {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    margin-block-end: 8px;
+  }
+
+  .home-live {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    padding: 4px 8px;
+    border: 1px solid var(--home-badge-line);
+    background: var(--home-badge-bg);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .home-live__dot {
+    inline-size: 6px;
+    block-size: 6px;
+    border-radius: 50%;
+    background: var(--gold);
+    box-shadow: 0 0 0 3px var(--home-badge-dot-glow);
+  }
+
+  .home-live--closed {
+    border-color: var(--line);
+    background: var(--home-badge-closed-bg);
+  }
+
+  .home-live--closed .home-live__dot {
+    background: var(--steel);
+    box-shadow: none;
+  }
+
+  .home-event__date {
+    color: var(--steel);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    letter-spacing: 0.06em;
+    text-align: end;
+    text-transform: uppercase;
+  }
+
+  .home-fishmark {
+    position: absolute;
+    inset-block-start: 30px;
+    inset-inline-end: -21px;
+    z-index: -1;
+    inline-size: 154px;
+    block-size: 96px;
+    color: var(--home-fishmark);
+    transform: rotate(-8deg);
+    fill: none;
+    stroke: currentcolor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .home-kicker {
+    margin-block-end: 3px;
+    color: var(--steel);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .home-event__title {
+    max-inline-size: 18ch;
+    color: var(--white);
+    font-family: var(--font-display);
+    font-size: 1.875rem;
+    font-weight: 700;
+    line-height: 1.03;
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+  }
+
+  .home-location {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    margin-block: 8px 10px;
+    color: var(--steel);
+    font-size: var(--text-md);
+  }
+
+  .home-register {
+    display: grid;
+    place-items: center;
+    min-block-size: var(--tap-target);
+    background: var(--gold-deep);
+    color: var(--white);
+    font-family: var(--font-display);
+    font-size: var(--text-base);
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-decoration: none;
+    text-transform: uppercase;
+    clip-path: polygon(0 0, 97% 0, 100% 28%, 100% 100%, 3% 100%, 0 72%);
+  }
+
+  /* ---- the angler ----------------------------------------------------------------- */
+
+  .home-profile {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    min-block-size: 58px;
+    margin-block-start: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    background: var(--home-panel);
+  }
+
+  .home-avatar {
+    display: grid;
+    flex-shrink: 0;
+    place-items: center;
+    inline-size: 40px;
+    block-size: 40px;
+    border-block-end: 3px solid var(--warn);
+    background: var(--home-avatar);
+    font-family: var(--font-display);
+    font-weight: 600;
+  }
+
+  .home-profile__copy {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .home-profile__label {
+    color: var(--gold-text);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: 400;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .home-profile__name {
+    overflow: hidden;
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .home-profile__sub {
+    color: var(--steel);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+
+  /* ---- quick access ----------------------------------------------------------------- */
+
+  .home-sectionhead {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+    margin: 14px 2px 8px;
+  }
+
+  .home-sectionhead h2 {
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .home-sectionhead span {
+    color: var(--gold-text);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .home-grid,
+  .home-info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
     padding: 0;
     list-style: none;
   }
 
-  .tile {
+  .home-info-grid {
+    margin-block-start: 8px;
+  }
+
+  .home-tile,
+  .home-info-tile {
+    position: relative;
     display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
     block-size: 100%;
-    min-block-size: 7rem;
-    padding: var(--space-3) var(--space-4);
-    border: 1px solid var(--border);
-    border-block-start: 4px solid var(--accent);
-    border-radius: var(--radius);
-    background: var(--surface-raised);
-    color: var(--text);
+    padding: 10px 11px;
+    border: 1px solid var(--line);
+    color: var(--white);
     text-decoration: none;
   }
 
-  .tile:hover {
-    border-color: var(--accent);
+  .home-tile {
+    flex-direction: column;
+    justify-content: space-between;
+    min-block-size: 96px;
+    background: var(--home-tile);
   }
 
-  .tile__title {
+  .home-info-tile {
+    gap: 9px;
+    align-items: center;
+    min-block-size: 84px;
+    background: var(--home-panel);
+  }
+
+  /* The coloured bar in each tile's corner. */
+  .home-tile::after,
+  .home-info-tile::after {
+    position: absolute;
+    inset-block-end: 0;
+    inset-inline-end: 0;
+    inline-size: 22px;
+    block-size: 3px;
+    background: var(--tile-accent);
+    content: '';
+  }
+
+  .home-tile:active,
+  .home-info-tile:active {
+    border-color: var(--gold);
+    transform: translateY(1px);
+  }
+
+  .home-accent--gold {
+    --tile-accent: var(--tile-gold);
+  }
+
+  .home-accent--green {
+    --tile-accent: var(--tile-green);
+  }
+
+  .home-accent--steel {
+    --tile-accent: var(--tile-steel);
+  }
+
+  .home-accent--amber {
+    --tile-accent: var(--tile-amber);
+  }
+
+  .home-accent--olive {
+    --tile-accent: var(--tile-olive);
+  }
+
+  .home-tile__copy {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .home-tile__label {
     font-family: var(--font-display);
-    font-size: var(--text-lg);
+    font-size: var(--text-base);
     font-weight: 600;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
   }
 
-  .tile__summary {
-    flex: 1;
-    color: var(--text-muted);
+  .home-tile__sub {
+    color: var(--steel);
+    font-family: var(--font-mono);
     font-size: var(--text-sm);
   }
 
-  .tile__status {
-    color: var(--accent-text);
-    font-size: var(--text-sm);
-    font-weight: 600;
-  }
-}
-
-@layer components {
-  .event-facts {
-    display: grid;
-    gap: var(--space-2);
+  .home-info-tile .home-tile__sub {
+    text-transform: uppercase;
   }
 
-  .event-facts dt {
-    color: var(--text-muted);
-    font-size: var(--text-sm);
+  /* Tablets and up: a third column of tiles, and a roomier event card. */
+  @media (width >= 768px) {
+    .home-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .home-event__title {
+      max-inline-size: none;
+    }
   }
 
-  .event-facts dd {
-    font-weight: 500;
+  @media (width >= 768px) and (height >= 640px) {
+    .home-grid,
+    .home-info-grid {
+      gap: 9px;
+    }
+
+    .home-tile,
+    .home-info-tile {
+      min-block-size: 104px;
+    }
+
+    .home-event {
+      padding: 15px 17px 16px;
+    }
+
+    .home-event__title {
+      font-size: 2.125rem;
+    }
   }
 }

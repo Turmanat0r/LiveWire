@@ -1,25 +1,56 @@
 @layer components {
   .card {
-    padding: var(--space-4);
-    border: 1px solid var(--border);
+    padding: 16px 16px 18px;
+    border: 1px solid var(--line);
     border-radius: var(--radius);
-    background: var(--surface-raised);
-    box-shadow: var(--shadow);
+    background: var(--white);
+    color: var(--ink);
   }
 
   .card > * + * {
     margin-block-start: var(--space-3);
   }
 
+  .card p {
+    color: var(--steel);
+    font-size: var(--text-md);
+  }
+
   .card__title {
+    color: var(--deep);
+    font-family: var(--font-serif);
     font-size: var(--text-lg);
+    font-weight: 600;
   }
 
   .card--notice {
-    border-inline-start: 4px solid var(--accent);
+    border-inline-start: 4px solid var(--gold);
   }
 
   .card--danger {
     border-inline-start: 4px solid var(--danger);
+  }
+
+  /* Registration is the formal one: square, black-ruled, headed in Oswald. */
+  [data-theme='register'] .card {
+    border: 2px solid var(--deep);
+    border-radius: 0;
+  }
+
+  [data-theme='register'] .card__title {
+    font-family: var(--font-display);
+    font-size: var(--text-base);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  @media (width >= 768px) and (height >= 640px) {
+    .card {
+      padding: 19px 19px 21px;
+    }
+
+    .card__title {
+      font-size: var(--text-xl);
+    }
   }
 }
