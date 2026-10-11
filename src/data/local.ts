@@ -11,6 +11,8 @@ export interface Snapshot {
   /** The database version the app was built against; a copy from another is thrown away. */
   readonly schema: string;
   readonly eventId: string | null;
+  /** This phone's account, so it knows its own entry with no signal. */
+  readonly userId?: string | null;
   readonly tables: { readonly [T in TableName]?: readonly Row<T>[] };
   readonly savedAt: number;
 }

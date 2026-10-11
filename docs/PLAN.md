@@ -94,17 +94,17 @@ change.
 One pull request each, in order. Every stage ends green in CI and deployed to
 a preview on staging.
 
-| #   | Stage                       | Delivers                                                                                                           |
-| --- | --------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| 1   | **Foundation** (done)       | Tooling, CI, design tokens, app shell with every screen's address, the rules layer proven identical to the old app |
-| 2   | **Database** (done)         | Schema, row rules, server functions, policy tests, the staging project, generated types                            |
-| 3   | **Sync and offline** (done) | Sign-in per device, live updates, the outbox, resumable photo upload, database types generated offline             |
-| 4   | Anglers on the water        | Register, sign in to an entry, check in and out, submit a catch with camera and photo checks, my catches, livewell |
-| 5   | Safety                      | Where am I against the line, beacons the whole field sees, text-the-director, overdue alerts                       |
-| 6   | The board                   | Standings, Big Fish, side bets, payouts, chat                                                                      |
-| 7   | Director's tools            | Review and Fish-I, contestants, fees, event and course setup, freezing results, the FWP report                     |
-| 8   | Memories                    | Gallery, trophy case, highlight reel                                                                               |
-| 9   | Field test and switch-over  | A practice day on real phones, then production moves to the new app                                                |
+| #   | Stage                       | Delivers                                                                                                                                              |
+| --- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Foundation** (done)       | Tooling, CI, design tokens, app shell with every screen's address, the rules layer proven identical to the old app                                    |
+| 2   | **Database** (done)         | Schema, row rules, server functions, policy tests, the staging project, generated types                                                               |
+| 3   | **Sync and offline** (done) | Sign-in per device, live updates, the outbox, resumable photo upload, database types generated offline                                                |
+| 4   | Anglers on the water        | In two parts. First: register, bring an entry onto a phone, check in and out. Then: submit a catch with camera and photo checks, my catches, livewell |
+| 5   | Safety                      | Where am I against the line, beacons the whole field sees, text-the-director, overdue alerts                                                          |
+| 6   | The board                   | Standings, Big Fish, side bets, payouts, chat                                                                                                         |
+| 7   | Director's tools            | Review and Fish-I, contestants, fees, event and course setup, freezing results, the FWP report                                                        |
+| 8   | Memories                    | Gallery, trophy case, highlight reel                                                                                                                  |
+| 9   | Field test and switch-over  | A practice day on real phones, then production moves to the new app                                                                                   |
 
 The switch-over should land well before registration opens for 2027, and away
 from any event.
@@ -125,9 +125,9 @@ switch-over, and after any change to the offline setup:
 
 - **Repository.** Decided: a new repository, this one. The old one was renamed
   Live-Wire.
-- **Hosting.** Decided: `livewire-rebuild`, a Vercel project for this
-  repository, with the staging address and publishable key as its two
-  settings. It is the testing site until switch-over.
+- **Hosting.** Decided: a Vercel project for this repository, at
+  livewire-turmanator.vercel.app, with the staging address and publishable
+  key as its two settings. It is the testing site until switch-over.
 - **The final address.** Decided: the one anglers already have,
   live-wire-three.vercel.app. At switch-over that address moves to the new
   app (stage 9), with no "rebuild" anywhere in it. Keeping it matters beyond

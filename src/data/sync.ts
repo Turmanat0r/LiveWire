@@ -10,9 +10,17 @@
 //   4. Save the copy a moment after it changes.
 //
 // No polling: with signal and nothing happening, nothing is downloaded.
-import type { LocalStore } from './local';
+import type { LocalStore, NewOutboxItem } from './local';
 import { Outbox, type OutboxState } from './outbox';
-import { failureOf, type LiveStatus, type Remote, type Signal } from './remote';
+import {
+  failureOf,
+  RemoteError,
+  type Json,
+  type LiveStatus,
+  type Remote,
+  type Signal,
+  type StoredFile,
+} from './remote';
 import {
   currentEvent,
   emptyTables,
@@ -24,7 +32,7 @@ import {
   withoutEventTables,
   type TableMaps,
 } from './replica';
-import { EVENT_TABLES, type Row, type TableName } from './tables';
+import { EVENT_TABLES, type FunctionName, type Row, type TableName } from './tables';
 
 export type Connection =
   /** Built without a server to talk to. */
@@ -53,6 +61,8 @@ export interface SyncState {
   readonly outbox: OutboxState;
   /** False when this browser cannot keep anything after the app closes. */
   readonly durable: boolean;
+  /** This phone's account on the server, once known; kept with the saved copy. */
+  readonly userId: string | null;
 }
 
 export interface SyncOptions {
@@ -145,6 +155,7 @@ export class Sync {
       problem: null,
       outbox: this.outbox.getState(),
       durable: true,
+      userId: null,
     };
     this.outbox.subscribe(() => {
       this.update({ outbox: this.outbox.getState() });
@@ -170,6 +181,7 @@ export class Sync {
       tables,
       event: currentEvent(tables),
       syncedAt: saved?.schema === this.schema ? saved.savedAt : null,
+      userId: saved?.userId ?? null,
     });
     await this.outbox.load();
     this.outbox.kick();
@@ -228,6 +240,45 @@ export class Sync {
     await this.outbox.settled();
   }
 
+  /**
+   * Asks the server now, for what cannot wait in the outbox: registering, or
+   * bringing an entry onto this phone, where the answer is the point.
+   * Throws a RemoteError, offline included.
+   */
+  async call(fn: FunctionName, args: Readonly<Record<string, Json>>): Promise<Json> {
+    const remote = this.remote;
+    if (!remote) throw new RemoteError({ kind: 'offline' });
+    this.signedIn(await remote.signIn());
+    return remote.call(fn, args);
+  }
+
+  /** Keeps something the angler did, and sends it when there is signal. */
+  queue(item: NewOutboxItem, files: Readonly<Record<string, StoredFile>> = {}): Promise<void> {
+    return this.outbox.add(item, files);
+  }
+
+  /** Reads these tables of the current event now, rather than waiting for their signals. */
+  async refresh(tables: readonly Exclude<TableName, 'events'>[]): Promise<void> {
+    const eventId = this.state.event?.id;
+    if (!eventId) return;
+    await Promise.all(
+      tables.map((table) =>
+        this.read(table, async (remote) => {
+          const rows = await remote.readTable(table, eventId);
+          if (this.state.event?.id === eventId) {
+            this.setTables(replaceTable(this.state.tables, table, rows));
+          }
+        }),
+      ),
+    );
+  }
+
+  private signedIn(userId: string): void {
+    if (userId === this.state.userId) return;
+    this.update({ userId });
+    this.scheduleSave();
+  }
+
   private async connect(): Promise<void> {
     const remote = this.remote;
     if (!remote || this.connecting || this.stopped) return;
@@ -240,7 +291,7 @@ export class Sync {
     this.cancelRetry = null;
     if (this.state.connection !== 'live') this.update({ connection: 'connecting', problem: null });
     try {
-      await remote.signIn();
+      this.signedIn(await remote.signIn());
       await this.readEvents();
       if (!this.stopListening) this.listen();
       await this.readEvent();
@@ -436,6 +487,10 @@ export class Sync {
     const moved = this.state.event !== null && event?.id !== this.state.event.id;
     const tables = moved ? withoutEventTables(next) : next;
     this.update({ tables, event });
+    this.scheduleSave();
+  }
+
+  private scheduleSave(): void {
     this.cancelSave ??= this.setTimer(() => {
       this.cancelSave = null;
       void this.save();
@@ -447,6 +502,7 @@ export class Sync {
     await local.saveSnapshot({
       schema: this.schema,
       eventId: this.state.event?.id ?? null,
+      userId: this.state.userId,
       tables: toSnapshot(this.state.tables),
       savedAt: this.state.syncedAt ?? this.now(),
     });

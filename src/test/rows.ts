@@ -65,3 +65,79 @@ export function checkInRow(over: Partial<Row<'check_ins'>> = {}): Row<'check_ins
     ...over,
   };
 }
+
+export const DEVICE = 'device-1';
+
+/** A whole entry as the server holds it: the entry, its anglers, their private rows, and this phone's link. */
+export function entryRows(
+  over: {
+    entryId?: string;
+    number?: number;
+    team?: boolean;
+    userId?: string | null;
+    feePaid?: boolean;
+    names?: readonly [string, string?];
+  } = {},
+) {
+  const entryId = over.entryId ?? crypto.randomUUID();
+  const team = over.team ?? false;
+  const [first = 'Daniel Turman', second = 'Pat Partner'] = over.names ?? [];
+  const captainId = `${entryId}-a`;
+  const partnerId = `${entryId}-b`;
+  const entry: Row<'entries'> = {
+    id: entryId,
+    event_id: EVENT_ID,
+    entry_number: over.number ?? 1,
+    division: team ? 'team' : 'solo',
+    created_at: '2027-01-01T00:00:00+00:00',
+  };
+  const entryPrivate: Row<'entry_private'> = {
+    entry_id: entryId,
+    event_id: EVENT_ID,
+    team_code: team ? 'TQ7M' : null,
+    fee_paid: over.feePaid ?? false,
+    fee_paid_at: null,
+  };
+  const angler = (id: string, role: Row<'anglers'>['role'], handle: string): Row<'anglers'> => ({
+    id,
+    entry_id: entryId,
+    event_id: EVENT_ID,
+    role,
+    handle,
+    big_fish: true,
+    disqualified: false,
+    registered_at: '2027-01-01T00:00:00+00:00',
+  });
+  const details = (id: string, name: string, code: string): Row<'angler_private'> => ({
+    angler_id: id,
+    event_id: EVENT_ID,
+    person_id: null,
+    full_name: name,
+    phone: '406-555-0100',
+    emergency_name: 'Shore Contact',
+    emergency_phone: '406-555-0199',
+    resident: true,
+    angler_code: code,
+    dq_reason: '',
+    disqualified_at: null,
+  });
+  const anglers = [angler(captainId, team ? 'captain' : 'solo', 'Salty Bedrock Perch')];
+  const privates = [details(captainId, first, '7K4M')];
+  if (team) {
+    anglers.push(angler(partnerId, 'partner', 'Soggy Granite Walleye'));
+    privates.push(details(partnerId, second, '9HCX'));
+  }
+  const devices: Row<'entry_devices'>[] =
+    over.userId === null
+      ? []
+      : [
+          {
+            entry_id: entryId,
+            event_id: EVENT_ID,
+            user_id: over.userId ?? DEVICE,
+            angler_id: captainId,
+            added_at: '2027-01-01T00:00:00+00:00',
+          },
+        ];
+  return { entry, entryPrivate, anglers, privates, devices, captainId, partnerId };
+}

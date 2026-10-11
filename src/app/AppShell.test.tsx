@@ -1,21 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { routes } from './router';
 import { SCREENS } from './screens';
 import { FakeServer, settle } from '../test/fakes';
-import { dayRow, eventRow } from '../test/rows';
+import { putEntry } from '../test/render';
+import { dayRow, entryRows, eventRow } from '../test/rows';
 import { testSync, WithSync } from '../test/sync';
-
-// The service worker does not exist in a test page.
-vi.mock('virtual:pwa-register/react', () => ({
-  useRegisterSW: () => ({
-    needRefresh: [false, () => undefined],
-    offlineReady: [false, () => undefined],
-    updateServiceWorker: () => Promise.resolve(),
-  }),
-}));
 
 function renderAt(path: string, sync = testSync()) {
   const router = createMemoryRouter(routes, { initialEntries: [path] });
@@ -110,5 +102,23 @@ describe('the home screen', () => {
       await settle();
     });
     expect(screen.getByRole('heading', { name: 'No tournament yet' })).toBeTruthy();
+  });
+
+  it('shows the angler this phone is, with the codes to write on the board', async () => {
+    const server = new FakeServer();
+    server.put('events', eventRow());
+    putEntry(server, entryRows({ team: true, names: ['Daniel Turman', 'Pat Partner'] }));
+    const sync = testSync(server);
+    renderAt('/', sync);
+    await act(async () => {
+      await sync.start();
+      await settle();
+    });
+
+    expect(screen.getByText('Daniel Turman')).toBeTruthy();
+    expect(screen.getByText('DT')).toBeTruthy();
+    expect(screen.getByText('Team with Pat Partner · MKWO-001')).toBeTruthy();
+    expect(screen.getByText('Team TQ7M · Tournament ID 7K4M')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Registration details' })).toBeTruthy();
   });
 });

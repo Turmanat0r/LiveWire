@@ -135,3 +135,35 @@ export function clockText(time: string): string {
   const hour = hours % 12 === 0 ? 12 : hours % 12;
   return `${String(hour)}:${String(minutes).padStart(2, '0')} ${suffix}`;
 }
+
+/**
+ * The last day registration is open, on the event's clock: "June 1, 2027" for
+ * a close at the first instant of June 2.
+ */
+export function lastDayText(closesAt: EpochMs, timeZone: string): string {
+  return new Date(closesAt - 1).toLocaleDateString('en-US', {
+    timeZone,
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+/** "6:42 AM", on the event's clock, whatever time zone the phone is in. */
+export function timeOfDayText(at: EpochMs, timeZone: string): string {
+  return new Date(at).toLocaleTimeString('en-US', {
+    timeZone,
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+/** "Sat, Sep 18", for a bare event date. */
+export function dayLabelText(dateKey: DateKey): string {
+  return new Date(`${dateKey}T00:00:00Z`).toLocaleDateString('en-US', {
+    timeZone: 'UTC',
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+}

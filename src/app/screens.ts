@@ -34,8 +34,8 @@ export interface Screen {
 // prettier-ignore
 export const SCREENS: readonly Screen[] = [
   { id: 'home', path: '/', title: 'LiveWire', summary: 'The tournament at a glance.', theme: 'home', milestone: null },
-  { id: 'register', path: '/register', title: 'Register', summary: 'Enter the tournament, or bring your entry onto this phone.', theme: 'register', milestone: 4 },
-  { id: 'check-in', path: '/check-in', title: 'Check in', summary: 'Check in before you launch and out when you are back on shore.', theme: 'check-in', milestone: 4 },
+  { id: 'register', path: '/register', title: 'Register', summary: 'Enter the tournament, or bring your entry onto this phone.', theme: 'register', milestone: null },
+  { id: 'check-in', path: '/check-in', title: 'Check in / check out', summary: 'Check in before you launch and out when you are back on shore.', theme: 'check-in', milestone: null },
   { id: 'catch', path: '/catch', title: 'Submit a catch', summary: 'Photograph a fish on the board and file it, with or without signal.', theme: 'catch', milestone: 4 },
   { id: 'my-catches', path: '/my-catches', title: 'My catches', summary: 'Everything you have filed, and where each one stands.', theme: 'my-catches', milestone: 4 },
   { id: 'livewell', path: '/livewell', title: 'Livewell', summary: 'Your running tally of released fish.', theme: 'livewell', milestone: 4 },

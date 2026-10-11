@@ -1,0 +1,55 @@
+@layer components {
+  .check-days {
+    padding: 0;
+    list-style: none;
+  }
+
+  .check-day {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    padding-block: 14px;
+    border-block-end: 1px solid var(--line);
+  }
+
+  .check-day:last-child {
+    border-block-end: 0;
+  }
+
+  .card .check-day__name {
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  .card .check-day__status {
+    font-size: var(--text-sm);
+  }
+
+  .check-button {
+    flex-shrink: 0;
+    min-block-size: var(--tap-target);
+    padding: 9px 16px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .check-button--in {
+    background: var(--olive);
+    color: var(--white);
+  }
+
+  .check-button--out {
+    background: var(--deep);
+    color: var(--white);
+  }
+
+  .check-button--done {
+    background: var(--paper-2);
+    color: var(--steel);
+    cursor: default;
+  }
+}
