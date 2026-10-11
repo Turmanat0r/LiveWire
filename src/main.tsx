@@ -6,12 +6,16 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider } from 'react-router';
 import { createRouter } from './app/router';
+import { startSync } from './data/start';
+import { SyncContext } from './data/useSync';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('index.html has no #root element');
 
 createRoot(root).render(
   <StrictMode>
-    <RouterProvider router={createRouter()} />
+    <SyncContext value={startSync()}>
+      <RouterProvider router={createRouter()} />
+    </SyncContext>
   </StrictMode>,
 );

@@ -19,10 +19,14 @@
     "test:watch": "vitest --project unit",
     "test:parity": "vitest run --project parity",
     "test:db": "vitest run --project db",
+    "db:types": "vitest run --project db tests/db/types.test.ts --update",
+    "test:remote": "vitest run --project remote",
     "test:e2e": "playwright test",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run test:db"
   },
   "dependencies": {
+    "@supabase/supabase-js": "2.117.2",
+    "idb": "8.0.3",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-router": "8.4.0"
@@ -32,6 +36,7 @@
     "@electric-sql/pglite": "0.5.8",
     "@eslint/js": "9.39.5",
     "@playwright/test": "1.64.0",
+    "@supabase/postgrest-typegen": "0.3.1",
     "@testing-library/react": "16.3.3",
     "@testing-library/user-event": "14.6.7",
     "@types/node": "24.19.2",
@@ -42,6 +47,7 @@
     "eslint": "9.39.5",
     "eslint-plugin-jsx-a11y": "6.10.2",
     "eslint-plugin-react-hooks": "7.1.1",
+    "fake-indexeddb": "6.2.5",
     "fast-check": "4.10.2",
     "globals": "17.13.0",
     "jsdom": "30.1.2",

@@ -7,3 +7,6 @@ test-results/
 *.local
 .env
 .env.*
+
+# The example is documentation, not a secret.
+!.env.example

@@ -44,6 +44,10 @@
   --ok: var(--palette-green);
   --focus-ring: var(--palette-gold);
 
+  /* Marks on --chrome. At least 3.6:1 on every chrome colour, light or dark. */
+  --status-ok: var(--palette-green-light);
+  --status-problem: var(--palette-red-light);
+
   /* Type. Inter for reading, Oswald for the scoreboard. */
   --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', roboto, sans-serif;
   --font-display: 'Oswald', 'Arial Narrow', system-ui, sans-serif;

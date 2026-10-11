@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { routes } from './router';
 import { SCREENS } from './screens';
+import { FakeServer, settle } from '../test/fakes';
+import { dayRow, eventRow } from '../test/rows';
+import { testSync, WithSync } from '../test/sync';
 
 // The service worker does not exist in a test page.
 vi.mock('virtual:pwa-register/react', () => ({
@@ -14,9 +17,13 @@ vi.mock('virtual:pwa-register/react', () => ({
   }),
 }));
 
-function renderAt(path: string) {
+function renderAt(path: string, sync = testSync()) {
   const router = createMemoryRouter(routes, { initialEntries: [path] });
-  render(<RouterProvider router={router} />);
+  render(
+    <WithSync sync={sync}>
+      <RouterProvider router={router} />
+    </WithSync>,
+  );
   return router;
 }
 
@@ -42,7 +49,9 @@ describe('the app shell', () => {
   it('gives every screen an address and exactly one heading of its own', () => {
     for (const s of SCREENS) {
       const { unmount } = render(
-        <RouterProvider router={createMemoryRouter(routes, { initialEntries: [s.path] })} />,
+        <WithSync sync={testSync()}>
+          <RouterProvider router={createMemoryRouter(routes, { initialEntries: [s.path] })} />
+        </WithSync>,
       );
       expect(screen.getAllByRole('heading', { level: 1 }).map((h) => h.textContent)).toEqual([
         s.title,
@@ -62,5 +71,39 @@ describe('the app shell', () => {
   it('says so at an address that does not exist', () => {
     renderAt('/no-such-screen');
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Not found');
+  });
+
+  it('says on every screen whether the phone is connected', () => {
+    renderAt('/standings');
+    expect(screen.getByRole('status').textContent).toBe('Not connected to a tournament server');
+  });
+});
+
+describe('the home screen', () => {
+  it('shows the tournament every phone is on', async () => {
+    const server = new FakeServer();
+    server.put('events', eventRow());
+    server.put('event_days', dayRow('2027-09-18'));
+    server.put('event_days', dayRow('2027-09-19'));
+    const sync = testSync(server);
+    renderAt('/', sync);
+    await act(async () => {
+      await sync.start();
+      await settle();
+    });
+
+    expect(screen.getByRole('heading', { name: 'Montana Kayak Walleye Open' })).toBeTruthy();
+    expect(screen.getByText('Sep 18–19, 2027')).toBeTruthy();
+    expect(screen.getByText('Lines in 7:00 AM, lines out 2:00 PM')).toBeTruthy();
+  });
+
+  it('says when there is no tournament yet', async () => {
+    const sync = testSync(new FakeServer());
+    renderAt('/', sync);
+    await act(async () => {
+      await sync.start();
+      await settle();
+    });
+    expect(screen.getByRole('heading', { name: 'No tournament yet' })).toBeTruthy();
   });
 });
