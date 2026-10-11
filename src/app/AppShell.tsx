@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useLocation } from 'react-router';
 import { SCREENS, TABS, screen } from './screens';
 import { useRouteFocus } from './useRouteFocus';
+import { SyncStatus } from './SyncStatus';
 import { UpdatePrompt } from './UpdatePrompt';
 import { Icon } from '../ui/Icon';
 import './AppShell.css';
@@ -22,6 +23,7 @@ export function AppShell() {
       <a className="shell__skip" href="#main">
         Skip to content
       </a>
+      <SyncStatus />
       <UpdatePrompt />
       <main id="main" className="shell__main">
         <Outlet />

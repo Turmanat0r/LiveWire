@@ -1,0 +1,32 @@
+@layer components {
+  .sync-status {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    justify-content: center;
+    min-block-size: 1.75rem;
+    padding: var(--space-1) var(--space-4);
+    background: var(--chrome);
+    color: var(--chrome-text);
+    font-size: var(--text-sm);
+    font-weight: 500;
+  }
+
+  /* A dot as well as the words, never the colour alone. */
+  .sync-status::before {
+    flex: none;
+    inline-size: 0.5rem;
+    block-size: 0.5rem;
+    border-radius: 50%;
+    background: var(--chrome-muted);
+    content: '';
+  }
+
+  .sync-status--ok::before {
+    background: var(--status-ok);
+  }
+
+  .sync-status--problem::before {
+    background: var(--status-problem);
+  }
+}

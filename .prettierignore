@@ -4,4 +4,3 @@ coverage
 playwright-report
 test-results
 package-lock.json
-src/data/database.types.ts

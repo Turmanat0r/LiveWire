@@ -1,23 +1,22 @@
-# Every pull request runs the checks below. A red X on the pull request page
-# means do not merge; the job name says which kind of check failed.
+# Every push, to any branch, runs the checks below; a pull request shows the
+# results for its branch. A red X there means do not merge; the job name says
+# which kind of check failed.
 #
 # After a merge to main, and only if every check passed, the last job applies
 # any new database changes to the staging database (livewire-staging).
 name: CI
 
 on:
-  pull_request:
   push:
-    branches: [main]
 
 permissions:
   contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
-  # A newer push replaces checks still running on a pull request, but never
+  # A newer push replaces checks still running on a branch, but never
   # interrupts main, where a database change may be part-way through applying.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   check:
@@ -67,7 +66,19 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # A throwaway Supabase on this machine, with every migration applied.
+      - name: Start Supabase
+        run: npx supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,mailpit
+      - name: Point the app and the tests at it
+        run: |
+          npx supabase status -o json > "$RUNNER_TEMP/supabase.json"
+          {
+            echo "VITE_SUPABASE_URL=$(jq -r '.API_URL' "$RUNNER_TEMP/supabase.json")"
+            echo "VITE_SUPABASE_PUBLISHABLE_KEY=$(jq -r '.PUBLISHABLE_KEY // .ANON_KEY' "$RUNNER_TEMP/supabase.json")"
+            echo "SUPABASE_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+          } >> "$GITHUB_ENV"
       - run: npx playwright install --with-deps chromium webkit
+      # The built app, signed in to that Supabase, on both phones.
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -89,12 +100,21 @@ jobs:
       # A throwaway Supabase on this machine, with every migration applied.
       - name: Start Supabase
         run: npx supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,mailpit
+      - name: Point the app and the tests at it
+        run: |
+          npx supabase status -o json > "$RUNNER_TEMP/supabase.json"
+          {
+            echo "VITE_SUPABASE_URL=$(jq -r '.API_URL' "$RUNNER_TEMP/supabase.json")"
+            echo "VITE_SUPABASE_PUBLISHABLE_KEY=$(jq -r '.PUBLISHABLE_KEY // .ANON_KEY' "$RUNNER_TEMP/supabase.json")"
+            echo "SUPABASE_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+          } >> "$GITHUB_ENV"
       # The same tests that run on a PC against the stand-in, here against the
       # real thing, so the two cannot quietly disagree.
       - name: Database tests
         run: npm run test:db
-        env:
-          SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      # The app's own server adapter: sign-in, refusals, photos, live signals.
+      - name: Server adapter tests
+        run: npm run test:remote
 
   deploy-staging:
     name: Apply database changes to staging

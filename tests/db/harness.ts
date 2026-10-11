@@ -70,6 +70,46 @@ const SUPABASE_STAND_IN = `
   grant select on storage.buckets to anon, authenticated, service_role;
 
   create publication supabase_realtime;
+
+  -- Broadcast from the database. send() and topic() are Supabase's own
+  -- definitions; the real messages table is split into one partition a day.
+  create schema realtime;
+  create table realtime.messages (
+    topic text not null, extension text not null, payload jsonb, event text,
+    private boolean default false,
+    updated_at timestamp not null default now(), inserted_at timestamp not null default now(),
+    id uuid not null default gen_random_uuid(),
+    primary key (id, inserted_at)
+  );
+  alter table realtime.messages enable row level security;
+  create function realtime.topic() returns text language sql stable as $$
+    select nullif(current_setting('realtime.topic', true), '')::text;
+  $$;
+  create function realtime.send(payload jsonb, event text, topic text, private boolean default true)
+  returns void language plpgsql as $$
+  declare
+    generated_id uuid;
+    final_payload jsonb;
+  begin
+    begin
+      generated_id := gen_random_uuid();
+      if payload ? 'id' then
+        final_payload := payload;
+      else
+        final_payload := jsonb_set(payload, '{id}', to_jsonb(generated_id));
+      end if;
+      execute format('set local realtime.topic to %L', topic);
+      insert into realtime.messages (id, payload, event, topic, private, extension)
+      values (generated_id, final_payload, event, topic, private, 'broadcast');
+    exception
+      when others then
+        raise warning 'WarnSendingBroadcastMessage: %', sqlerrm;
+    end;
+  end;
+  $$;
+  grant usage on schema realtime to anon, authenticated, service_role;
+  grant select, insert on realtime.messages to anon, authenticated, service_role;
+  grant execute on all functions in schema realtime to anon, authenticated, service_role;
 `;
 
 async function openPglite(): Promise<Connection> {
@@ -96,9 +136,31 @@ async function openPglite(): Promise<Connection> {
   };
 }
 
+// Supabase keeps broadcast signals in one partition a day, which the Realtime
+// server makes once a phone has connected. A test run may come first, and a
+// signal with no partition to land in is dropped with a warning.
+const SIGNAL_PARTITIONS = `
+  do $$
+  declare
+    d date;
+  begin
+    foreach d in array array[current_date, current_date + 1] loop
+      begin
+        execute format(
+          'create table if not exists realtime.%I partition of realtime.messages for values from (%L) to (%L)',
+          'messages_' || to_char(d, 'YYYY_MM_DD'), d, d + 1);
+      exception when others then
+        null; -- Realtime made it already, under its own name.
+      end;
+    end loop;
+  end;
+  $$;
+`;
+
 async function openSupabase(url: string): Promise<Connection> {
   const client = new pg.Client({ connectionString: url });
   await client.connect();
+  await client.query(SIGNAL_PARTITIONS);
   return {
     query: async (sql, params) => ({
       rows: (await client.query(sql, params)).rows as Record<string, unknown>[],
@@ -176,11 +238,16 @@ export class TestDb {
   /** A phone that has not signed in at all. */
   readonly anon: Caller = { label: 'anon', role: 'anon', userId: null, director: false };
 
-  /** Run SQL as somebody, in one transaction, the way a request through the API does. */
+  /**
+   * Run SQL as somebody, in one transaction, the way a request through the
+   * API does. `settings` are set for the transaction first, the way Realtime
+   * sets realtime.topic when a phone joins a channel.
+   */
   async as<T = Record<string, unknown>>(
     who: Caller,
     sql: string,
     params: unknown[] = [],
+    settings: Readonly<Record<string, string>> = {},
   ): Promise<Result<T>> {
     const claims = who.userId
       ? {
@@ -195,6 +262,8 @@ export class TestDb {
       await this.conn.query(`select set_config('request.jwt.claims', $1, true)`, [
         JSON.stringify(claims),
       ]);
+      for (const [name, value] of Object.entries(settings))
+        await this.conn.query(`select set_config($1, $2, true)`, [name, value]);
       await this.conn.exec(`set local role ${who.role}`);
       const { rows } = await this.conn.query(sql, params);
       await this.conn.exec('commit');
@@ -222,6 +291,20 @@ export class TestDb {
     const list = names.map((n, i) => `${n} => $${i + 1}`).join(', ');
     return this.as<T>(who, `select * from public.${fn}(${list})`, Object.values(args).map(toParam));
   }
+
+  /** The live-update signals sent on a topic so far, oldest first. */
+  async signals(topic: string): Promise<Signal[]> {
+    return this.admin<Signal>(
+      `select event, private, payload from realtime.messages where topic = $1 order by inserted_at, id`,
+      [topic],
+    );
+  }
+}
+
+export interface Signal {
+  readonly event: string;
+  readonly private: boolean;
+  readonly payload: { readonly table: string; readonly key: Readonly<Record<string, unknown>> };
 }
 
 function toParam(value: unknown): unknown {

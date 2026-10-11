@@ -3,13 +3,13 @@
     display: flex;
     flex-direction: column;
     min-block-size: 100dvh;
-    padding-block-end: calc(var(--tab-bar-height) + env(safe-area-inset-bottom, 0px));
+    padding-block: env(safe-area-inset-top, 0px)
+      calc(var(--tab-bar-height) + env(safe-area-inset-bottom, 0px));
     background: var(--surface);
   }
 
   .shell__main {
     flex: 1;
-    padding-block-start: env(safe-area-inset-top, 0px);
     padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
   }
 

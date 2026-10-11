@@ -199,7 +199,10 @@ email_sent = 2
 # Number of SMS messages that can be sent per hour. Requires auth.sms to be enabled.
 sms_sent = 30
 # Number of anonymous sign-ins that can be made per hour per IP address. Requires enable_anonymous_sign_ins = true.
-anonymous_users = 30
+# Raised from 30: every browser test signs a fresh phone in, all from this one
+# machine. Staging and production set their own limit in the dashboard (see
+# docs/PLAN.md: a boat ramp's phones can share one carrier address).
+anonymous_users = 1000
 # Number of sessions that can be refreshed in a 5 minute interval per IP address.
 token_refresh = 150
 # Number of sign up and sign-in requests that can be made in a 5 minute interval per IP address (excludes anonymous users).

@@ -40,6 +40,18 @@ describe('every table', () => {
       where table_schema = 'private' and grantee in ('anon', 'authenticated')`);
     expect(readable).toEqual([]);
   });
+
+  it('in public tells phones when its rows change', async () => {
+    const silent = await db.admin<{ name: string }>(`
+      select c.relname as name from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relkind = 'r'
+        and not exists (
+          select 1 from pg_trigger t
+          where t.tgrelid = c.oid and t.tgfoid = 'private.signal_change'::regproc
+            and t.tgtype & 28 = 28 -- on insert (4), delete (8) and update (16)
+        )`);
+    expect(silent).toEqual([]);
+  });
 });
 
 describe('every function', () => {

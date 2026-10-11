@@ -127,3 +127,11 @@ export function dateRangeText(dates: readonly DateKey[]): string {
   const lastText = dayText(last, !sameMonth);
   return `${dayText(first)}–${lastText}, ${year}`;
 }
+
+/** "7:00 AM", from the database's "07:00:00". */
+export function clockText(time: string): string {
+  const [hours = 0, minutes = 0] = time.split(':').map(Number);
+  const suffix = hours < 12 ? 'AM' : 'PM';
+  const hour = hours % 12 === 0 ? 12 : hours % 12;
+  return `${String(hour)}:${String(minutes).padStart(2, '0')} ${suffix}`;
+}

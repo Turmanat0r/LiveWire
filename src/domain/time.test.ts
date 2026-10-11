@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dateRangeText, dayPhase, formatCountdown, zonedParts } from './time';
+import { clockText, dateRangeText, dayPhase, formatCountdown, zonedParts } from './time';
 
 const DENVER = 'America/Denver';
 const DATES = ['2027-09-18', '2027-09-19'];
@@ -62,5 +62,12 @@ describe('formatting', () => {
     expect(dateRangeText(['2027-09-30', '2027-10-01'])).toBe('Sep 30–Oct 1, 2027');
     expect(dateRangeText(['2027-09-18'])).toBe('Sep 18, 2027');
     expect(dateRangeText([])).toBe('');
+  });
+
+  it('writes a time of day on a twelve-hour clock', () => {
+    expect(clockText('07:00:00')).toBe('7:00 AM');
+    expect(clockText('14:05:00')).toBe('2:05 PM');
+    expect(clockText('00:30:00')).toBe('12:30 AM');
+    expect(clockText('12:00:00')).toBe('12:00 PM');
   });
 });
