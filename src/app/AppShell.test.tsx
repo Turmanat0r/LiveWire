@@ -69,6 +69,18 @@ describe('the app shell', () => {
     renderAt('/standings');
     expect(screen.getByRole('status').textContent).toBe('Not connected to a tournament server');
   });
+
+  it('has one status line on every screen, so nothing else is announced in its place', () => {
+    for (const s of SCREENS) {
+      const { unmount } = render(
+        <WithSync sync={testSync()}>
+          <RouterProvider router={createMemoryRouter(routes, { initialEntries: [s.path] })} />
+        </WithSync>,
+      );
+      expect(screen.getAllByRole('status')).toHaveLength(1);
+      unmount();
+    }
+  });
 });
 
 describe('the home screen', () => {

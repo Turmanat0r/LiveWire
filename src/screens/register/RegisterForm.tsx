@@ -344,7 +344,7 @@ function HandlePick({
     <div className="handle-pick">
       <p className="handle-pick__name">
         {who ? <span className="handle-pick__who">{who}</span> : null}
-        <output aria-live="polite">{handle}</output>
+        <span aria-live="polite">{handle}</span>
       </p>
       <button
         className="button button--small"
