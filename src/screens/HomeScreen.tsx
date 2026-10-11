@@ -41,21 +41,6 @@ function SignalMark() {
   );
 }
 
-/** The faint fish drawn behind the event's name. */
-function FishMark() {
-  return (
-    <svg className="home-fishmark" viewBox="0 0 260 150" aria-hidden="true" focusable="false">
-      <path d="M28 78c34-42 102-58 158-28 20 11 34 25 48 28-14 4-28 18-48 29-56 30-124 14-158-29Z" />
-      <path d="M28 78 6 48c3 22 3 38 0 60l22-30Z" />
-      <path d="M89 43 116 17l20 27 24-18 15 24" />
-      <path d="M92 110c14-18 33-22 49-10" />
-      <path d="M187 65a4 4 0 1 0 8 0 4 4 0 1 0-8 0" />
-      <path d="M199 91c12 2 23-2 35-13" />
-      <path d="M69 58 163 86" />
-    </svg>
-  );
-}
-
 /** The tournament every phone is on, from the phone's own copy: it shows with no signal. */
 function EventCard() {
   const loaded = useSync((s) => s.loaded);
@@ -66,7 +51,6 @@ function EventCard() {
   if (!event) {
     return (
       <section className="home-event" aria-labelledby="home-event-title">
-        <FishMark />
         <h2 id="home-event-title" className="home-event__title">
           No tournament yet
         </h2>
@@ -88,7 +72,6 @@ function EventCard() {
         </span>
         <span className="home-event__date">{dateRangeText(dates)}</span>
       </div>
-      <FishMark />
       {event.presenter ? <p className="home-kicker">{event.presenter} presents</p> : null}
       <h2 id="home-event-title" className="home-event__title">
         {event.name}
