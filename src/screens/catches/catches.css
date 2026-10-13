@@ -1,0 +1,124 @@
+@layer components {
+  .catch-list {
+    display: grid;
+    gap: 10px;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* The old app's catch card: photo on the left, length and status on the right. */
+  .catch-card {
+    display: flex;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+
+  .catch-card--best {
+    border-color: var(--gold);
+    background: var(--best-bg);
+  }
+
+  .catch-card__photo {
+    flex-shrink: 0;
+    inline-size: 72px;
+    block-size: 72px;
+    border-radius: var(--radius-sm);
+    background: var(--paper-2);
+    object-fit: cover;
+  }
+
+  .catch-card__photo--none {
+    display: grid;
+    place-items: center;
+    padding: 4px;
+    color: var(--steel);
+    font-size: var(--text-sm);
+    line-height: 1.2;
+    text-align: center;
+  }
+
+  .catch-card__info {
+    display: grid;
+    flex: 1;
+    gap: 4px;
+    align-content: start;
+    min-inline-size: 0;
+  }
+
+  .card .catch-card__top {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--ink);
+  }
+
+  .catch-card__length {
+    font-family: var(--font-serif);
+    font-size: var(--text-lg);
+    font-weight: 600;
+  }
+
+  .card .catch-card__title {
+    font-size: var(--text-sm);
+  }
+
+  .card .catch-card__note {
+    font-size: var(--text-sm);
+  }
+
+  .status {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .status--waiting,
+  .status--pending {
+    background: var(--status-pending-bg);
+    color: var(--status-pending-text);
+  }
+
+  .status--approved {
+    background: var(--status-approved-bg);
+    color: var(--status-approved-text);
+  }
+
+  .status--rejected {
+    background: var(--status-rejected-bg);
+    color: var(--status-rejected-text);
+  }
+
+  .catch-card__edit {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .catch-card__edit input {
+    inline-size: 6em;
+    min-block-size: 44px;
+    padding: 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--paper);
+    color: var(--ink);
+    font-size: var(--text-base);
+  }
+
+  .best-badge {
+    justify-self: start;
+    padding: 2px 7px;
+    border-radius: 3px;
+    background: var(--status-pending-bg);
+    color: var(--status-pending-text);
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+}

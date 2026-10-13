@@ -22,6 +22,9 @@ export function lazyRemote(load: () => Promise<Remote>): Remote {
       (await remote()).readMatching(table, column, values),
     call: async (fn, args) => (await remote()).call(fn, args),
     upload: async (path, file) => (await remote()).upload(path, file),
+    removePhoto: async (path) => (await remote()).removePhoto(path),
+    photoUrl: async (path) => (await remote()).photoUrl(path),
+    serverTime: async () => (await remote()).serverTime(),
     listen(topics, onSignal, onStatus) {
       let stopped = false;
       let stop: (() => void) | null = null;

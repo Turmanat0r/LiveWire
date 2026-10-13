@@ -19,6 +19,7 @@ function setUp(local: LocalStore = new MemoryStore()) {
     setTimer: timers.setTimer,
     exclusive: (send) => send(),
   });
+  server.phoneClock = () => timers.now;
   server.put('events', eventRow());
   server.put('event_days', dayRow('2027-09-18'));
   server.put('event_days', dayRow('2027-09-19'));
@@ -270,6 +271,22 @@ describe('the sync engine', () => {
     await settle();
     expect(setup.server.signIns).toBe(1);
     expect(setup.sync.getState().event?.name).toBe('Montana Kayak Walleye Open');
+  });
+
+  it('measures how far the phone’s clock is off, and keeps it for when there is no signal', async () => {
+    const local = new MemoryStore();
+    const first = setUp(local);
+    first.server.clockAheadMs = 12 * 60_000;
+    await first.sync.start();
+    await settle();
+    const offset = first.sync.getState().clock?.offsetMs ?? 0;
+    expect(Math.abs(offset - 12 * 60_000)).toBeLessThan(1000);
+    await first.timers.advance(1000);
+
+    const reopened = setUp(local);
+    reopened.server.online = false;
+    await reopened.sync.start();
+    expect(reopened.sync.getState().clock?.offsetMs).toBe(offset);
   });
 
   it('sends what was waiting in the outbox once it connects', async () => {

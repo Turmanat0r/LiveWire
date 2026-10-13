@@ -6,6 +6,12 @@ import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type { Json, StoredFile } from './remote';
 import type { FunctionName, Row, TableName } from './tables';
 
+/** Server time minus phone time, and when that was measured. */
+export interface ClockReading {
+  readonly offsetMs: number;
+  readonly measuredAt: number;
+}
+
 /** The last copy of the server's rows this phone was allowed to read. */
 export interface Snapshot {
   /** The database version the app was built against; a copy from another is thrown away. */
@@ -13,6 +19,8 @@ export interface Snapshot {
   readonly eventId: string | null;
   /** This phone's account, so it knows its own entry with no signal. */
   readonly userId?: string | null;
+  /** How far this phone's clock was off when last checked, for the photo stamp. */
+  readonly clock?: ClockReading | null;
   readonly tables: { readonly [T in TableName]?: readonly Row<T>[] };
   readonly savedAt: number;
 }
@@ -31,6 +39,11 @@ export type Step =
       readonly path: string;
       /** The file's name among the item's files. */
       readonly file: string;
+    }
+  | {
+      /** A catch photo off the server: a withdrawn catch's, before the catch itself goes. */
+      readonly kind: 'remove';
+      readonly path: string;
     };
 
 /** Something the angler did, kept until the server has every step of it. */

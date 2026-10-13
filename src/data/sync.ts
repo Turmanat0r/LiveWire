@@ -10,7 +10,7 @@
 //   4. Save the copy a moment after it changes.
 //
 // No polling: with signal and nothing happening, nothing is downloaded.
-import type { LocalStore, NewOutboxItem } from './local';
+import type { ClockReading, LocalStore, NewOutboxItem } from './local';
 import { Outbox, type OutboxState } from './outbox';
 import {
   failureOf,
@@ -63,6 +63,8 @@ export interface SyncState {
   readonly durable: boolean;
   /** This phone's account on the server, once known; kept with the saved copy. */
   readonly userId: string | null;
+  /** How far this phone's clock is off, as last measured; kept with the saved copy. */
+  readonly clock: ClockReading | null;
 }
 
 export interface SyncOptions {
@@ -92,6 +94,8 @@ const LAST_RETRY_MS = 60_000;
 const RELAY_STARTS_MS = 5_000;
 /** Hidden longer than this, the app reads everything again when it comes back. */
 const STALE_AFTER_HIDDEN_MS = 60_000;
+/** Photo addresses last an hour; ask for a fresh one after fifty minutes. */
+const PHOTO_URL_REUSE_MS = 50 * 60_000;
 
 function browserTimer(run: () => void, ms: number): () => void {
   const id = setTimeout(run, ms);
@@ -156,6 +160,7 @@ export class Sync {
       outbox: this.outbox.getState(),
       durable: true,
       userId: null,
+      clock: null,
     };
     this.outbox.subscribe(() => {
       this.update({ outbox: this.outbox.getState() });
@@ -182,6 +187,7 @@ export class Sync {
       event: currentEvent(tables),
       syncedAt: saved?.schema === this.schema ? saved.savedAt : null,
       userId: saved?.userId ?? null,
+      clock: saved?.clock ?? null,
     });
     await this.outbox.load();
     this.outbox.kick();
@@ -273,6 +279,40 @@ export class Sync {
     );
   }
 
+  /** Reads back a file kept with an outbox item: a catch photo still waiting to send. */
+  async readFile(itemId: string, name: string): Promise<StoredFile | undefined> {
+    return (await this.local).file(itemId, name);
+  }
+
+  private readonly photoUrls = new Map<string, { url: Promise<string>; until: number }>();
+
+  /** A catch photo's address, asked for once and reused until shortly before it lapses. */
+  photoUrl(path: string): Promise<string> {
+    const remote = this.remote;
+    if (!remote) return Promise.reject(new RemoteError({ kind: 'offline' }));
+    const kept = this.photoUrls.get(path);
+    if (kept && kept.until > this.now()) return kept.url;
+    const url = remote.photoUrl(path);
+    this.photoUrls.set(path, { url, until: this.now() + PHOTO_URL_REUSE_MS });
+    url.catch(() => this.photoUrls.delete(path));
+    return url;
+  }
+
+  /** Measures the phone's clock against the server's, halfway through the round trip. */
+  private async checkClock(remote: Remote): Promise<void> {
+    try {
+      const sent = this.now();
+      const serverAt = await remote.serverTime();
+      const back = this.now();
+      this.update({
+        clock: { offsetMs: Math.round(serverAt - (sent + back) / 2), measuredAt: back },
+      });
+      this.scheduleSave();
+    } catch {
+      // No reading this time; the last one stands, or the stamp says unverified.
+    }
+  }
+
   private signedIn(userId: string): void {
     if (userId === this.state.userId) return;
     this.update({ userId });
@@ -292,6 +332,7 @@ export class Sync {
     if (this.state.connection !== 'live') this.update({ connection: 'connecting', problem: null });
     try {
       this.signedIn(await remote.signIn());
+      void this.checkClock(remote);
       await this.readEvents();
       if (!this.stopListening) this.listen();
       await this.readEvent();
@@ -503,6 +544,7 @@ export class Sync {
       schema: this.schema,
       eventId: this.state.event?.id ?? null,
       userId: this.state.userId,
+      clock: this.state.clock,
       tables: toSnapshot(this.state.tables),
       savedAt: this.state.syncedAt ?? this.now(),
     });

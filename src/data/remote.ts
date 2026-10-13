@@ -66,6 +66,12 @@ export interface Remote {
   call(fn: FunctionName, args: Readonly<Record<string, Json>>): Promise<Json>;
   /** Stores a catch photo. A photo already there counts as stored: photos never change. */
   upload(path: string, file: StoredFile): Promise<void>;
+  /** Removes a catch photo. One already gone counts as removed. */
+  removePhoto(path: string): Promise<void>;
+  /** A short-lived address a phone may load a catch photo from. */
+  photoUrl(path: string): Promise<string>;
+  /** The server's clock, in milliseconds since 1970. */
+  serverTime(): Promise<number>;
   /** Listens for signals on these topics until the returned function is called. */
   listen(
     topics: readonly string[],

@@ -1,0 +1,161 @@
+@layer components {
+  .catch-form {
+    display: grid;
+    gap: 14px;
+  }
+
+  .catch-form__pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .catch-form__file {
+    font-size: var(--text-sm);
+  }
+
+  .viewfinder {
+    display: grid;
+    gap: 8px;
+  }
+
+  /* The live camera, the guide over it, and the readouts in its corners. */
+  .vf {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius);
+    background: var(--vf-black);
+  }
+
+  .vf__video {
+    display: block;
+    inline-size: 100%;
+    max-block-size: 340px;
+    background: var(--vf-black);
+    object-fit: cover;
+  }
+
+  .vf-guide {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    pointer-events: none;
+  }
+
+  .card .vf__auto {
+    position: absolute;
+    inset-block-start: 8px;
+    inset-inline-start: 8px;
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    padding: 4px 9px;
+    border-radius: 20px;
+    background: var(--vf-shade);
+    color: var(--vf-white);
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+
+  .vf__dot {
+    inline-size: 8px;
+    block-size: 8px;
+    border-radius: 50%;
+    background: var(--vf-hold);
+  }
+
+  .vf__auto--ready .vf__dot {
+    background: var(--vf-ready);
+  }
+
+  .vf__count {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+  }
+
+  .vf__count span {
+    display: grid;
+    place-items: center;
+    inline-size: 82px;
+    block-size: 82px;
+    border: 4px solid var(--vf-ready);
+    border-radius: 50%;
+    background: var(--vf-shade-light);
+    color: var(--vf-white);
+    font-family: var(--font-display);
+    font-size: 2.5rem;
+    font-weight: 700;
+  }
+
+  .card .vf__codes {
+    position: absolute;
+    inset-block-start: 8px;
+    inset-inline-end: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: flex-end;
+    max-inline-size: 58%;
+    pointer-events: none;
+  }
+
+  .vf__codes span {
+    padding: 2px 8px;
+    border-radius: 3px;
+    background: var(--vf-codes);
+    color: var(--vf-white);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    letter-spacing: 0.06em;
+  }
+
+  .vf__codes b {
+    color: var(--vf-cyan);
+    font-weight: 400;
+  }
+
+  .card .vf__hint {
+    position: absolute;
+    inset-inline: 8px;
+    inset-block-end: 8px;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--vf-shade-light);
+    color: var(--vf-white);
+    font-size: var(--text-sm);
+    text-align: center;
+  }
+
+  .vf-auto-toggle {
+    color: var(--steel);
+    font-size: var(--text-sm);
+  }
+
+  .vf-preview {
+    position: relative;
+  }
+
+  .vf-preview img {
+    display: block;
+    inline-size: 100%;
+    border-radius: var(--radius);
+  }
+
+  .vf-preview__retake {
+    position: absolute;
+    inset-block-start: 8px;
+    inset-inline-end: 8px;
+    min-block-size: 40px;
+    padding: 6px 12px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: var(--vf-shade);
+    color: var(--vf-white);
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+}

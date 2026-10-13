@@ -179,6 +179,10 @@ export class Outbox {
       await remote.call(step.fn, step.args);
       return;
     }
+    if (step.kind === 'remove') {
+      await remote.removePhoto(step.path);
+      return;
+    }
     const file = await local.file(item.id, step.file);
     if (!file) {
       throw new RemoteError({
