@@ -35,6 +35,11 @@
     object-fit: cover;
   }
 
+  .vf--idle {
+    aspect-ratio: 4 / 3;
+    max-block-size: 340px;
+  }
+
   .vf-guide {
     position: absolute;
     inset: 0;
@@ -91,15 +96,15 @@
     font-weight: 700;
   }
 
+  /* Bottom right, clear of the status and of the guide's labels. */
   .card .vf__codes {
     position: absolute;
-    inset-block-start: 8px;
-    inset-inline-end: 8px;
+    inset-block-end: 8px;
+    inset-inline: 8px;
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
     justify-content: flex-end;
-    max-inline-size: 58%;
     pointer-events: none;
   }
 
@@ -118,16 +123,16 @@
     font-weight: 400;
   }
 
-  .card .vf__hint {
-    position: absolute;
-    inset-inline: 8px;
-    inset-block-end: 8px;
-    padding: 4px 8px;
-    border-radius: var(--radius-sm);
-    background: var(--vf-shade-light);
-    color: var(--vf-white);
+  .pose-rules {
+    margin: 0;
+    padding-inline-start: 1.3em;
+    color: var(--steel);
     font-size: var(--text-sm);
-    text-align: center;
+    line-height: 1.45;
+  }
+
+  .pose-rules b {
+    color: var(--deep);
   }
 
   .vf-auto-toggle {
