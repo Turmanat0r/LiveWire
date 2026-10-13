@@ -1,0 +1,77 @@
+@layer components {
+  /* A raised beacon has to read as urgent at a glance, in sunlight, on a phone
+     held at arm's length in a moving kayak. */
+  .beacon-pulse {
+    flex-shrink: 0;
+    inline-size: 12px;
+    block-size: 12px;
+    border-radius: 50%;
+    background: var(--beacon-red);
+    animation: beacon-pulse 1.8s infinite;
+  }
+
+  @keyframes beacon-pulse {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--beacon-red) 70%, transparent);
+    }
+
+    70% {
+      box-shadow: 0 0 0 14px transparent;
+    }
+
+    100% {
+      box-shadow: 0 0 0 0 transparent;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .beacon-pulse {
+      animation: none;
+    }
+  }
+
+  /* On every screen but Safety, so nobody has to go looking. */
+  .beacon-banner {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-block-end: var(--space-3);
+    padding: 6px 12px;
+    border: 2px solid var(--danger);
+    border-radius: var(--radius);
+    background: var(--danger);
+    color: var(--white);
+  }
+
+  .beacon-banner .beacon-pulse {
+    background: var(--white);
+  }
+
+  .beacon-banner__link {
+    display: grid;
+    flex: 1;
+    gap: 1px;
+    align-content: center;
+    min-block-size: var(--tap-target);
+    color: inherit;
+    font-size: var(--text-md);
+    text-decoration: none;
+  }
+
+  .beacon-banner__link strong {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .beacon-banner--mine {
+    border-color: var(--beacon-gold);
+    background: var(--status-pending-bg);
+    color: var(--status-pending-text);
+  }
+
+  .beacon-banner--mine .beacon-pulse {
+    background: var(--beacon-gold);
+  }
+}

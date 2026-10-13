@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { overdueAnglers, sortOverdue, type CheckIn } from './safety';
+import { ageText, overdueAnglers, sortOverdue, type CheckIn } from './safety';
 
 const DENVER = 'America/Denver';
 const DATES = ['2027-09-18', '2027-09-19'];
@@ -46,5 +46,18 @@ describe('sortOverdue', () => {
       'stale',
       'fresh',
     ]);
+  });
+});
+
+describe('ageText', () => {
+  const now = Date.UTC(2027, 8, 18, 18, 0);
+  const ago = (minutes: number) => now - minutes * 60_000;
+  it('says how long ago a position was taken, as the old app did', () => {
+    expect(ageText(null, now)).toBe('never');
+    expect(ageText(ago(0.5), now)).toBe('just now');
+    expect(ageText(ago(12), now)).toBe('12 min ago');
+    expect(ageText(ago(61), now)).toBe('1 hour ago');
+    expect(ageText(ago(150), now)).toBe('3 hours ago');
+    expect(ageText(ago(25 * 60), now)).toBe('over a day ago');
   });
 });

@@ -8,6 +8,7 @@ import { CatchScreen } from '../screens/catch/CatchScreen';
 import { LivewellScreen } from '../screens/catches/LivewellScreen';
 import { MyCatchesScreen } from '../screens/catches/MyCatchesScreen';
 import { PlannedScreen } from '../screens/PlannedScreen';
+import { SafetyScreen } from '../screens/safety/SafetyScreen';
 import { NotFoundScreen } from '../screens/NotFoundScreen';
 import { ErrorScreen } from '../screens/ErrorScreen';
 
@@ -27,6 +28,7 @@ export const routes: RouteObject[] = [
       { path: screen('catch').path, element: <CatchScreen /> },
       { path: screen('my-catches').path, element: <MyCatchesScreen /> },
       { path: screen('livewell').path, element: <LivewellScreen /> },
+      { path: screen('safety').path, element: <SafetyScreen /> },
       ...SCREENS.filter((s) => s.milestone !== null).map((s): RouteObject => ({
         path: s.path,
         element: <PlannedScreen screen={s} />,

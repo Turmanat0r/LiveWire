@@ -599,6 +599,35 @@ export type Database = {
           },
         ];
       };
+      event_safety: {
+        Row: {
+          contact_name: string;
+          event_id: string;
+          phone: string;
+          updated_at: string;
+        };
+        Insert: {
+          contact_name?: string;
+          event_id: string;
+          phone: string;
+          updated_at?: string;
+        };
+        Update: {
+          contact_name?: string;
+          event_id?: string;
+          phone?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'event_safety_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: true;
+            referencedRelation: 'events';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       event_species: {
         Row: {
           event_id: string;
@@ -1182,6 +1211,21 @@ export type Database = {
         };
       };
       director_set_fee_paid: { Args: { p_entry_id: string; p_paid: boolean }; Returns: undefined };
+      director_set_safety_contact: {
+        Args: { p_contact_name?: string; p_event_id: string; p_phone: string };
+        Returns: {
+          contact_name: string;
+          event_id: string;
+          phone: string;
+          updated_at: string;
+        }[];
+        SetofOptions: {
+          from: '*';
+          to: 'event_safety';
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
       director_unfreeze_results: { Args: { p_event_id: string }; Returns: undefined };
       director_update_angler: {
         Args: {

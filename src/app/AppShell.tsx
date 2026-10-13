@@ -1,4 +1,5 @@
 import { NavLink, Outlet, useLocation } from 'react-router';
+import { BeaconWatch } from './BeaconWatch';
 import { SCREENS, TABS, screen } from './screens';
 import { SyncStatus } from './SyncStatus';
 import { useRouteFocus } from './useRouteFocus';
@@ -32,6 +33,7 @@ export function AppShell() {
       <div className="shell__column">
         <main id="main" className="shell__main">
           <SyncStatus />
+          <BeaconWatch />
           <Outlet />
         </main>
       </div>

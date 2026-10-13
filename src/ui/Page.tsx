@@ -11,6 +11,10 @@ interface PageProps {
    * heads the screen's single card.
    */
   readonly hero?: { readonly kicker?: string | undefined; readonly meta?: string | undefined };
+  /** Above the titled card: alerts that matter more than anything in it. */
+  readonly before?: ReactNode;
+  /** Further cards below the titled one. */
+  readonly after?: ReactNode;
   readonly children: ReactNode;
 }
 
@@ -19,7 +23,7 @@ interface PageProps {
  * the title. The title is the page's one h1, which the router moves focus to
  * on navigation, so a screen reader announces where you landed.
  */
-export function Page({ title, hero, children }: PageProps) {
+export function Page({ title, hero, before, after, children }: PageProps) {
   const heading = (
     <h1 className="page__title" tabIndex={-1} data-route-heading>
       {title}
@@ -40,10 +44,14 @@ export function Page({ title, hero, children }: PageProps) {
           {children}
         </>
       ) : (
-        <div className="card">
-          <div className="card__title">{heading}</div>
-          {children}
-        </div>
+        <>
+          {before}
+          <div className="card">
+            <div className="card__title">{heading}</div>
+            {children}
+          </div>
+          {after}
+        </>
       )}
     </article>
   );

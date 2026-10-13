@@ -16,6 +16,7 @@ export const KEYS = {
   events: ['id'],
   event_days: ['event_id', 'day'],
   event_species: ['event_id', 'name'],
+  event_safety: ['event_id'],
   entries: ['id'],
   entry_private: ['entry_id'],
   anglers: ['id'],

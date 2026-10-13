@@ -16,6 +16,7 @@ const filing: Filing = {
   messageId: 'm1',
   eventId: 'e1',
   anglerId: 'a1',
+  phoneAnglerId: 'a0',
   species: 'Walleye',
   lengthInches: 21.5,
   loggedAt: Date.parse('2027-09-18T15:00:00Z'),
@@ -27,7 +28,7 @@ const filing: Filing = {
 };
 
 describe('filing a catch', () => {
-  it('files the catch, then its photo, then tells the field, in that order', () => {
+  it('files the catch, then its photo, then tells the field, then where the phone is', () => {
     const item = filingItem(filing);
     expect(item.id).toBe('c1');
     expect(item.label).toBe('Walleye, 21.5 in');
@@ -35,9 +36,14 @@ describe('filing a catch', () => {
       'file_catch',
       'upload',
       'post_message',
+      'record_position',
     ]);
     expect(item.steps[1]).toEqual({ kind: 'upload', path: 'e1/c1.jpg', file: 'photo' });
     expect(item.steps[2]).toMatchObject({ args: { p_catch_id: 'c1', p_body: '' } });
+    // The phone's own angler, on the server's clock.
+    expect(item.steps[3]).toMatchObject({
+      args: { p_angler_id: 'a0', p_lat: 46.39, p_at: '2027-09-18T15:00:04.000Z' },
+    });
   });
 
   it('sends what the photo and the phone knew when it was taken', () => {

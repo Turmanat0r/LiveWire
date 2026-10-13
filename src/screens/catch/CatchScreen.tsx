@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useState, type SubmitEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { currentFix } from '../../app/location';
+import { rememberFix } from '../../app/position';
 import { screen } from '../../app/screens';
 import { useNow } from '../../app/useNow';
 import { useMyEntry } from '../../data/myEntry';
@@ -151,6 +152,7 @@ function CatchForm({ event, mine }: CatchFormProps) {
       if (!filed) return;
       setBusy('Checking location…');
       const fix = await currentFix();
+      if (fix) rememberFix(fix);
       const course = parseBoundary(event.course);
       const boundary: BoundaryVerdict = fix ? evaluateBoundary(fix, course) : { kind: 'unchecked' };
       setBusy('Saving…');
@@ -161,6 +163,7 @@ function CatchForm({ event, mine }: CatchFormProps) {
           messageId: crypto.randomUUID(),
           eventId: event.id,
           anglerId: angler.angler.id,
+          phoneAnglerId: mine.me.angler.id,
           species: chosenSpecies,
           lengthInches: inches,
           loggedAt: Date.now(),

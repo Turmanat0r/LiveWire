@@ -39,7 +39,7 @@ export const SCREENS: readonly Screen[] = [
   { id: 'catch', path: '/catch', title: 'Submit a catch', summary: 'Photograph a fish on the board and file it, with or without signal.', theme: 'catch', milestone: null },
   { id: 'my-catches', path: '/my-catches', title: 'My catches', summary: 'Everything you have filed, and where each one stands.', theme: 'my-catches', milestone: null },
   { id: 'livewell', path: '/livewell', title: 'Livewell', summary: 'Your running tally of released fish.', theme: 'livewell', milestone: null },
-  { id: 'safety', path: '/safety', title: 'Safety', summary: 'Where you are against the course line, and a beacon if you need help.', theme: 'safety', milestone: 5 },
+  { id: 'safety', path: '/safety', title: 'Safety', summary: 'Where you are against the course line, and a beacon if you need help.', theme: 'safety', milestone: null },
   { id: 'standings', path: '/standings', title: 'Standings', summary: 'Solo and team boards, longest fish first.', theme: 'standings', milestone: 6 },
   { id: 'big-fish', path: '/big-fish', title: 'Big Fish', summary: 'The side pot for the single longest fish.', theme: 'big-fish', milestone: 6 },
   { id: 'side-bets', path: '/side-bets', title: 'Side bets', summary: 'Smallest fish, most fish, first fish, or anything else you can settle.', theme: 'side-bets', milestone: 6 },

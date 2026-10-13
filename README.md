@@ -74,20 +74,20 @@ it comes back empty: that is how an overturned catch leaves every board.
 
 ## Where things are
 
-|                 |                                                                                                                                       |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/domain/`   | The tournament rules: scoring, ties, payouts, the course line, the clock, handles, photo fingerprints. Pure functions, no screen code |
-| `src/data/`     | The phone's copy of the tournament, the outbox, and the one file that talks to Supabase (`supabase.ts`). Starts at `sync.ts`          |
-| `src/app/`      | The shell: routes, tab bar, the list of screens, the update prompt                                                                    |
-| `src/screens/`  | One component per screen                                                                                                              |
-| `src/ui/`       | Shared building blocks: page, card, icons                                                                                             |
-| `src/styles/`   | Tokens (the only file allowed to name a colour), cascade layers, base styles                                                          |
-| `tests/parity/` | The old app run as an oracle against the new rules. Deleted at switch-over                                                            |
-| `tests/e2e/`    | Browser tests on emulated phones, including offline and accessibility                                                                 |
-| `supabase/`     | The database: config, and every migration in order. See Database, above                                                               |
-| `tests/db/`     | The database rules acted out, on a stand-in locally and on real Supabase in CI                                                        |
-| `tests/remote/` | The app's Supabase adapter against a real Supabase: sign-in, refusals, photos, live signals. CI only                                  |
-| `vercel.json`   | Hosting: security headers, caching, every address served by the app                                                                   |
+|                 |                                                                                                                                                                |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/domain/`   | The tournament rules: scoring, ties, payouts, the course line, the clock, handles, photo fingerprints. Pure functions, no screen code                          |
+| `src/data/`     | The phone's copy of the tournament, the outbox, and the one file that talks to Supabase (`supabase.ts`). Starts at `sync.ts`                                   |
+| `src/app/`      | The shell: routes, tab bar, the list of screens, the update prompt, the beacon banner and its minute-by-minute position                                        |
+| `src/screens/`  | One component per screen                                                                                                                                       |
+| `src/ui/`       | Shared building blocks: page, card, icons                                                                                                                      |
+| `src/styles/`   | Tokens (the only file allowed to name a colour), cascade layers, base styles                                                                                   |
+| `tests/parity/` | The old app run as an oracle against the new rules. Deleted at switch-over                                                                                     |
+| `tests/e2e/`    | Browser tests on emulated phones, including offline and accessibility                                                                                          |
+| `supabase/`     | The database: config, and every migration in order. See Database, above                                                                                        |
+| `tests/db/`     | The database rules acted out, on a stand-in locally and on real Supabase in CI                                                                                 |
+| `tests/remote/` | The app's Supabase adapter against a real Supabase: sign-in, refusals, photos, live signals. CI only                                                           |
+| `vercel.json`   | Hosting: security headers, caching, every address served by the app. The course map's tiles come from OpenStreetMap, the only outside address besides Supabase |
 
 ## Rules the code holds itself to
 
