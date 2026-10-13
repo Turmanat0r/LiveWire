@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import type { PhotoSource, StampInput } from '../../domain/capture';
 import { useAutoCapture, useCamera } from '../../photo/camera';
 import { preparePhoto, type CapturedPhoto } from '../../photo/capture';
-import { BoardGuide } from './BoardGuide';
+import { BoardGuide, PoseRules } from './BoardGuide';
 
 interface ViewfinderProps {
   readonly species: string;
@@ -14,7 +14,7 @@ interface ViewfinderProps {
 }
 
 /**
- * The in-app camera: the board guide over the live picture, auto-capture once
+ * The in-app camera: the pose guide over the live picture, auto-capture once
  * the shot is steady, sharp and lit, and the photo stamped the moment the
  * shutter fires. The camera roll is the fallback, below it on the screen.
  */
@@ -71,7 +71,6 @@ export function Viewfinder({ species, codes, stampFor, photo, onPhoto }: Viewfin
               ))}
             </p>
           ) : null}
-          <p className="vf__hint">Align the fish along the guide, then capture</p>
         </div>
       ) : photo ? (
         <div className="vf-preview">
@@ -80,7 +79,12 @@ export function Viewfinder({ species, codes, stampFor, photo, onPhoto }: Viewfin
             Retake
           </button>
         </div>
-      ) : null}
+      ) : (
+        // Before the camera opens: how the fish should look in the photo.
+        <div className="vf vf--idle">
+          <BoardGuide species={species} />
+        </div>
+      )}
       {live ? (
         <>
           <div className="actions vf-controls">
@@ -117,6 +121,7 @@ export function Viewfinder({ species, codes, stampFor, photo, onPhoto }: Viewfin
           {state === 'starting' ? 'Opening camera…' : photo ? 'Take another photo' : 'Open camera'}
         </button>
       )}
+      {photo && !live ? null : <PoseRules />}
       {state === 'unavailable' ? (
         <p className="err" role="alert">
           The camera is unavailable or permission was refused. Choose a photo you already took,

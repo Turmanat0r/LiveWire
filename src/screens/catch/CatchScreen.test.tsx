@@ -112,6 +112,15 @@ describe('submitting a catch', () => {
     expect(screen.getByText('Kept on this phone until there is signal.')).toBeTruthy();
   });
 
+  it('shows how to pose the fish before the camera opens', async () => {
+    const { server } = serverWithEntry();
+    await open(server);
+    const rules = screen.getAllByRole('listitem').map((li) => li.textContent);
+    expect(rules).toContain('Nose against the stop, fish flat on the board.');
+    expect(rules).toContain('One hand mid-body, behind the gill flap (blue line), never under it.');
+    expect(document.querySelector('.vf--idle .vf-guide')).not.toBeNull();
+  });
+
   it('needs a length and a photo before anything is filed', async () => {
     const { server } = serverWithEntry();
     const { sync, user } = await open(server);
