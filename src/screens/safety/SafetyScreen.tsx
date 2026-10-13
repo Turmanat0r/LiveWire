@@ -1,6 +1,6 @@
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
-import { currentFix } from '../../app/location';
+import { currentFix, type Fix } from '../../app/location';
 import { rememberFix, useLatestFix } from '../../app/position';
 import { screen } from '../../app/screens';
 import { useActiveBeacons, useMyBeacon } from '../../data/beacons';
@@ -122,23 +122,39 @@ function HelpCard({
   const now = useNow();
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const pendingFix = useRef<Promise<Fix | null> | null>(null);
+  const yes = useRef<HTMLButtonElement>(null);
   const noteId = useId();
+
+  // The question is new on screen: take a screen reader's focus to its answer.
+  useEffect(() => {
+    if (asking) yes.current?.focus();
+  }, [asking]);
   const contact = [...contacts.values()].find((c) => c.event_id === eventId) ?? null;
   const name = mine?.me.details?.full_name ?? mine?.me.angler.handle ?? 'An angler';
 
+  // The fix starts the moment the button is pressed, while the angler reads
+  // the question, so it is usually in hand by the time they say yes.
+  function ask() {
+    setProblem(null);
+    setAsking(true);
+    pendingFix.current = currentFix(BEACON_FIX_MS);
+  }
+
+  function cancel() {
+    setAsking(false);
+    pendingFix.current = null;
+  }
+
   async function raise() {
     if (!mine) return;
-    // A confirm, on purpose: this goes to everyone on the water, and a pocket
-    // press should not be able to do that.
-    const sure = window.confirm(
-      'Raise a beacon?\n\nYour position goes to the tournament director and to every other angler on the water, and refreshes about every minute while the app stays open. It keeps going until you stand it down.',
-    );
-    if (!sure) return;
     setBusy(true);
-    setProblem(null);
-    const found = await currentFix(BEACON_FIX_MS);
+    const found = await (pendingFix.current ?? currentFix(BEACON_FIX_MS));
+    pendingFix.current = null;
     setBusy(false);
+    setAsking(false);
     if (!found) {
       // No fix, no beacon: one that points nowhere sends help to the wrong water.
       setProblem(
@@ -215,14 +231,41 @@ function HelpCard({
               }}
             />
           </div>
-          <button
-            className="button button--beacon"
-            type="button"
-            disabled={busy}
-            onClick={() => void raise()}
-          >
-            {busy ? 'Getting a fix…' : 'Raise a beacon'}
-          </button>
+          {asking ? (
+            // Asked on the page rather than in a pop-up: this goes to everyone on
+            // the water, so a pocket press must not send it, and a phone's own
+            // dialog can hold up the GPS fix behind it.
+            <div className="beacon-ask">
+              <p>
+                <strong>Raise a beacon?</strong> Your position goes to the tournament director and
+                to every other angler on the water, and refreshes about every minute while the app
+                stays open. It keeps going until you stand it down.
+              </p>
+              <div className="actions">
+                <button
+                  ref={yes}
+                  className="button button--beacon beacon-ask__yes"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void raise()}
+                >
+                  {busy ? 'Getting a fix…' : 'Yes, raise it'}
+                </button>
+                <button
+                  className="button button--secondary beacon-ask__no"
+                  type="button"
+                  disabled={busy}
+                  onClick={cancel}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button className="button button--beacon" type="button" onClick={ask}>
+              Raise a beacon
+            </button>
+          )}
         </>
       ) : phase === 'raising' ? (
         <p className="notice notice--problem">

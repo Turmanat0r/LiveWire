@@ -85,6 +85,7 @@ test('a beacon reaches another phone by itself, and so does standing it down', a
 
   await page.getByLabel('What is wrong? (optional)').fill('Cold, need a tow');
   await page.getByRole('button', { name: 'Raise a beacon' }).click();
+  await page.getByRole('button', { name: 'Yes, raise it' }).click();
   await expect(page.getByText('Your beacon is up')).toBeVisible({ timeout: 20_000 });
 
   const banner = second.getByRole('alert');

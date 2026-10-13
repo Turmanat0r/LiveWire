@@ -81,6 +81,33 @@
     color: var(--white);
   }
 
+  .beacon-ask {
+    display: grid;
+    gap: var(--space-3);
+    padding: 12px;
+    border: 2px solid var(--danger);
+    border-radius: var(--radius-sm);
+    background: var(--status-rejected-bg);
+  }
+
+  .card .beacon-ask p {
+    color: var(--ink);
+  }
+
+  .beacon-ask strong {
+    color: var(--danger);
+  }
+
+  .beacon-ask__yes {
+    flex: 2;
+    inline-size: auto;
+  }
+
+  .beacon-ask__no {
+    flex: 1;
+    inline-size: auto;
+  }
+
   .safety-text .hint {
     margin-block-start: 6px;
   }

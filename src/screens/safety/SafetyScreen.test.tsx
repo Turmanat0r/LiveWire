@@ -90,12 +90,15 @@ async function open(server: FakeServer, path = '/safety') {
 describe('raising a beacon', () => {
   it('sends the position and the note, and says when it is waiting for signal', async () => {
     const { server, rows } = serverWith();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     fixes.push({ lat: 46.4, lng: -111.6, accuracyMiles: 0.01 });
     const { sync, user } = await open(server);
     server.online = false;
     await user.type(screen.getByLabelText('What is wrong? (optional)'), 'Capsized');
     await user.click(screen.getByRole('button', { name: 'Raise a beacon' }));
+    // Nothing goes until the angler says yes.
+    expect(sync.getState().outbox.items).toEqual([]);
+    expect(document.activeElement?.textContent).toBe('Yes, raise it');
+    await user.click(screen.getByRole('button', { name: 'Yes, raise it' }));
     await act(settle);
     expect(sync.getState().outbox.items[0]?.steps[0]).toMatchObject({
       kind: 'call',
@@ -107,12 +110,23 @@ describe('raising a beacon', () => {
 
   it('sends nothing without a fix, and says why', async () => {
     const { server } = serverWith();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { sync, user } = await open(server);
     await user.click(screen.getByRole('button', { name: 'Raise a beacon' }));
+    await user.click(screen.getByRole('button', { name: 'Yes, raise it' }));
     await act(settle);
     expect(screen.getByRole('alert').textContent).toMatch(/a beacon needs a position/);
     expect(sync.getState().outbox.items).toEqual([]);
+  });
+
+  it('sends nothing when the angler thinks better of it', async () => {
+    const { server } = serverWith();
+    fixes.push({ lat: 46.4, lng: -111.6, accuracyMiles: 0.01 });
+    const { sync, user } = await open(server);
+    await user.click(screen.getByRole('button', { name: 'Raise a beacon' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await act(settle);
+    expect(sync.getState().outbox.items).toEqual([]);
+    expect(screen.getByRole('button', { name: 'Raise a beacon' })).toBeTruthy();
   });
 
   it('can be stood down once it is up', async () => {
