@@ -1,7 +1,8 @@
 // A catch, as the outbox sends it: file the catch, then its photo, then (if
 // asked) tell the field. The catch goes first because the photo store only
 // accepts a photo for a pending catch that already exists; the announcement
-// last because it points at the catch.
+// after it because it points at the catch. Last, the phone's position for the
+// director: the fix is taken already, so it costs nothing.
 import type { Fix } from '../../app/location';
 import type { NewOutboxItem } from '../../data/local';
 import type { Json } from '../../data/remote';
@@ -14,6 +15,8 @@ export interface Filing {
   readonly messageId: string;
   readonly eventId: string;
   readonly anglerId: string;
+  /** The angler this phone is: the fix is where they are, whoever caught the fish. */
+  readonly phoneAnglerId: string;
   readonly species: string;
   readonly lengthInches: number;
   /** When it was filed: every ranking breaks a tie on the earliest fish. */
@@ -73,6 +76,21 @@ export function filingItem(f: Filing): NewOutboxItem {
                 p_angler_id: f.anglerId,
                 p_body: '',
                 p_catch_id: f.catchId,
+              },
+            },
+          ]
+        : []),
+      ...(f.fix
+        ? [
+            {
+              kind: 'call' as const,
+              fn: 'record_position' as const,
+              args: {
+                p_angler_id: f.phoneAnglerId,
+                p_lat: f.fix.lat,
+                p_lng: f.fix.lng,
+                p_accuracy_miles: fileCatch['p_accuracy_miles'] ?? null,
+                p_at: iso(f.loggedAt + (f.clockOffsetMs ?? 0)),
               },
             },
           ]

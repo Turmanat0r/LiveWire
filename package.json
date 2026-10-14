@@ -27,6 +27,7 @@
   "dependencies": {
     "@supabase/supabase-js": "2.117.2",
     "idb": "8.0.3",
+    "leaflet": "1.9.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-router": "8.4.0"
@@ -39,6 +40,7 @@
     "@supabase/postgrest-typegen": "0.3.1",
     "@testing-library/react": "16.3.3",
     "@testing-library/user-event": "14.6.7",
+    "@types/leaflet": "1.9.22",
     "@types/node": "24.19.2",
     "@types/pg": "8.23.1",
     "@types/react": "19.3.0",

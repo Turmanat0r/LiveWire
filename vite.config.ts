@@ -127,7 +127,9 @@ export default defineConfig(({ mode }) => {
               options: {
                 cacheName: 'map-tiles',
                 expiration: { maxEntries: 600, maxAgeSeconds: 60 * 60 * 24 * 30 },
-                cacheableResponse: { statuses: [0, 200] },
+                // Fetched with CORS (the map asks for it), so a failure is never
+                // an opaque response kept in place of a tile.
+                cacheableResponse: { statuses: [200] },
               },
             },
           ],

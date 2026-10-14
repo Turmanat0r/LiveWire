@@ -161,6 +161,33 @@ describe('beacons', () => {
     expect(history).toHaveLength(1);
   });
 
+  it('go up from a phone whose clock is fast, at the server’s time', async () => {
+    const { phone, anglerId } = await angler();
+    const raised = rowOf(
+      await db.call<{ position_at: string }>(phone, 'raise_beacon', {
+        p_angler_id: anglerId,
+        p_lat: 46.4,
+        p_lng: -111.6,
+        p_at: new Date(Date.now() + 60 * 60_000).toISOString(),
+      }),
+    );
+    expect(Date.parse(raised.position_at)).toBeLessThan(Date.now() + 60_000);
+    // A real fix a minute later still moves it.
+    rowOf(
+      await db.call(phone, 'record_position', {
+        p_angler_id: anglerId,
+        p_lat: 46.41,
+        p_lng: -111.6,
+        p_at: new Date(Date.now() + 60_000).toISOString(),
+      }),
+    );
+    const [moved] = await db.admin<{ lat: number }>(
+      `select lat from public.beacons where angler_id = $1 and stood_down_at is null`,
+      [anglerId],
+    );
+    expect(moved?.lat).toBe(46.41);
+  });
+
   it('cannot be raised for somebody else', async () => {
     const { anglerId } = await angler();
     const result = await db.call(await db.device('prankster'), 'raise_beacon', {
@@ -169,5 +196,54 @@ describe('beacons', () => {
       p_lng: -111.6,
     });
     expect(errorOf(result)).toBe('not_your_entry');
+  });
+});
+
+describe('the director’s number for a text', () => {
+  const numberSeenBy = async (who: Caller) =>
+    rowsOf(
+      await db.as<{ phone: string }>(
+        who,
+        `select phone from public.event_safety where event_id = $1`,
+        [eventId],
+      ),
+    ).map((r) => r.phone);
+
+  it('reaches the event’s own anglers and the director, and no one else', async () => {
+    rowOf(
+      await db.call(director, 'director_set_safety_contact', {
+        p_event_id: eventId,
+        p_phone: '(406) 555-0142',
+      }),
+    );
+    const { phone } = await angler();
+    expect(await numberSeenBy(phone)).toEqual(['(406) 555-0142']);
+    expect(await numberSeenBy(director)).toEqual(['(406) 555-0142']);
+    expect(await numberSeenBy(await db.device('just opened the app'))).toEqual([]);
+    expect((await db.as(db.anon, `select phone from public.event_safety`)).ok).toBe(false);
+  });
+
+  it('is set only by the director, complete, and cleared with an empty one', async () => {
+    const { phone } = await angler();
+    expect(
+      errorOf(
+        await db.call(phone, 'director_set_safety_contact', {
+          p_event_id: eventId,
+          p_phone: '406-555-0199',
+        }),
+      ),
+    ).toBe('director_only');
+    expect(
+      errorOf(
+        await db.call(director, 'director_set_safety_contact', {
+          p_event_id: eventId,
+          p_phone: '555-0199',
+        }),
+      ),
+    ).toBe('phone_incomplete');
+    rowsOf(
+      await db.call(director, 'director_set_safety_contact', { p_event_id: eventId, p_phone: '' }),
+    );
+    expect(await numberSeenBy(director)).toEqual([]);
   });
 });

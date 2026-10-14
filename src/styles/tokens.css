@@ -63,6 +63,10 @@
   --status-rejected-text: #8f2c21;
   --best-bg: #fcf6e9;
 
+  /* A raised beacon: the old app's alarm red, and gold for your own. */
+  --beacon-red: #e03725;
+  --beacon-gold: #d5a33a;
+
   /* The page behind the home screen, so an overscroll on a phone shows dark, not paper. */
   --home-page: #07090a;
 

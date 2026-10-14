@@ -65,3 +65,15 @@ export function sortOverdue<T extends { readonly anglerId: string }>(
     return nameOf(x.anglerId).localeCompare(nameOf(y.anglerId));
   });
 }
+
+/** How long ago a position was taken, in the old app's words. */
+export function ageText(at: EpochMs | null, now: EpochMs): string {
+  const mins = signalAgeMinutes(at, now);
+  if (!Number.isFinite(mins)) return 'never';
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${String(Math.round(mins))} min ago`;
+  const hours = mins / 60;
+  if (hours < 2) return '1 hour ago';
+  if (hours < 24) return `${String(Math.round(hours))} hours ago`;
+  return 'over a day ago';
+}

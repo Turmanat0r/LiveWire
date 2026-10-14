@@ -95,6 +95,7 @@ describe('submitting a catch', () => {
       'file_catch',
       'upload',
       'post_message',
+      'record_position',
     ]);
     expect(item?.steps[0]).toMatchObject({
       args: {
@@ -160,9 +161,14 @@ describe('submitting a catch', () => {
       expect(sync.getState().outbox.items).toHaveLength(1);
     });
     const [item] = sync.getState().outbox.items;
-    expect(item?.steps).toHaveLength(2);
+    expect(item?.steps).toHaveLength(3);
     expect(item?.steps[0]).toMatchObject({
       args: { p_angler_id: rows.partnerId, p_species: 'Pike' },
+    });
+    // The position is the phone's, so it is the captain's, not the partner's.
+    expect(item?.steps[2]).toMatchObject({
+      fn: 'record_position',
+      args: { p_angler_id: rows.captainId },
     });
   });
 });
