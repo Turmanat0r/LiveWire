@@ -1,0 +1,120 @@
+@layer components {
+  .chat-compose {
+    display: grid;
+    gap: 6px;
+  }
+
+  .chat-compose__row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+  }
+
+  .chat-compose__box {
+    flex: 1;
+  }
+
+  .chat-compose textarea {
+    max-block-size: 120px;
+    resize: vertical;
+  }
+
+  .chat-compose__send {
+    flex-shrink: 0;
+    inline-size: auto;
+    padding-inline: 16px;
+  }
+
+  .card .chat-compose__replying {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    color: var(--steel);
+    font-size: var(--text-sm);
+  }
+
+  .card .chat-compose__count {
+    color: var(--steel);
+    font-size: var(--text-sm);
+    text-align: end;
+  }
+
+  /* The old app's feed: handle and when, the words, a catch's brag beneath. */
+  .chat-feed,
+  .chat-replies {
+    padding: 0;
+    list-style: none;
+  }
+
+  .chat-item {
+    padding-block: 12px;
+    border-block-end: 1px solid var(--line);
+  }
+
+  .chat-item:last-child {
+    border-block-end: 0;
+  }
+
+  .chat-replies {
+    margin-block-start: 8px;
+    margin-inline-start: 14px;
+    padding-inline-start: 12px;
+    border-inline-start: 1px solid var(--line);
+  }
+
+  .chat-reply {
+    padding-block: 7px;
+  }
+
+  .card .chat-item__top {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+
+  .chat-item__handle {
+    color: var(--deep);
+    font-family: var(--font-serif);
+    font-size: var(--text-md);
+    font-weight: 600;
+  }
+
+  .chat-item--mine > .chat-item__top .chat-item__handle {
+    color: var(--gold-deep);
+  }
+
+  .chat-item__when {
+    flex-shrink: 0;
+    color: var(--steel);
+    font-size: var(--text-sm);
+  }
+
+  .card .chat-item__text {
+    margin-block-start: 4px;
+    color: var(--ink);
+    font-size: var(--text-md);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .card .chat-brag {
+    margin-block-start: 6px;
+    padding: 9px 11px;
+    border-inline-start: 3px solid var(--gold);
+    background: var(--paper-2);
+    color: var(--ink);
+    font-size: var(--text-sm);
+  }
+
+  .chat-brag strong {
+    color: var(--deep);
+    font-family: var(--font-serif);
+    font-size: var(--text-base);
+  }
+
+  .chat-item__actions {
+    margin-block-start: 7px;
+  }
+}

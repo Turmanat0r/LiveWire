@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation } from 'react-router';
 import { BeaconWatch } from './BeaconWatch';
+import { useChatUnread } from '../data/chat';
 import { SCREENS, TABS, screen } from './screens';
 import { SyncStatus } from './SyncStatus';
 import { useRouteFocus } from './useRouteFocus';
@@ -24,6 +25,7 @@ function themeFor(pathname: string): string {
 export function AppShell() {
   const { pathname } = useLocation();
   useRouteFocus(pathname);
+  const unread = useChatUnread();
 
   return (
     <div className="shell" data-theme={themeFor(pathname)}>
@@ -47,6 +49,12 @@ export function AppShell() {
                 <NavLink to={path} end={path === '/'} className="tab-bar__link">
                   <Icon name={id} />
                   <span>{label}</span>
+                  {id === 'chat' && unread > 0 ? (
+                    <span className="tab-bar__badge">
+                      <span aria-hidden="true">{unread > 99 ? '99+' : unread}</span>
+                      <span className="visually-hidden">, {unread} unread</span>
+                    </span>
+                  ) : null}
                 </NavLink>
               </li>
             );

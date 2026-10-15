@@ -101,7 +101,7 @@ a preview on staging.
 | 3   | **Sync and offline** (done)     | Sign-in per device, live updates, the outbox, resumable photo upload, database types generated offline                     |
 | 4   | **Anglers on the water** (done) | Register, bring an entry onto a phone, check in and out; submit a catch with camera and photo checks, my catches, livewell |
 | 5   | **Safety** (done)               | Where am I against the line, the course map, beacons the whole field sees on every screen, text-the-director               |
-| 6   | The board                       | In two parts. First: standings, Big Fish, payouts. Then: side bets and chat                                                |
+| 6   | **The board** (done)            | Standings, Big Fish, payouts; side bets and chat                                                                           |
 | 7   | Director's tools                | Review and Fish-I, contestants, fees, event and course setup, overdue alerts, freezing results, the FWP report             |
 | 8   | Memories                        | Gallery, trophy case, highlight reel                                                                                       |
 | 9   | Field test and switch-over      | A practice day on real phones, then production moves to the new app                                                        |

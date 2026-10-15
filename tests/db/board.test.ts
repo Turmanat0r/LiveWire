@@ -93,6 +93,31 @@ describe('chat', () => {
     rowsOf(await db.call(director, 'delete_message', { p_id: id }));
     expect(await db.admin(`select id from public.messages where id = $1`, [id])).toEqual([]);
   });
+
+  it('keeps threads one deep, and a deleted post takes its replies with it', async () => {
+    const author = await angler();
+    const other = await angler();
+    const post = randomUUID();
+    const reply = randomUUID();
+    const replyToReply = randomUUID();
+    const say = (who: typeof author, id: string, replyTo: string | null) =>
+      db.call<{ reply_to: string | null }>(who.phone, 'post_message', {
+        p_id: id,
+        p_angler_id: who.anglerId,
+        p_body: 'Nice one',
+        p_reply_to: replyTo,
+      });
+    rowOf(await say(author, post, null));
+    rowOf(await say(other, reply, post));
+    expect(rowOf(await say(author, replyToReply, reply)).reply_to).toBe(post);
+    rowsOf(await db.call(author.phone, 'delete_message', { p_id: post }));
+    expect(
+      await db.admin(`select id from public.messages where id = any($1::uuid[])`, [
+        [post, reply, replyToReply],
+      ]),
+    ).toEqual([]);
+    expect(errorOf(await say(other, randomUUID(), post))).toBe('message_not_found');
+  });
 });
 
 describe('side bets', () => {
