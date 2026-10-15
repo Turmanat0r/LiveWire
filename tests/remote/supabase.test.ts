@@ -94,6 +94,15 @@ describe.skipIf(!running)('the app’s server adapter, on a real Supabase', () =
     expect((await fresh.signIn()).id).toBe(ids[0]);
   });
 
+  it('reads "no such thing" as a refusal, not as the server failing', async () => {
+    // Withdrawing a catch that is already gone is how a retried withdrawal
+    // knows it got through the first time.
+    expect(await failureOf(device.call('withdraw_catch', { p_id: randomUUID() }))).toMatchObject({
+      kind: 'refused',
+      key: 'catch_not_found',
+    });
+  });
+
   it('signs the director in, and turns away any other account', async () => {
     const secret = process.env['SUPABASE_SECRET_KEY'];
     if (!secret) throw new Error('No admin key to make the accounts with');

@@ -63,7 +63,13 @@ export function httpFailure(status: number, key: string, detail: string): Failur
 
 function postgrestFailure(error: PostgrestError, status: number): RemoteError {
   // The database's own refusals put a stable key in the message and a
-  // sentence for people in the detail (see supabase/migrations).
+  // sentence for people in the detail (see supabase/migrations). "There is
+  // no such thing" is raised as SQLSTATE P0002, which PostgREST answers with
+  // a 500 as if the server had failed; it is a refusal like any other, and
+  // read as one, so the outbox never retries it for ever.
+  if (error.code === 'P0002') {
+    return new RemoteError({ kind: 'refused', key: error.message, detail: error.details });
+  }
   return new RemoteError(httpFailure(status, error.message, error.details));
 }
 
