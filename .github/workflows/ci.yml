@@ -108,10 +108,15 @@ jobs:
       - name: Point the app and the tests at it
         run: |
           npx supabase status -o json > "$RUNNER_TEMP/supabase.json"
+          # The throwaway stack's admin key, for making director accounts in the
+          # adapter's tests. Masked anyway, so it never shows in a log.
+          secret="$(jq -r '.SECRET_KEY // .SERVICE_ROLE_KEY' "$RUNNER_TEMP/supabase.json")"
+          echo "::add-mask::$secret"
           {
             echo "VITE_SUPABASE_URL=$(jq -r '.API_URL' "$RUNNER_TEMP/supabase.json")"
             echo "VITE_SUPABASE_PUBLISHABLE_KEY=$(jq -r '.PUBLISHABLE_KEY // .ANON_KEY' "$RUNNER_TEMP/supabase.json")"
             echo "SUPABASE_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+            echo "SUPABASE_SECRET_KEY=$secret"
           } >> "$GITHUB_ENV"
       # The same tests that run on a PC against the stand-in, here against the
       # real thing, so the two cannot quietly disagree.
