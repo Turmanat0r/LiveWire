@@ -121,4 +121,25 @@
     font-size: var(--text-sm);
     font-weight: 600;
   }
+
+  /* Where a catch was filed against the course: Safety and the director's review. */
+  .loc-badge {
+    display: inline-block;
+    margin-block-start: 5px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    background: var(--paper-2);
+    color: var(--steel);
+    font-size: var(--text-sm);
+  }
+
+  .loc-badge--good {
+    background: var(--status-approved-bg);
+    color: var(--status-approved-text);
+  }
+
+  .loc-badge--out {
+    background: var(--status-rejected-bg);
+    color: var(--status-rejected-text);
+  }
 }

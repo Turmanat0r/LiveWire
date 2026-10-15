@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   clockText,
   dateRangeText,
+  DEFAULT_SCHEDULE,
   dayLabelText,
   dayPhase,
   formatCountdown,
   lastDayText,
+  scheduleFrom,
   timeOfDayText,
   zonedParts,
 } from './time';
@@ -90,5 +92,19 @@ describe('formatting', () => {
     expect(clockText('14:05:00')).toBe('2:05 PM');
     expect(clockText('00:30:00')).toBe('12:30 AM');
     expect(clockText('12:00:00')).toBe('12:00 PM');
+  });
+});
+
+describe('scheduleFrom', () => {
+  it('reads the director’s times, and falls back on the default for anything unreadable', () => {
+    expect(scheduleFrom('06:30:00', '13:45:00', '15:00:00')).toEqual({
+      linesInMinutes: 390,
+      linesOutMinutes: 825,
+      finalCheckInMinutes: 900,
+    });
+    expect(scheduleFrom('', 'x', '16:00')).toEqual({
+      ...DEFAULT_SCHEDULE,
+      finalCheckInMinutes: 960,
+    });
   });
 });

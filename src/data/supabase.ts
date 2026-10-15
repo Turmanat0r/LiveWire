@@ -10,10 +10,12 @@ import {
   type PostgrestError,
   type RealtimeChannel,
   type SupabaseClient,
+  type User,
 } from '@supabase/supabase-js';
 import type { Database } from './database.types';
 import {
   RemoteError,
+  type Account,
   type Failure,
   type Json,
   type LiveStatus,
@@ -93,6 +95,15 @@ export function parseSignal(payload: unknown): Signal | null {
   return Object.keys(out).length > 0 ? { table, key: out } : null;
 }
 
+/** The director flag lives in the account's app metadata, which only the server can set. */
+function accountOf(user: User): Account {
+  return {
+    id: user.id,
+    director: user.app_metadata['director'] === true,
+    email: user.is_anonymous ? null : (user.email ?? null),
+  };
+}
+
 /** Runs one sign-in at a time across every tab, so a phone never makes two accounts. */
 function oneAtATime<T>(task: () => Promise<T>): Promise<T> {
   if (typeof navigator !== 'undefined' && 'locks' in navigator) {
@@ -104,32 +115,55 @@ function oneAtATime<T>(task: () => Promise<T>): Promise<T> {
 class SupabaseRemote implements Remote {
   private readonly client: SupabaseClient<Database>;
   private readonly tables: AnyTable;
-  private signingIn: Promise<string> | null = null;
+  private signingIn: Promise<Account> | null = null;
 
   constructor(client: SupabaseClient<Database>) {
     this.client = client;
     this.tables = client as unknown as AnyTable;
   }
 
-  signIn(): Promise<string> {
+  signIn(): Promise<Account> {
     this.signingIn ??= oneAtATime(() => this.signInNow()).finally(() => {
       this.signingIn = null;
     });
     return this.signingIn;
   }
 
-  private async signInNow(): Promise<string> {
+  private async signInNow(): Promise<Account> {
     // A stored sign-in that could not be refreshed (no signal) is an error
     // here, not an empty session: signing in afresh would cut the phone off
     // from the entries it holds.
     const { data, error } = await this.client.auth.getSession();
     if (error) throw authFailure(error);
-    if (data.session) return data.session.user.id;
+    if (data.session) return accountOf(data.session.user);
+    return this.anonymous();
+  }
+
+  private async anonymous(): Promise<Account> {
     const created = await this.client.auth.signInAnonymously();
     if (created.error) throw authFailure(created.error);
     const user = created.data.user;
     if (!user) throw new RemoteError({ kind: 'offline' });
-    return user.id;
+    return accountOf(user);
+  }
+
+  async signInDirector(email: string, password: string): Promise<Account> {
+    const { data, error } = await this.client.auth.signInWithPassword({ email, password });
+    if (error) throw authFailure(error);
+    const account = accountOf(data.user);
+    if (account.director) return account;
+    await this.signOut();
+    throw new RemoteError({
+      kind: 'refused',
+      key: 'not_director',
+      detail: 'That account is not the tournament director’s.',
+    });
+  }
+
+  async signOut(): Promise<Account> {
+    const { error } = await this.client.auth.signOut({ scope: 'local' });
+    if (error) throw authFailure(error);
+    return this.anonymous();
   }
 
   async readTable<T extends TableName>(table: T, eventId: string | null): Promise<Row<T>[]> {

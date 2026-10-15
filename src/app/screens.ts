@@ -45,7 +45,7 @@ export const SCREENS: readonly Screen[] = [
   { id: 'side-bets', path: '/side-bets', title: 'Side bets', summary: 'Smallest fish, most fish, first fish, or anything else you can settle.', theme: 'side-bets', milestone: null },
   { id: 'payouts', path: '/payouts', title: 'Payouts', summary: 'What each pool holds and how it splits.', theme: 'payouts', milestone: null },
   { id: 'chat', path: '/chat', title: 'Chat', summary: 'The boat-ramp group chat, with every catch announced.', theme: 'chat', milestone: null },
-  { id: 'director', path: '/director', title: 'Director', summary: 'Review catches, run the roster, set up the event and file the state report.', theme: 'director', milestone: 7 },
+  { id: 'director', path: '/director', title: 'Director', summary: 'Review catches, run the roster, set up the event and file the state report.', theme: 'director', milestone: null },
   { id: 'gallery', path: '/gallery', title: 'Gallery', summary: 'Every approved fish, yours first.', theme: 'gallery', milestone: 8 },
   { id: 'trophies', path: '/trophies', title: 'Trophy case', summary: 'Your placings across every tournament.', theme: 'trophies', milestone: 8 },
 ];

@@ -19,6 +19,9 @@ export interface Snapshot {
   readonly eventId: string | null;
   /** This phone's account, so it knows its own entry with no signal. */
   readonly userId?: string | null;
+  /** Signed in as the director, so the director's screens open with no signal. */
+  readonly director?: boolean;
+  readonly email?: string | null;
   /** How far this phone's clock was off when last checked, for the photo stamp. */
   readonly clock?: ClockReading | null;
   readonly tables: { readonly [T in TableName]?: readonly Row<T>[] };

@@ -15,8 +15,10 @@ import { BeaconCards } from './BeaconCards';
 import { BEACON_FIX_MS } from '../../app/BeaconWatch';
 import { CatchLocations, type CatchLocation } from './CatchLocations';
 import { WhereAmI } from './WhereAmI';
-import { callHref, helpMessage, locationBadge, parseVerdict, textHref, whenText } from './words';
+import { parseVerdict } from '../../domain/geo';
+import { callHref, helpMessage, locationBadge, textHref, whenText } from './words';
 import '../../ui/forms.css';
+import '../catches/catches.css';
 import './SafetyScreen.css';
 
 /**

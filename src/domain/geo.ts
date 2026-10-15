@@ -196,3 +196,20 @@ export function parseBoundary(value: unknown): Boundary {
   }
   return { kind: 'none' };
 }
+
+/** A course verdict as stored with a catch, read defensively. */
+export function parseVerdict(value: unknown): BoundaryVerdict | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const v = value as Record<string, unknown>;
+  if (v['kind'] === 'unchecked') return { kind: 'unchecked' };
+  const within = v['within'];
+  const outsideMiles = typeof v['outsideMiles'] === 'number' ? v['outsideMiles'] : 0;
+  if (typeof within !== 'boolean') return null;
+  if (v['kind'] === 'circle' && typeof v['fromLaunchMiles'] === 'number') {
+    return { kind: 'circle', within, fromLaunchMiles: v['fromLaunchMiles'], outsideMiles };
+  }
+  if (v['kind'] === 'polygon' && typeof v['edgeMiles'] === 'number') {
+    return { kind: 'polygon', within, edgeMiles: v['edgeMiles'], outsideMiles };
+  }
+  return null;
+}
