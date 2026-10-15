@@ -1,0 +1,94 @@
+@layer components {
+  /* The old app's side bet: title and stake, how it is decided, who leads. */
+  .bets {
+    padding: 0;
+    list-style: none;
+  }
+
+  .bet {
+    padding-block: 12px;
+    border-block-end: 1px solid var(--line);
+  }
+
+  .bet:last-child {
+    border-block-end: 0;
+  }
+
+  .card .bet__top {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+
+  .bet__title {
+    color: var(--deep);
+    font-family: var(--font-serif);
+    font-size: var(--text-base);
+  }
+
+  .bet__stake {
+    flex-shrink: 0;
+    color: var(--gold-deep);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+
+  .bet__in {
+    margin-inline-start: 6px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: var(--status-approved-bg);
+    color: var(--status-approved-text);
+    font-family: var(--font-body);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    vertical-align: middle;
+  }
+
+  .card .bet__meta {
+    margin-block-start: 3px;
+    color: var(--steel);
+    font-size: var(--text-sm);
+  }
+
+  .card .bet__standing {
+    margin-block-start: 8px;
+    padding: 8px 10px;
+    border-inline-start: 3px solid var(--olive);
+    background: var(--paper-2);
+    color: var(--ink);
+    font-size: var(--text-sm);
+  }
+
+  .card .bet__standing--settled {
+    border-inline-start-color: var(--gold);
+  }
+
+  .bet__standing strong {
+    color: var(--deep);
+    font-family: var(--font-serif);
+  }
+
+  .bet__actions {
+    margin-block-start: 8px;
+  }
+
+  .bet__call {
+    display: grid;
+    gap: 6px;
+    margin-block-start: 8px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+  }
+
+  .bet__call legend {
+    padding-inline: 4px;
+    color: var(--deep);
+    font-size: var(--text-md);
+    font-weight: 600;
+  }
+}
