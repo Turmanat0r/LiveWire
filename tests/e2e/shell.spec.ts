@@ -78,8 +78,9 @@ test('the tab bar stays reachable and sized for a thumb', async ({ page }) => {
   }
 });
 
-// One screen per colour theme. Like the old app, LiveWire looks the same with
-// the phone in dark mode, which the home screen checks.
+// One screen per colour theme, and every screen with content of its own. Like
+// the old app, LiveWire looks the same with the phone in dark mode, which the
+// home screen checks.
 for (const [path, colorScheme] of [
   ['/', 'light'],
   ['/', 'dark'],
@@ -89,6 +90,8 @@ for (const [path, colorScheme] of [
   ['/my-catches', 'light'],
   ['/livewell', 'light'],
   ['/standings', 'light'],
+  ['/payouts', 'light'],
+  ['/big-fish', 'light'],
   ['/side-bets', 'light'],
   ['/safety', 'light'],
   ['/chat', 'light'],

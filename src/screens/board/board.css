@@ -1,0 +1,115 @@
+@layer components {
+  /* The old app's leaderboard row: place, who, and the number that ranks them. */
+  .lb {
+    padding: 0;
+    list-style: none;
+  }
+
+  .lbrow {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding-block: 10px;
+    border-block-end: 1px solid var(--line);
+  }
+
+  .lbrow:last-child,
+  .card > .lbrow {
+    border-block-end: 0;
+  }
+
+  .lbrow--mine {
+    margin-inline: -8px;
+    padding-inline: 8px;
+    border-radius: var(--radius-sm);
+    background: var(--best-bg);
+  }
+
+  .lbrow__rank {
+    flex-shrink: 0;
+    inline-size: 22px;
+    color: var(--gold-deep);
+    font-family: var(--font-serif);
+    font-size: var(--text-lg);
+    font-weight: 600;
+    text-align: center;
+  }
+
+  .lbrow__who {
+    flex: 1;
+    min-inline-size: 0;
+  }
+
+  .card .lbrow__name {
+    display: block;
+    color: var(--ink);
+    font-size: var(--text-md);
+    font-weight: 500;
+  }
+
+  .card .lbrow__sub {
+    display: block;
+    color: var(--steel);
+    font-size: var(--text-sm);
+  }
+
+  .lbrow__you {
+    margin-inline-start: 6px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: var(--status-pending-bg);
+    color: var(--status-pending-text);
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+
+  .lbrow__len {
+    flex-shrink: 0;
+    color: var(--deep);
+    font-family: var(--font-serif);
+    font-size: var(--text-base);
+    font-weight: 600;
+  }
+
+  /* Solo / Team. */
+  .divtabs {
+    display: flex;
+    gap: 8px;
+  }
+
+  .divtabs button {
+    flex: 1;
+    min-block-size: var(--tap-target);
+    padding: 9px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--paper);
+    color: var(--ink);
+    font: inherit;
+    font-size: var(--text-md);
+    cursor: pointer;
+  }
+
+  .divtabs button[aria-pressed='true'] {
+    border-color: var(--olive);
+    background: var(--olive);
+    color: var(--white);
+  }
+
+  /* ---- payouts ---- */
+
+  .pool + .pool {
+    margin-block-start: 14px;
+  }
+
+  .card .pool__head {
+    color: var(--ink);
+    font-size: var(--text-md);
+    font-weight: 600;
+  }
+
+  .divider {
+    border: 0;
+    border-block-start: 1px solid var(--line);
+  }
+}
