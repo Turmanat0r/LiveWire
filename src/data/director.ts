@@ -17,6 +17,7 @@ import { scheduleFrom } from '../domain/time';
 import { entryNumberText } from '../domain/identity';
 import { standings } from '../domain/scoring';
 import { boardCatches, useBoard } from './board';
+import type { OutboxItem } from './local';
 import type { Row } from './tables';
 import { useSync } from './useSync';
 import { eventDates } from './selectors';
@@ -206,7 +207,130 @@ export interface Contestant {
   /** 0 when not on the board. */
   readonly rank: number;
   readonly best: number;
+  /** One per fishing day, in order, with the day it is. */
   readonly days: readonly DayStatus[];
+  readonly dates: readonly string[];
+  /** Each day's check-in and check-out, as the server has them. */
+  readonly times: readonly { readonly inAt: string | null; readonly outAt: string | null }[];
+  readonly resident: boolean;
+  readonly emergencyName: string;
+  readonly emergencyPhone: string;
+  /** Their catches, newest first. */
+  readonly fish: readonly Row<'catches'>[];
+  /** A change the director made to this angler is still waiting to send. */
+  readonly sending: boolean;
+}
+
+type Args = Readonly<Record<string, unknown>>;
+const text = (a: Args, k: string) => (typeof a[k] === 'string' ? a[k] : null);
+
+/**
+ * The director's changes still in the outbox, laid over the copy, so the
+ * roster shows each one at once, signal or not.
+ */
+export function withQueued(
+  list: readonly Contestant[],
+  items: readonly OutboxItem[],
+): Contestant[] {
+  let out = [...list];
+  for (const item of items) {
+    if (item.failure !== null) continue;
+    for (const step of item.steps) {
+      if (step.kind !== 'call') continue;
+      const a: Args = step.args;
+      const angler = text(a, 'p_angler_id');
+      const entry = text(a, 'p_entry_id');
+      const change = (match: (c: Contestant) => boolean, to: (c: Contestant) => Contestant) => {
+        out = out.map((c) => (match(c) ? { ...to(c), sending: true } : c));
+      };
+      switch (step.fn) {
+        case 'director_set_fee_paid':
+          change(
+            (c) => c.entryId === entry,
+            (c) => ({ ...c, feePaid: a['p_paid'] === true }),
+          );
+          break;
+        case 'director_disqualify':
+          change(
+            (c) => c.anglerId === angler,
+            (c) => ({ ...c, disqualified: true, dqReason: text(a, 'p_reason') ?? '', rank: 0 }),
+          );
+          break;
+        case 'director_reinstate':
+          change(
+            (c) => c.anglerId === angler,
+            (c) => ({ ...c, disqualified: false, dqReason: '' }),
+          );
+          break;
+        case 'director_update_angler':
+          change(
+            (c) => c.anglerId === angler,
+            (c) => ({
+              ...c,
+              name: text(a, 'p_full_name') ?? c.name,
+              phone: text(a, 'p_phone') ?? c.phone,
+              handle: text(a, 'p_handle') ?? c.handle,
+              bigFish: a['p_big_fish'] === true,
+              resident: a['p_resident'] === true,
+              emergencyName: text(a, 'p_emergency_name') ?? c.emergencyName,
+              emergencyPhone: text(a, 'p_emergency_phone') ?? c.emergencyPhone,
+            }),
+          );
+          break;
+        case 'director_set_check_in': {
+          const day = text(a, 'p_day');
+          const status: DayStatus = !a['p_in_at']
+            ? 'not in'
+            : a['p_out_at']
+              ? 'complete'
+              : 'on water';
+          const inAt = text(a, 'p_in_at');
+          const outAt = text(a, 'p_out_at');
+          change(
+            (c) => c.anglerId === angler,
+            (c) => ({
+              ...c,
+              days: c.days.map((d, i) => (c.dates[i] === day ? status : d)),
+              times: c.times.map((t, i) => (c.dates[i] === day ? { inAt, outAt } : t)),
+            }),
+          );
+          break;
+        }
+        case 'director_remove_entry':
+          out = out.filter((c) => c.entryId !== entry);
+          break;
+        default:
+          break;
+      }
+    }
+  }
+  return out;
+}
+
+export interface Outstanding {
+  /** Entries with no fee matched, one per team. */
+  readonly entries: readonly { readonly entryId: string; readonly names: string }[];
+  readonly cents: number;
+}
+
+/** What the roster says has not been paid yet, priced from the event's fees. */
+export function outstandingFees(
+  list: readonly Contestant[],
+  fees: { readonly solo: number; readonly team: number; readonly bigFish: number },
+): Outstanding {
+  const byEntry = new Map<string, Contestant[]>();
+  for (const c of list) {
+    if (c.feePaid) continue;
+    byEntry.set(c.entryId, [...(byEntry.get(c.entryId) ?? []), c]);
+  }
+  let cents = 0;
+  const entries = [...byEntry].map(([entryId, people]) => {
+    const [first] = people;
+    cents += first?.division === 'team' ? fees.team : fees.solo;
+    cents += people.filter((p) => p.bigFish).length * fees.bigFish;
+    return { entryId, names: people.map((p) => p.name).join(' & ') };
+  });
+  return { entries, cents };
 }
 
 /**
@@ -221,6 +345,8 @@ export function useContestants(): readonly Contestant[] {
   const privates = useSync((s) => s.tables.angler_private);
   const checkIns = useSync((s) => s.tables.check_ins);
   const days = useSync((s) => s.tables.event_days);
+  const catchRows = useSync((s) => s.tables.catches);
+  const items = useSync((s) => s.outbox.items);
   return useMemo(() => {
     if (!board) return [];
     const { event, anglers, catches, species } = board;
@@ -273,16 +399,28 @@ export function useContestants(): readonly Contestant[] {
           rank: a.disqualified ? 0 : (rank.get(a.id) ?? 0),
           best: best.get(a.id) ?? 0,
           days: dates.map(statusOn),
+          dates,
+          times: dates.map((day) => {
+            const c = [...checkIns.values()].find((x) => x.angler_id === a.id && x.day === day);
+            return { inAt: c?.in_at ?? null, outAt: c?.out_at ?? null };
+          }),
+          resident: p?.resident ?? false,
+          emergencyName: p?.emergency_name ?? '',
+          emergencyPhone: p?.emergency_phone ?? '',
+          fish: [...catchRows.values()]
+            .filter((c) => c.angler_id === a.id)
+            .sort((x, y) => y.logged_at.localeCompare(x.logged_at)),
+          sending: false,
         },
       ];
     });
-    return out.sort((x, y) => {
+    return withQueued(out, items).sort((x, y) => {
       if (x.rank && y.rank) return x.rank - y.rank || x.name.localeCompare(y.name);
       if (x.rank) return -1;
       if (y.rank) return 1;
       return x.name.localeCompare(y.name);
     });
-  }, [board, anglerRows, entries, entryPrivate, privates, checkIns, days]);
+  }, [board, anglerRows, entries, entryPrivate, privates, checkIns, days, catchRows, items]);
 }
 
 /** Case does not matter to a search. */

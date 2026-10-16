@@ -263,3 +263,126 @@ describe('contestants', () => {
     expect(rows()).toEqual(['Sam LeeFee outstanding']);
   });
 });
+
+describe('acting on a contestant', () => {
+  async function openRow() {
+    const { server, angler } = field();
+    server.put('event_days', dayRow('2027-09-19'));
+    const sent = await open(server);
+    await signIn(sent.user);
+    await sent.user.click(screen.getByRole('button', { name: /Contestants/ }));
+    server.online = false;
+    await sent.user.click(screen.getByRole('button', { name: /Daniel Turman/, expanded: false }));
+    const steps = () => sent.sync.getState().outbox.items.flatMap((i) => i.steps);
+    const row = () => {
+      const li = screen
+        .getByRole('list', { name: 'Anglers' })
+        .querySelector<HTMLElement>('li.crow');
+      if (!li) throw new Error('the angler’s row');
+      return li;
+    };
+    return { ...sent, server, angler, steps, row };
+  }
+
+  it('matches a fee, and shows it at once', async () => {
+    const { user, angler, steps, row } = await openRow();
+    expect(row().textContent).toContain('Fee outstanding');
+    await user.click(within(row()).getByRole('button', { name: 'Fee received' }));
+    await act(settle);
+    expect(steps()).toMatchObject([
+      { fn: 'director_set_fee_paid', args: { p_entry_id: angler.entry.id, p_paid: true } },
+    ]);
+    expect(row().querySelector('.crow__name')?.textContent).toBe('Daniel Turman');
+    expect(row().textContent).toContain('Waiting to send.');
+  });
+
+  it('disqualifies with a reason, and can reinstate', async () => {
+    const { user, angler, steps, row } = await openRow();
+    await user.click(within(row()).getByRole('button', { name: 'Disqualify' }));
+    await user.type(within(row()).getByLabelText(/Reason/), 'Fish not on a board');
+    await user.click(within(row()).getByRole('button', { name: 'Yes, disqualify' }));
+    await act(settle);
+    expect(steps()).toMatchObject([
+      {
+        fn: 'director_disqualify',
+        args: { p_angler_id: angler.captainId, p_reason: 'Fish not on a board' },
+      },
+    ]);
+    expect(row().textContent).toContain('Disqualified: Fish not on a board');
+    await user.click(within(row()).getByRole('button', { name: 'Reinstate' }));
+    await act(settle);
+    expect(steps()[1]).toMatchObject({ fn: 'director_reinstate' });
+  });
+
+  it('checks an angler in and out for them, day by day', async () => {
+    const { user, angler, steps, row } = await openRow();
+    const days = () =>
+      within(row())
+        .getAllByRole('listitem')
+        .filter((li) => li.closest('.cdays'));
+    expect(days()).toHaveLength(2);
+    const [first] = days();
+    if (!first) throw new Error('two days');
+    await user.click(within(first).getByRole('button', { name: 'Check in now' }));
+    await act(settle);
+    expect(steps()[0]).toMatchObject({
+      fn: 'director_set_check_in',
+      args: { p_angler_id: angler.captainId, p_day: '2027-09-18', p_out_at: null },
+    });
+    expect(row().textContent).toContain('Day 1 on water · Day 2 not in');
+    const [again] = days();
+    if (!again) throw new Error('two days');
+    await user.click(within(again).getByRole('button', { name: 'Check out now' }));
+    await act(settle);
+    expect(row().textContent).toContain('Day 1 complete');
+  });
+
+  it('corrects an angler’s details', async () => {
+    const { user, angler, steps, row } = await openRow();
+    await user.click(within(row()).getByRole('button', { name: 'Edit profile' }));
+    const phone = within(row()).getByLabelText('Phone');
+    await user.clear(phone);
+    await user.type(phone, '406-555-0177');
+    await user.click(within(row()).getByRole('button', { name: 'Save' }));
+    await act(settle);
+    expect(steps()).toMatchObject([
+      {
+        fn: 'director_update_angler',
+        args: {
+          p_angler_id: angler.captainId,
+          p_phone: '406-555-0177',
+          p_full_name: 'Daniel Turman',
+        },
+      },
+    ]);
+    expect(row().textContent).toContain('406-555-0177');
+  });
+
+  it('removes an entry only after saying what goes with it', async () => {
+    const { user, angler, steps, row } = await openRow();
+    await user.click(within(row()).getByRole('button', { name: 'Remove' }));
+    expect(row().textContent).toMatch(/permanently deletes the entry and 0 catches/);
+    await user.click(within(row()).getByRole('button', { name: 'Yes, remove permanently' }));
+    await act(settle);
+    expect(steps()).toMatchObject([
+      { fn: 'director_remove_entry', args: { p_entry_id: angler.entry.id } },
+    ]);
+    expect(screen.getByText('No anglers registered yet.')).toBeTruthy();
+  });
+
+  it('marks every outstanding fee received in one go, after saying how much', async () => {
+    const { server } = field();
+    putEntry(server, entryRows({ number: 2, userId: 'device-2', names: ['Second Angler'] }));
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { sync, user } = await open(server);
+    await signIn(user);
+    await user.click(screen.getByRole('button', { name: /Contestants/ }));
+    expect(screen.getByText(/Entry fees outstanding · \$\d+\.\d\d/)).toBeTruthy();
+    server.online = false;
+    await user.click(screen.getByRole('button', { name: 'Mark all 2 received' }));
+    await act(settle);
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/Mark all 2 outstanding entries/));
+    expect(sync.getState().outbox.items[0]?.steps).toHaveLength(2);
+    expect(screen.queryByText(/Entry fees outstanding/)).toBeNull();
+  });
+});
