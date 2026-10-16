@@ -5,13 +5,13 @@ import {
   type Contestant,
   type DayStatus,
 } from '../../data/director';
-import type { Step } from '../../data/local';
-import { useSync, useSyncEngine } from '../../data/useSync';
+import { useSync } from '../../data/useSync';
 import { dayLabelText, timeOfDayText } from '../../domain/time';
 import { Card } from '../../ui/Card';
 import { inchesText } from '../board/StandingsScreen';
 import { StatusBadge } from '../catches/CatchCard';
 import { callHref } from '../safety/words';
+import { useDirectorQueue } from './queue';
 
 type Filter = 'all' | 'solo' | 'team' | 'unpaid' | 'dq';
 
@@ -43,14 +43,6 @@ function daysText(days: readonly DayStatus[]): string {
 }
 
 const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
-
-/** Every change here goes through the outbox: shown at once, sent when there is signal. */
-function useDirectorQueue() {
-  const sync = useSyncEngine();
-  return (label: string, steps: Step[]) => {
-    void sync.queue({ id: crypto.randomUUID(), label, createdAt: Date.now(), steps });
-  };
-}
 
 /**
  * Every registered angler, findable by name, handle, phone or Tournament ID,

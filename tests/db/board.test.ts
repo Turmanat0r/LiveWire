@@ -190,6 +190,29 @@ describe('money', () => {
     ).toEqual([{ amount_cents: 10_000 }]);
   });
 
+  it('sets the awards budget for the director only, and nothing else about the event', async () => {
+    const { phone } = await angler();
+    const args = { p_event_id: eventId, p_cents: 25_000 };
+    expect(errorOf(await db.call(phone, 'director_set_awards_budget', args))).toBe('director_only');
+    const [before] = await db.admin(
+      `select name, fee_solo_cents, payout_basis_points from public.events where id = $1`,
+      [eventId],
+    );
+    const event = rowOf(await db.call(director, 'director_set_awards_budget', args));
+    expect(event).toMatchObject({ ...before, awards_budget_cents: 25_000 });
+    expect(
+      errorOf(await db.call(director, 'director_set_awards_budget', { ...args, p_cents: -1 })),
+    ).toBe('invalid_amount');
+    expect(
+      errorOf(
+        await db.call(director, 'director_set_awards_budget', {
+          ...args,
+          p_event_id: randomUUID(),
+        }),
+      ),
+    ).toBe('event_not_found');
+  });
+
   it('counts pools exactly as the payout rules do, for any mix of entries', async () => {
     const { eventId: poolEvent } = await setUpEvent(db, { current: false, director });
     const random = seededRandom(2027);

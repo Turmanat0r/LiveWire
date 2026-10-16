@@ -619,4 +619,72 @@
     font-size: var(--text-sm);
     text-transform: uppercase;
   }
+
+  /* ---- payout calculator ---- */
+
+  .money-part > * + * {
+    margin-block-start: var(--space-3);
+  }
+
+  .money-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: flex-end;
+  }
+
+  .money-form .field {
+    flex: 1 1 160px;
+  }
+
+  .don-form > * + * {
+    margin-block-start: var(--space-3);
+  }
+
+  .don-form__pair {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: var(--space-3);
+  }
+
+  .dons {
+    display: grid;
+    gap: 8px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .don {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px;
+    border: 1px solid var(--line);
+    background: var(--paper);
+  }
+
+  .don--editing {
+    display: block;
+  }
+
+  .don__what {
+    display: flex;
+    flex: 1 1 160px;
+    flex-direction: column;
+    gap: 2px;
+    min-inline-size: 0;
+  }
+
+  .don__amount {
+    color: var(--ink);
+    font-size: var(--text-md);
+  }
+
+  .don__note {
+    color: var(--steel);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
 }

@@ -5,13 +5,15 @@ import { useSync } from '../../data/useSync';
 import { dollarsText } from '../../domain/money';
 import { timeOfDayText } from '../../domain/time';
 import { Page } from '../../ui/Page';
-import { payouts, sharesFrom, splitText, type DivisionPool } from './payouts';
+import {
+  centsText as money,
+  payouts,
+  sharesFrom,
+  splitText,
+  type DivisionPool,
+  type Payouts,
+} from './payouts';
 import './board.css';
-
-/** $12.00: the payout screen always shows cents, as the old one did. */
-function money(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
-}
 
 function Division({ pool }: { readonly pool: DivisionPool }) {
   const disqualified = pool.entries - pool.eligible;
@@ -48,6 +50,42 @@ function Division({ pool }: { readonly pool: DivisionPool }) {
         </p>
       ) : null}
     </section>
+  );
+}
+
+/** Every pool and its split: the field's payout screen, and the director's calculator. */
+export function PoolsBody({ model }: { readonly model: Payouts }) {
+  return (
+    <>
+      {model.generalCents > 0 ? (
+        <>
+          <div className="lbrow">
+            <span className="lbrow__who">
+              <span className="lbrow__name">General tournament fund</span>
+              <span className="lbrow__sub">Not split: held for director discretion</span>
+            </span>
+            <span className="lbrow__len">{money(model.generalCents)}</span>
+          </div>
+          <hr className="divider" />
+        </>
+      ) : null}
+      <Division pool={model.solo} />
+      <Division pool={model.team} />
+      <hr className="divider" />
+      <div className="lbrow">
+        <span className="lbrow__who">
+          <span className="lbrow__name">Big Fish pot</span>
+          <span className="lbrow__sub">
+            {model.bigFish.anglers} angler{model.bigFish.anglers === 1 ? '' : 's'} opted in, winner
+            take all
+            {model.bigFish.donatedCents > 0
+              ? ` · +${money(model.bigFish.donatedCents)} donated`
+              : ''}
+          </span>
+        </span>
+        <span className="lbrow__len">{money(model.bigFish.poolCents)}</span>
+      </div>
+    </>
   );
 }
 
@@ -88,34 +126,7 @@ export function PayoutsScreen() {
         </p>
       ) : (
         <>
-          {model.generalCents > 0 ? (
-            <>
-              <div className="lbrow">
-                <span className="lbrow__who">
-                  <span className="lbrow__name">General tournament fund</span>
-                  <span className="lbrow__sub">Not split: held for director discretion</span>
-                </span>
-                <span className="lbrow__len">{money(model.generalCents)}</span>
-              </div>
-              <hr className="divider" />
-            </>
-          ) : null}
-          <Division pool={model.solo} />
-          <Division pool={model.team} />
-          <hr className="divider" />
-          <div className="lbrow">
-            <span className="lbrow__who">
-              <span className="lbrow__name">Big Fish pot</span>
-              <span className="lbrow__sub">
-                {model.bigFish.anglers} angler{model.bigFish.anglers === 1 ? '' : 's'} opted in,
-                winner take all
-                {model.bigFish.donatedCents > 0
-                  ? ` · +${money(model.bigFish.donatedCents)} donated`
-                  : ''}
-              </span>
-            </span>
-            <span className="lbrow__len">{money(model.bigFish.poolCents)}</span>
-          </div>
+          <PoolsBody model={model} />
           {kept && event ? (
             <p className="hint">
               Entry counts as of {timeOfDayText(kept.at, event.time_zone)}. Entry fees:{' '}

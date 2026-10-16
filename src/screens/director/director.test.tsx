@@ -386,3 +386,120 @@ describe('acting on a contestant', () => {
     expect(screen.queryByText(/Entry fees outstanding/)).toBeNull();
   });
 });
+
+describe('the payout calculator', () => {
+  function donation(over: Partial<Row<'donations'>> = {}): Row<'donations'> {
+    return {
+      id: crypto.randomUUID(),
+      event_id: EVENT_ID,
+      target: 'solo',
+      amount_cents: 5000,
+      note: 'Bait shop',
+      created_at: '2027-09-01T12:00:00+00:00',
+      created_by: 'director-1',
+      ...over,
+    };
+  }
+
+  async function openTool(server: FakeServer) {
+    const sent = await open(server);
+    await signIn(sent.user);
+    await sent.user.click(screen.getByRole('button', { name: /Payout calculator/ }));
+    return sent;
+  }
+
+  it('builds the pools from the fees received, and names anyone in the money who has not paid', async () => {
+    const { server, angler } = field();
+    putEntry(
+      server,
+      entryRows({ number: 2, userId: 'device-2', names: ['Paid Angler'], feePaid: true }),
+    );
+    server.put('catches', catchRow({ angler_id: angler.captainId }));
+    server.put('donations', donation());
+    await openTool(server);
+
+    expect(screen.getByRole('button', { name: /Payout calculator/ }).textContent).toContain(
+      '$90.00 across current pools',
+    );
+    const solo = screen.getByRole('region', { name: 'Solo division' });
+    expect(solo.textContent).toContain('1 entry · $80.00 pool · +$50.00 donated');
+    expect(solo.textContent).toContain('1st$40.00');
+    expect(
+      screen.getByText('Big Fish pot', { selector: '.lbrow__name' }).closest('.lbrow')?.textContent,
+    ).toContain('$10.00');
+    expect(screen.getByText('Fees outstanding · $40.00')).toBeTruthy();
+    expect(screen.getByText('Daniel Turman (1st in the solo division)')).toBeTruthy();
+    expect(screen.getByText(/1 solo, 1 Big Fish: not counted in the pools above/)).toBeTruthy();
+    expect(
+      within(screen.getByRole('list', { name: 'Donations' })).getByText('Bait shop'),
+    ).toBeTruthy();
+  });
+
+  it('logs, corrects and removes a donation, and sets the awards budget, with no signal', async () => {
+    const { server } = field();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { sync, user } = await openTool(server);
+    server.online = false;
+    const steps = () => sync.getState().outbox.items.flatMap((i) => i.steps);
+    const list = () => screen.getByRole('list', { name: 'Donations' });
+    expect(screen.getByText('No donations logged yet.')).toBeTruthy();
+
+    await user.type(screen.getByLabelText('Amount ($)'), 'ten');
+    await user.click(screen.getByRole('button', { name: 'Add donation' }));
+    expect(screen.getByRole('alert').textContent).toBe('Enter a donation amount greater than $0.');
+
+    await user.selectOptions(screen.getByLabelText('Add to'), 'Team division pool');
+    await user.clear(screen.getByLabelText('Amount ($)'));
+    await user.type(screen.getByLabelText('Amount ($)'), '25');
+    await user.type(screen.getByLabelText('From / note (optional)'), 'Sponsor');
+    await user.click(screen.getByRole('button', { name: 'Add donation' }));
+    await act(settle);
+    expect(steps()).toMatchObject([
+      {
+        fn: 'director_record_donation',
+        args: { p_event_id: EVENT_ID, p_target: 'team', p_amount_cents: 2500, p_note: 'Sponsor' },
+      },
+    ]);
+    expect(list().textContent).toContain('$25.00 · Team pool');
+    expect(list().textContent).toContain('Waiting to send.');
+    expect(screen.getByRole('region', { name: 'Team division' }).textContent).toContain(
+      '+$25.00 donated',
+    );
+
+    // Corrected: the old one goes and the new one is logged, in one go.
+    await user.click(within(list()).getByRole('button', { name: 'Edit' }));
+    const amount = within(list()).getByLabelText('Amount ($)');
+    await user.clear(amount);
+    await user.type(amount, '30');
+    await user.click(within(list()).getByRole('button', { name: 'Save' }));
+    await act(settle);
+    const [, removed, logged] = steps();
+    expect(removed).toMatchObject({ fn: 'director_delete_donation' });
+    expect(logged).toMatchObject({
+      fn: 'director_record_donation',
+      args: { p_amount_cents: 3000 },
+    });
+    expect(within(list()).getAllByRole('listitem')).toHaveLength(1);
+    expect(list().textContent).toContain('$30.00 · Team pool');
+
+    await user.click(within(list()).getByRole('button', { name: 'Remove' }));
+    await act(settle);
+    expect(confirm).toHaveBeenCalledWith(
+      'Remove the $30.00 donation to the team pool? It comes out of the pool.',
+    );
+    expect(steps().at(-1)).toMatchObject({ fn: 'director_delete_donation' });
+    expect(screen.getByText('No donations logged yet.')).toBeTruthy();
+
+    await user.type(screen.getByLabelText('Awards budget ($)'), '250');
+    await user.click(screen.getByRole('button', { name: 'Save budget' }));
+    await act(settle);
+    expect(steps().at(-1)).toMatchObject({
+      fn: 'director_set_awards_budget',
+      args: { p_event_id: EVENT_ID, p_cents: 25_000 },
+    });
+    expect(screen.getByText('Awards budget').closest('.lbrow')?.textContent).toContain('−$250.00');
+    expect(
+      screen.getByText('The awards budget is more than the tournament has raised.'),
+    ).toBeTruthy();
+  });
+});

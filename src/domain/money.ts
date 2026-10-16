@@ -123,3 +123,16 @@ export function dollarsText(cents: Cents): string {
   const dollars = cents / 100;
   return Number.isInteger(dollars) ? `$${String(dollars)}` : `$${dollars.toFixed(2)}`;
 }
+
+/**
+ * Dollars as the director types them, to cents: "25", "25.5", "$1,250.00".
+ * Null for anything else, a negative amount or a fraction of a cent included.
+ */
+export function parseDollars(text: string): Cents | null {
+  const clean = text.trim().replace(/^\$/, '').replace(/,/g, '');
+  const match = /^(\d{0,7})(?:\.(\d{0,2}))?$/.exec(clean);
+  if (!match) return null;
+  const [, whole = '', cents] = match;
+  if (whole === '' && !cents) return null;
+  return Number(whole || '0') * 100 + Number((cents ?? '').padEnd(2, '0'));
+}
