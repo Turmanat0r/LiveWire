@@ -333,4 +333,209 @@
     background: var(--danger);
     color: var(--white);
   }
+
+  /* ---- the director's tools: the old app's grid of tiles ---- */
+
+  .director-tools {
+    display: grid;
+    gap: 10px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .director-tool {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    inline-size: 100%;
+    min-block-size: 64px;
+    padding: 13px;
+    border: 2px solid var(--deep);
+    border-inline-start: 5px solid var(--gold);
+    background: var(--white);
+    color: var(--deep);
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .director-tool[aria-pressed='true'] {
+    border-color: var(--deep);
+    border-inline-start-color: var(--gold);
+    background: var(--deep);
+    color: var(--white);
+  }
+
+  .director-tool .icon {
+    flex-shrink: 0;
+    inline-size: 22px;
+    block-size: 22px;
+  }
+
+  .director-tool__copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .director-tool strong {
+    font-family: var(--font-display);
+    font-size: var(--text-md);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .director-tool__copy span {
+    color: var(--steel);
+    font-size: var(--text-sm);
+  }
+
+  .director-tool[aria-pressed='true'] .director-tool__copy span {
+    color: var(--line);
+  }
+
+  /* ---- contestants ---- */
+
+  .contestant-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .contestant-filters button {
+    flex: 1 1 auto;
+    min-inline-size: 64px;
+    min-block-size: var(--tap-target);
+    padding: 7px 6px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--paper);
+    color: var(--ink);
+    font: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+
+  .contestant-filters button[aria-pressed='true'] {
+    border-color: var(--deep);
+    background: var(--deep);
+    color: var(--white);
+  }
+
+  .crows {
+    display: grid;
+    gap: 8px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .crow {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-inline-start: 3px solid var(--line);
+    background: var(--paper);
+  }
+
+  .crow--leader {
+    border-inline-start-color: var(--gold);
+  }
+
+  /* Amber, not red: an unmatched fee is bookkeeping, not a punishment. */
+  .crow--unpaid {
+    border-inline-start-color: var(--beacon-gold);
+    background: var(--best-bg);
+  }
+
+  .crow--dq {
+    border-inline-start-color: var(--danger);
+    background: var(--overdue-bg);
+  }
+
+  .crow__rank {
+    flex-shrink: 0;
+    inline-size: 26px;
+    color: var(--gold-deep);
+    font-family: var(--font-serif);
+    font-size: var(--text-base);
+    font-weight: 600;
+    text-align: center;
+  }
+
+  .crow__id {
+    flex: 1;
+    min-inline-size: 0;
+  }
+
+  .card .crow__name {
+    color: var(--ink);
+    font-size: var(--text-md);
+    font-weight: 600;
+  }
+
+  .crow__tag {
+    margin-inline-start: 6px;
+    white-space: nowrap;
+    padding: 2px 5px;
+    border-radius: 3px;
+    background: var(--status-pending-bg);
+    color: var(--status-pending-text);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    vertical-align: middle;
+  }
+
+  .crow__tag--dq {
+    background: var(--status-rejected-bg);
+    color: var(--status-rejected-text);
+  }
+
+  /* What an angler who lost it needs read to them: big and unmistakable. */
+  .card .crow__code {
+    margin-block-start: 2px;
+    color: var(--ink);
+    font-size: var(--text-sm);
+  }
+
+  .crow__code strong {
+    font-family: var(--font-mono);
+    font-size: var(--text-base);
+    letter-spacing: 0.1em;
+  }
+
+  .card .crow__sub {
+    margin-block-start: 2px;
+    color: var(--steel);
+    font-size: var(--text-sm);
+  }
+
+  .crow__sub a {
+    color: var(--deep);
+  }
+
+  .card .crow__note {
+    margin-block-start: 4px;
+    color: var(--danger);
+    font-size: var(--text-sm);
+  }
+
+  .crow__best {
+    flex-shrink: 0;
+    text-align: end;
+  }
+
+  .crow__best strong {
+    display: block;
+    color: var(--deep);
+    font-family: var(--font-serif);
+    font-size: var(--text-base);
+  }
+
+  .crow__best-label {
+    color: var(--steel);
+    font-size: var(--text-sm);
+    text-transform: uppercase;
+  }
 }
