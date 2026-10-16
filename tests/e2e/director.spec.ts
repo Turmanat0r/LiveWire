@@ -8,8 +8,8 @@ import { registerSolo, setUpEvent } from '../db/fixtures';
  * The director, on a real Supabase (CI starts one): sign in with the
  * director's account, see another angler's fish under their real name with
  * its evidence, approve it, find that angler's Tournament ID by their phone,
- * match their fee and check them in, log a donation and the awards budget,
- * and sign out to an ordinary phone.
+ * match their fee and check them in, stand down their beacon, log a donation
+ * and the awards budget, and sign out to an ordinary phone.
  */
 // Skipped on a PC with no Supabase. In CI one is always started, so there a
 // missing server fails these rather than quietly skipping them.
@@ -131,6 +131,40 @@ test('the director signs in, approves a fish, and signs out', async ({ page }) =
       { timeout: 20_000 },
     )
     .toEqual({ paid: true, checked_in: true });
+
+  // Their phone raises a beacon. The director sees it on Positions, under their
+  // real name, and stands it down once they are known to be safe.
+  rowOf(
+    await db.call(phone, 'raise_beacon', {
+      p_angler_id: angler.id,
+      p_lat: 46.391,
+      p_lng: -111.571,
+      p_accuracy_miles: 0.01,
+      p_note: 'Taking on water',
+    }),
+  );
+  await page.getByRole('button', { name: /Positions/ }).click();
+  const beacon = page.getByRole('list', { name: 'Raised beacons' }).getByRole('listitem');
+  await expect(beacon).toContainText(angler.fullName, { timeout: 20_000 });
+  await expect(beacon).toContainText('“Taking on water”');
+  page.once('dialog', (dialog) => void dialog.accept());
+  await beacon.getByRole('button', { name: 'Stand down' }).click();
+  await expect
+    .poll(
+      async () =>
+        (
+          await db.admin<{ down: boolean }>(
+            `select stood_down_at is not null as down from public.beacons where angler_id = $1`,
+            [angler.id],
+          )
+        )[0]?.down,
+      { timeout: 20_000 },
+    )
+    .toBe(true);
+  await expect(beacon).toHaveCount(0, { timeout: 20_000 });
+  await expect(page.getByRole('list', { name: 'Last positions' })).toContainText(
+    `${angler.fullName} · `,
+  );
 
   // A sponsor's donation and the trophy budget, in the payout calculator.
   await page.getByRole('button', { name: /Payout calculator/ }).click();

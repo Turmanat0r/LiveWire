@@ -9,6 +9,7 @@ import { Card } from '../../ui/Card';
 import { trustedOffset } from '../catch/filing';
 import type { MapPin } from './CourseMap';
 import { readout } from './words';
+import '../../ui/map.css';
 
 const CourseMap = lazy(() => import('./CourseMap'));
 

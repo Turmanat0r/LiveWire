@@ -366,6 +366,13 @@
     color: var(--white);
   }
 
+  /* A beacon is up: the tile says so in red until it comes down. */
+  .director-tool--alert,
+  .director-tool--alert[aria-pressed='true'] {
+    border-color: var(--danger);
+    border-inline-start-color: var(--danger);
+  }
+
   .director-tool .icon {
     flex-shrink: 0;
     inline-size: 22px;
@@ -686,5 +693,54 @@
     color: var(--steel);
     font-size: var(--text-sm);
     overflow-wrap: anywhere;
+  }
+
+  /* ---- positions ---- */
+
+  .pos-rows {
+    padding: 0;
+    list-style: none;
+  }
+
+  .pos-row {
+    padding-block: 9px;
+    border-block-end: 1px solid var(--line);
+  }
+
+  .pos-row:last-child {
+    border-block-end: 0;
+  }
+
+  .card .pos-row__top {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    justify-content: space-between;
+    color: var(--ink);
+  }
+
+  .pos-row__who {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .pos-row--beacon .pos-row__who strong {
+    color: var(--danger);
+  }
+
+  .pos-row__age {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+
+  .card .pos-row__meta {
+    margin-block-start: 2px;
+    color: var(--steel);
+    font-size: var(--text-sm);
+  }
+
+  .pos-row--stale .pos-row__top {
+    color: var(--steel);
   }
 }

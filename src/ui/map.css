@@ -1,0 +1,24 @@
+@layer components {
+  /* The course map: on the Safety screen, and the director's Positions. */
+
+  /* position + z-index make a stacking context, so the map's own layers stay
+     inside it instead of climbing over the tab bar. */
+  .course-map {
+    position: relative;
+    z-index: 0;
+    block-size: 280px;
+    border: 1px solid var(--line);
+    background: var(--paper-2);
+  }
+
+  .course-map--waiting {
+    display: grid;
+    place-items: center;
+    color: var(--steel);
+    font-size: var(--text-sm);
+  }
+
+  .course-map .leaflet-control-attribution {
+    font-size: var(--text-sm);
+  }
+}

@@ -1,6 +1,6 @@
 import type { ScreenId } from '../app/screens';
 
-export type IconName = ScreenId | 'signal' | 'location' | 'review' | 'contestants';
+export type IconName = ScreenId | 'signal' | 'location' | 'review' | 'contestants' | 'positions';
 
 const TROPHY = [
   'M8 21h8',
@@ -38,6 +38,7 @@ const PATHS: Partial<Record<IconName, readonly string[]>> = {
   location: PIN,
   signal: ['M5 12.6a10 10 0 0 1 14 0', 'M8.5 16a5 5 0 0 1 7 0', 'M11 19a1 1 0 1 0 2 0 1 1 0 1 0-2 0'],
   review: ['M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6Z', 'M9.4 12a2.6 2.6 0 1 0 5.2 0 2.6 2.6 0 1 0-5.2 0'],
+  positions: ['M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z', 'M9.5 10a2.5 2.5 0 1 0 5 0 2.5 2.5 0 1 0-5 0', 'M4.5 19.5h15'],
   contestants: ['M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19', 'M6.8 8a3.2 3.2 0 1 0 6.4 0 3.2 3.2 0 1 0-6.4 0', 'M20 19v-1.5a3.5 3.5 0 0 0-2.6-3.4', 'M15.4 5.2a3.2 3.2 0 0 1 0 5.6'],
 };
 
