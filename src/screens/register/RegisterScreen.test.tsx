@@ -126,6 +126,10 @@ describe('bringing an entry onto this phone', () => {
       return {};
     });
     const { user } = await open(server);
+    // Somebody who has lost their Tournament ID is told where to find it
+    // before they tap anything.
+    expect(screen.getByText(/Lost your Tournament ID\?/)).toBeTruthy();
+    expect(screen.getByText(/written on your bump board/)).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Sign in to my entry' }));
     await user.type(screen.getByLabelText('Tournament ID'), '7k4m');
     await user.type(screen.getByLabelText('Phone you registered with'), '406-555-0100');
@@ -133,8 +137,6 @@ describe('bringing an entry onto this phone', () => {
     await waitFor(() => {
       expect(alertText()).toMatch(/No entry matches.*ask the tournament director/);
     });
-    // Somebody who has lost their Tournament ID is told where to find it.
-    expect(screen.getByText(/Lost your Tournament ID\?/)).toBeTruthy();
     expect(server.calls[0]?.args).toEqual({ p_code: '7K4M', p_phone: '406-555-0100' });
 
     match = true;
