@@ -15,6 +15,7 @@ import { Outbox, type OutboxState } from './outbox';
 import {
   failureOf,
   RemoteError,
+  type Account,
   type Json,
   type LiveStatus,
   type Remote,
@@ -63,6 +64,10 @@ export interface SyncState {
   readonly durable: boolean;
   /** This phone's account on the server, once known; kept with the saved copy. */
   readonly userId: string | null;
+  /** Signed in as the tournament director; kept with the saved copy. */
+  readonly director: boolean;
+  /** The director's sign-in email, to show who is signed in. */
+  readonly email: string | null;
   /** How far this phone's clock is off, as last measured; kept with the saved copy. */
   readonly clock: ClockReading | null;
 }
@@ -160,6 +165,8 @@ export class Sync {
       outbox: this.outbox.getState(),
       durable: true,
       userId: null,
+      director: false,
+      email: null,
       clock: null,
     };
     this.outbox.subscribe(() => {
@@ -187,6 +194,8 @@ export class Sync {
       event: currentEvent(tables),
       syncedAt: saved?.schema === this.schema ? saved.savedAt : null,
       userId: saved?.userId ?? null,
+      director: saved?.director ?? false,
+      email: saved?.email ?? null,
       clock: saved?.clock ?? null,
     });
     await this.outbox.load();
@@ -313,10 +322,41 @@ export class Sync {
     }
   }
 
-  private signedIn(userId: string): void {
-    if (userId === this.state.userId) return;
-    this.update({ userId });
+  private signedIn(account: Account): void {
+    const { id, director, email } = account;
+    const s = this.state;
+    if (id === s.userId && director === s.director && email === s.email) return;
+    this.update({ userId: id, director, email });
     this.scheduleSave();
+  }
+
+  /**
+   * Signs this phone in as the tournament director, in place of its own
+   * account, and reads everything again: the director may see far more.
+   * Needs signal. Throws a RemoteError, 'not_director' included.
+   */
+  async signInDirector(email: string, password: string): Promise<void> {
+    const remote = this.remote;
+    if (!remote) throw new RemoteError({ kind: 'offline' });
+    this.signedIn(await remote.signInDirector(email, password));
+    this.rejoin();
+  }
+
+  /** Back to an ordinary phone, signed in afresh. Needs signal. */
+  async signOutDirector(): Promise<void> {
+    const remote = this.remote;
+    if (!remote) throw new RemoteError({ kind: 'offline' });
+    this.signedIn(await remote.signOut());
+    this.rejoin();
+  }
+
+  /** Listens again under the new account; joining reads everything afresh. */
+  private rejoin(): void {
+    this.stopListening?.();
+    this.stopListening = null;
+    this.live = false;
+    this.listen();
+    void this.readEverything();
   }
 
   private async connect(): Promise<void> {
@@ -544,6 +584,8 @@ export class Sync {
       schema: this.schema,
       eventId: this.state.event?.id ?? null,
       userId: this.state.userId,
+      director: this.state.director,
+      email: this.state.email,
       clock: this.state.clock,
       tables: toSnapshot(this.state.tables),
       savedAt: this.state.syncedAt ?? this.now(),

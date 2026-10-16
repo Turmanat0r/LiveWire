@@ -51,9 +51,25 @@ export interface StoredFile {
 
 export type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
+/** Who this phone is signed in as. */
+export interface Account {
+  readonly id: string;
+  /** The tournament director's account: the database lets it see and change everything. */
+  readonly director: boolean;
+  /** For the director's account; an anonymous one has none. */
+  readonly email: string | null;
+}
+
 export interface Remote {
-  /** Signs this phone in, anonymously, unless it already is. Resolves to its account id. */
-  signIn(): Promise<string>;
+  /** Signs this phone in, anonymously, unless it already is. */
+  signIn(): Promise<Account>;
+  /**
+   * Signs in to the director's account, replacing this phone's own. An account
+   * that is not the director's is signed straight out again, and refused.
+   */
+  signInDirector(email: string, password: string): Promise<Account>;
+  /** Leaves the director's account: the phone signs in afresh, anonymously. */
+  signOut(): Promise<Account>;
   /** Every row of a table this phone may read: one event's, or for `events`, every event. */
   readTable<T extends TableName>(table: T, eventId: string | null): Promise<Row<T>[]>;
   /** The rows of a table whose `column` holds one of `values`. */

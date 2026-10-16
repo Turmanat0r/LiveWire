@@ -167,3 +167,19 @@ export function dayLabelText(dateKey: DateKey): string {
     day: 'numeric',
   });
 }
+
+/** "07:00:00" to minutes after midnight; anything unreadable is null. */
+function minutesOf(time: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})/.exec(time);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+/** An event's fishing day, from the times the director set, or the default where one is unreadable. */
+export function scheduleFrom(linesIn: string, linesOut: string, finalCheckIn: string): DaySchedule {
+  return {
+    linesInMinutes: minutesOf(linesIn) ?? DEFAULT_SCHEDULE.linesInMinutes,
+    linesOutMinutes: minutesOf(linesOut) ?? DEFAULT_SCHEDULE.linesOutMinutes,
+    finalCheckInMinutes: minutesOf(finalCheckIn) ?? DEFAULT_SCHEDULE.finalCheckInMinutes,
+  };
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Boundary } from '../../domain/geo';
-import { helpMessage, locationBadge, parseVerdict, readout, textHref } from './words';
+import { parseVerdict } from '../../domain/geo';
+import { helpMessage, locationBadge, readout, textHref } from './words';
 import type { TimedFix } from '../../app/location';
 
 const DENVER = 'America/Denver';

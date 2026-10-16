@@ -67,6 +67,13 @@
   --beacon-red: #e03725;
   --beacon-gold: #d5a33a;
 
+  /* The director's overdue alert, and the full-size photo viewer. */
+  --overdue-bg: #f7efec;
+  --overdue-rule: #e2cfc9;
+  --viewer-bg: #0c1412;
+  --viewer-text: #f4f1e9;
+  --viewer-dim: #c8d3cc;
+
   /* The page behind the home screen, so an overscroll on a phone shows dark, not paper. */
   --home-page: #07090a;
 
@@ -179,11 +186,11 @@
 [data-theme='director'] {
   --deep: #232323;
   --gold: #b0ada6;
-  --gold-deep: #74716b; /* was #7d7a73 */
+  --gold-deep: #6a6762; /* was #7d7a73 */
   --paper: #ededea;
   --paper-2: #dcdad4;
   --line: #c4c1b8;
-  --steel: #6b6963;
+  --steel: #5d5b56; /* was #6b6963 */
   --tab-off: #8ca3aa;
 }
 

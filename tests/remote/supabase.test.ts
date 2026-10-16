@@ -2,6 +2,7 @@
 // the things the sync engine's tests can only assume about the server. Runs
 // in CI, where a local Supabase is started; skipped anywhere without one.
 import { randomUUID } from 'node:crypto';
+import { createClient } from '@supabase/supabase-js';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { RemoteError, type LiveStatus, type Remote, type Signal } from '../../src/data/remote';
 import { supabaseRemote } from '../../src/data/supabase';
@@ -86,9 +87,62 @@ describe.skipIf(!running)('the app’s server adapter, on a real Supabase', () =
 
   it('signs a phone in once, however many ask at the same moment', async () => {
     const fresh = phone();
-    const ids = await Promise.all([fresh.signIn(), fresh.signIn(), fresh.signIn()]);
+    const ids = (await Promise.all([fresh.signIn(), fresh.signIn(), fresh.signIn()])).map(
+      (a) => a.id,
+    );
     expect(new Set(ids).size).toBe(1);
-    expect(await fresh.signIn()).toBe(ids[0]);
+    expect((await fresh.signIn()).id).toBe(ids[0]);
+  });
+
+  it('reads "no such thing" as a refusal, not as the server failing', async () => {
+    // Withdrawing a catch that is already gone is how a retried withdrawal
+    // knows it got through the first time.
+    expect(await failureOf(device.call('withdraw_catch', { p_id: randomUUID() }))).toMatchObject({
+      kind: 'refused',
+      key: 'catch_not_found',
+    });
+  });
+
+  it('signs the director in, and turns away any other account', async () => {
+    const secret = process.env['SUPABASE_SECRET_KEY'];
+    if (!secret) throw new Error('No admin key to make the accounts with');
+    const admin = createClient(url ?? '', secret, { auth: { persistSession: false } });
+    const account = async (director: boolean) => {
+      const email = `${director ? 'director' : 'angler'}-${randomUUID()}@example.com`;
+      const password = randomUUID();
+      const { error } = await admin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        app_metadata: director ? { director: true } : {},
+      });
+      if (error) throw error;
+      return { email, password };
+    };
+
+    const theDirector = await account(true);
+    const ph = phone();
+    expect((await ph.signIn()).director).toBe(false);
+    const signedIn = await ph.signInDirector(theDirector.email, theDirector.password);
+    expect(signedIn).toMatchObject({ director: true, email: theDirector.email });
+    // The database agrees: a director-only function goes through.
+    expect(
+      await failureOf(ph.call('director_set_current_event', { p_event_id: randomUUID() })),
+    ).toMatchObject({ kind: 'refused', key: 'event_not_found' });
+    const after = await ph.signOut();
+    expect(after).toMatchObject({ director: false, email: null });
+    expect(after.id).not.toBe(signedIn.id);
+
+    const someoneElse = await account(false);
+    const other = phone();
+    expect(
+      await failureOf(other.signInDirector(someoneElse.email, someoneElse.password)),
+    ).toMatchObject({ kind: 'refused', key: 'not_director' });
+    expect((await other.signIn()).director).toBe(false);
+    expect(await failureOf(other.signInDirector(theDirector.email, 'wrong'))).toMatchObject({
+      kind: 'refused',
+      key: 'invalid_credentials',
+    });
   });
 
   it('reads only what the phone may see', async () => {

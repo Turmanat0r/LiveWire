@@ -14,6 +14,7 @@ import { PayoutsScreen } from '../screens/board/PayoutsScreen';
 import { StandingsScreen } from '../screens/board/StandingsScreen';
 import { SideBetsScreen } from '../screens/board/SideBetsScreen';
 import { ChatScreen } from '../screens/board/ChatScreen';
+import { DirectorScreen } from '../screens/director/DirectorScreen';
 import { NotFoundScreen } from '../screens/NotFoundScreen';
 import { ErrorScreen } from '../screens/ErrorScreen';
 
@@ -39,6 +40,7 @@ export const routes: RouteObject[] = [
       { path: screen('payouts').path, element: <PayoutsScreen /> },
       { path: screen('side-bets').path, element: <SideBetsScreen /> },
       { path: screen('chat').path, element: <ChatScreen /> },
+      { path: screen('director').path, element: <DirectorScreen /> },
       ...SCREENS.filter((s) => s.milestone !== null).map((s): RouteObject => ({
         path: s.path,
         element: <PlannedScreen screen={s} />,

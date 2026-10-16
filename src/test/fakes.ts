@@ -1,6 +1,13 @@
 // Stand-ins for the server and the clock, for testing the sync engine and the
 // outbox without a network.
-import { RemoteError, type Json, type LiveStatus, type Remote, type Signal } from '../data/remote';
+import {
+  RemoteError,
+  type Account,
+  type Json,
+  type LiveStatus,
+  type Remote,
+  type Signal,
+} from '../data/remote';
 import type { StoredFile } from '../data/remote';
 import { rowKey, type FunctionName, type Row, type TableName } from '../data/tables';
 
@@ -59,7 +66,12 @@ export class FakeServer implements Remote {
     if (!this.online) throw new RemoteError({ kind: 'offline' });
   }
 
-  signIn(): Promise<string> {
+  /** The account this phone is signed in to. */
+  account: Account = { id: 'device-1', director: false, email: null };
+  /** Director accounts by email, with their passwords. */
+  readonly directors = new Map<string, string>();
+
+  signIn(): Promise<Account> {
     this.reachable();
     if (this.signInsRefused) {
       return Promise.reject(
@@ -67,7 +79,28 @@ export class FakeServer implements Remote {
       );
     }
     this.signIns += 1;
-    return Promise.resolve('device-1');
+    return Promise.resolve(this.account);
+  }
+
+  signInDirector(email: string, password: string): Promise<Account> {
+    this.reachable();
+    if (this.directors.get(email) !== password) {
+      return Promise.reject(
+        new RemoteError({
+          kind: 'refused',
+          key: 'invalid_credentials',
+          detail: 'Invalid login credentials',
+        }),
+      );
+    }
+    this.account = { id: 'director-1', director: true, email };
+    return Promise.resolve(this.account);
+  }
+
+  signOut(): Promise<Account> {
+    this.reachable();
+    this.account = { id: 'device-2', director: false, email: null };
+    return Promise.resolve(this.account);
   }
 
   readTable<T extends TableName>(table: T, eventId: string | null): Promise<Row<T>[]> {

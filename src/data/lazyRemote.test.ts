@@ -25,7 +25,7 @@ describe('the server client, loaded on first use', () => {
       return loads === 1 ? Promise.reject(new Error('no signal')) : Promise.resolve(server);
     });
     await expect(remote.signIn()).rejects.toThrow('no signal');
-    expect(await remote.signIn()).toBe('device-1');
+    expect((await remote.signIn()).id).toBe('device-1');
   });
 
   it('does not start listening if stopped while still loading', async () => {
