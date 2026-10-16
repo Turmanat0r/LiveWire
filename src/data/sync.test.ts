@@ -213,6 +213,22 @@ describe('the sync engine', () => {
     expect(saved?.tables.catches?.map((c) => c.id)).toEqual(['c1']);
   });
 
+  it('saves its copy at once when the app is put away', async () => {
+    const setup = setUp();
+    await live(setup);
+    setup.server.put('catches', catchRow({ id: 'c1' }));
+    setup.server.signal(TOPIC, { table: 'catches', key: { id: 'c1' } });
+    await setup.timers.advance(250);
+    await setup.sync.settled();
+    expect((await setup.local.loadSnapshot())?.tables.catches ?? []).toEqual([]);
+
+    // Swiped away, or reloaded, before the moment was up.
+    setup.sync.becameHidden();
+    await settle();
+    const saved = await setup.local.loadSnapshot();
+    expect(saved?.tables.catches?.map((c) => c.id)).toEqual(['c1']);
+  });
+
   it('says so when the server will not sign the phone in', async () => {
     const setup = setUp();
     setup.server.signInsRefused = 'Anonymous sign-ins are disabled for this project.';

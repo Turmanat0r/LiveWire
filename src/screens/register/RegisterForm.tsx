@@ -358,7 +358,11 @@ function HandlePick({
   );
 }
 
-/** "Already registered on another phone?" Bring the entry over with its codes. */
+/**
+ * "Already registered?" Bring the entry onto this phone with its codes. Where
+ * to find a lost Tournament ID shows before anything is tapped: somebody who
+ * has lost it would not open a form that asks for it.
+ */
 export function ClaimEntry() {
   const sync = useSyncEngine();
   const [open, setOpen] = useState(false);
@@ -398,9 +402,17 @@ export function ClaimEntry() {
   return (
     <section className="card" aria-labelledby="claim-title">
       <h2 className="card__title" id="claim-title">
-        Already registered on another phone?
+        Already registered?
       </h2>
-      <p className="hint">Do not register again. Bring your entry over instead.</p>
+      <p className="hint">
+        New phone, or the app was deleted? Do not register again. Sign in with your Tournament ID
+        and the phone number you registered with.
+      </p>
+      <p className="hint">
+        <strong>Lost your Tournament ID?</strong> It is written on your bump board, and shown on the
+        home screen of the phone you registered with. Or ask the tournament director, who can look
+        it up.
+      </p>
       {open ? (
         <form className="claim" onSubmit={(e) => void submit(e)} noValidate>
           <fieldset className="register__fields" disabled={busy}>
@@ -436,10 +448,6 @@ export function ClaimEntry() {
               )}
             </Field>
           </fieldset>
-          <p className="hint">
-            Lost your Tournament ID? It is on the home screen of the phone you registered with,
-            under your name. Or ask the tournament director, who can look it up.
-          </p>
           {problem ? (
             <p className="err" role="alert">
               {problem}

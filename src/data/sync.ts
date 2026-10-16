@@ -232,8 +232,18 @@ export class Sync {
     this.update({ connection: 'offline' });
   }
 
+  /**
+   * The app has gone to the background, been swiped away, or is reloading.
+   * Whatever has not been saved yet is saved now: the phone may not get the
+   * moment it was waiting for, and an angler who saw "Approved" should still
+   * see it when they reopen the app with no signal.
+   */
   becameHidden(): void {
     this.hiddenAt = this.now();
+    if (!this.cancelSave) return;
+    this.cancelSave();
+    this.cancelSave = null;
+    void this.save();
   }
 
   /**
