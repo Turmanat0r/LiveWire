@@ -430,13 +430,90 @@
   }
 
   .crow {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    padding: 10px;
     border: 1px solid var(--line);
     border-inline-start: 3px solid var(--line);
     background: var(--paper);
+  }
+
+  /* The whole summary opens the row, as the old app's did. */
+  .crow__head {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    inline-size: 100%;
+    padding: 10px;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .crow__body {
+    display: grid;
+    gap: var(--space-3);
+    padding: 10px;
+    border-block-start: 1px solid var(--line);
+  }
+
+  .cstats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+
+  .cstats > div {
+    display: flex;
+    flex-direction: column-reverse;
+    padding: 6px;
+    border: 1px solid var(--line);
+    background: var(--white);
+    text-align: center;
+  }
+
+  .cstats dd {
+    margin: 0;
+    color: var(--deep);
+    font-family: var(--font-serif);
+    font-size: var(--text-base);
+  }
+
+  .cstats dt {
+    color: var(--steel);
+    font-size: var(--text-sm);
+  }
+
+  .cfish,
+  .cdays {
+    display: grid;
+    gap: 6px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .cfish li,
+  .cdays li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    font-size: var(--text-sm);
+  }
+
+  .cdq {
+    display: grid;
+    gap: var(--space-2);
+    padding: 10px;
+    border: 1px solid var(--line);
+    background: var(--white);
+  }
+
+  .card .cdq__warn {
+    color: var(--ink);
+    font-size: var(--text-sm);
+    line-height: 1.5;
   }
 
   .crow--leader {
@@ -470,6 +547,7 @@
   }
 
   .card .crow__name {
+    display: block;
     color: var(--ink);
     font-size: var(--text-md);
     font-weight: 600;
@@ -494,6 +572,7 @@
 
   /* What an angler who lost it needs read to them: big and unmistakable. */
   .card .crow__code {
+    display: block;
     margin-block-start: 2px;
     color: var(--ink);
     font-size: var(--text-sm);
@@ -506,6 +585,7 @@
   }
 
   .card .crow__sub {
+    display: block;
     margin-block-start: 2px;
     color: var(--steel);
     font-size: var(--text-sm);
@@ -516,6 +596,7 @@
   }
 
   .card .crow__note {
+    display: block;
     margin-block-start: 4px;
     color: var(--danger);
     font-size: var(--text-sm);

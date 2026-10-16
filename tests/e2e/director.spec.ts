@@ -8,7 +8,7 @@ import { registerSolo, setUpEvent } from '../db/fixtures';
  * The director, on a real Supabase (CI starts one): sign in with the
  * director's account, see another angler's fish under their real name with
  * its evidence, approve it, find that angler's Tournament ID by their phone,
- * and sign out to an ordinary phone.
+ * match their fee and check them in, and sign out to an ordinary phone.
  */
 // Skipped on a PC with no Supabase. In CI one is always started, so there a
 // missing server fails these rather than quietly skipping them.
@@ -110,6 +110,26 @@ test('the director signs in, approves a fish, and signs out', async ({ page }) =
   const found = page.getByRole('list', { name: 'Anglers' }).getByRole('listitem');
   await expect(found).toHaveCount(1);
   await expect(found).toContainText(`Tournament ID ${summary.anglers[0]?.anglerCode ?? '?'}`);
+
+  // Their fee arrives, and they check in at the ramp with a flat phone.
+  await found.getByRole('button', { expanded: false }).click();
+  await found.getByRole('button', { name: 'Fee received' }).click();
+  await found.getByRole('button', { name: 'Check in now' }).first().click();
+  await expect
+    .poll(
+      async () =>
+        (
+          await db.admin<{ paid: boolean; checked_in: boolean }>(
+            `select ep.fee_paid as paid,
+                    exists (select 1 from public.check_ins c
+                             where c.angler_id = $2 and c.in_at is not null) as checked_in
+               from public.entry_private ep where ep.entry_id = $1`,
+            [summary.entryId, angler.id],
+          )
+        )[0],
+      { timeout: 20_000 },
+    )
+    .toEqual({ paid: true, checked_in: true });
 
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible({ timeout: 20_000 });
