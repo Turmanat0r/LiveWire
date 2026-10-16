@@ -14,7 +14,9 @@ import {
 } from '../domain/review';
 import { overdueAnglers, sortOverdue, type CheckIn } from '../domain/safety';
 import { scheduleFrom } from '../domain/time';
-import { boardCatches } from './board';
+import { entryNumberText } from '../domain/identity';
+import { standings } from '../domain/scoring';
+import { boardCatches, useBoard } from './board';
 import type { Row } from './tables';
 import { useSync } from './useSync';
 import { eventDates } from './selectors';
@@ -179,4 +181,128 @@ export function useOverdue(now: number): { minutes: number; rows: readonly Overd
       }),
     };
   }, [event, checkIns, positions, privates, days, now]);
+}
+
+export type DayStatus = 'not in' | 'on water' | 'complete';
+
+export interface Contestant {
+  readonly anglerId: string;
+  readonly entryId: string;
+  /** MKWO-001 */
+  readonly entryNumber: string;
+  readonly division: Row<'entries'>['division'];
+  readonly role: Row<'anglers'>['role'];
+  readonly name: string;
+  readonly handle: string;
+  readonly phone: string;
+  /** The Tournament ID: what an angler needs, with their phone, to bring their entry onto a phone. */
+  readonly code: string;
+  readonly teamCode: string | null;
+  readonly partner: string | null;
+  readonly bigFish: boolean;
+  readonly disqualified: boolean;
+  readonly dqReason: string;
+  readonly feePaid: boolean;
+  /** 0 when not on the board. */
+  readonly rank: number;
+  readonly best: number;
+  readonly days: readonly DayStatus[];
+}
+
+/**
+ * Every angler in the event, as the director sees them: whoever is placed
+ * first, in order, then everyone else by name.
+ */
+export function useContestants(): readonly Contestant[] {
+  const board = useBoard();
+  const anglerRows = useSync((s) => s.tables.anglers);
+  const entries = useSync((s) => s.tables.entries);
+  const entryPrivate = useSync((s) => s.tables.entry_private);
+  const privates = useSync((s) => s.tables.angler_private);
+  const checkIns = useSync((s) => s.tables.check_ins);
+  const days = useSync((s) => s.tables.event_days);
+  return useMemo(() => {
+    if (!board) return [];
+    const { event, anglers, catches, species } = board;
+    const entryOf = new Map([...entries.values()].map((e) => [e.id, e]));
+    const money = new Map([...entryPrivate.values()].map((e) => [e.entry_id, e]));
+    const details = new Map([...privates.values()].map((p) => [p.angler_id, p]));
+    const dates = eventDates(days, event.id);
+    const rank = new Map<string, number>();
+    for (const division of ['solo', 'team'] as const) {
+      standings(division, catches, anglers, species).forEach((row, i) => {
+        // A team ranks as one, so both partners carry its place.
+        for (const a of anglers) {
+          if (row.anglerIds.includes(a.id) || a.teamId === row.key) rank.set(a.id, i + 1);
+        }
+      });
+    }
+    const best = new Map<string, number>();
+    for (const c of catches) {
+      if (c.status !== 'approved' || !species.includes(c.species)) continue;
+      best.set(c.anglerId, Math.max(best.get(c.anglerId) ?? 0, c.lengthInches));
+    }
+    const rows = [...anglerRows.values()].filter((a) => a.event_id === event.id);
+    const out: Contestant[] = rows.flatMap((a) => {
+      const entry = entryOf.get(a.entry_id);
+      if (!entry) return [];
+      const p = details.get(a.id);
+      const mate = rows.find((m) => m.entry_id === a.entry_id && m.id !== a.id);
+      const statusOn = (day: string): DayStatus => {
+        const c = [...checkIns.values()].find((x) => x.angler_id === a.id && x.day === day);
+        if (!c?.in_at) return 'not in';
+        return c.out_at ? 'complete' : 'on water';
+      };
+      return [
+        {
+          anglerId: a.id,
+          entryId: a.entry_id,
+          entryNumber: entryNumberText(event.entry_prefix, entry.entry_number),
+          division: entry.division,
+          role: a.role,
+          name: p?.full_name ?? a.handle,
+          handle: a.handle,
+          phone: p?.phone ?? '',
+          code: p?.angler_code ?? '',
+          teamCode: money.get(a.entry_id)?.team_code ?? null,
+          partner: mate ? (details.get(mate.id)?.full_name ?? mate.handle) : null,
+          bigFish: a.big_fish,
+          disqualified: a.disqualified,
+          dqReason: p?.dq_reason ?? '',
+          feePaid: money.get(a.entry_id)?.fee_paid ?? false,
+          rank: a.disqualified ? 0 : (rank.get(a.id) ?? 0),
+          best: best.get(a.id) ?? 0,
+          days: dates.map(statusOn),
+        },
+      ];
+    });
+    return out.sort((x, y) => {
+      if (x.rank && y.rank) return x.rank - y.rank || x.name.localeCompare(y.name);
+      if (x.rank) return -1;
+      if (y.rank) return 1;
+      return x.name.localeCompare(y.name);
+    });
+  }, [board, anglerRows, entries, entryPrivate, privates, checkIns, days]);
+}
+
+/** Case does not matter to a search. */
+function folded(text: string): string {
+  return text.toLowerCase();
+}
+
+/**
+ * Contestants a search finds: by name, handle, Tournament ID, team code,
+ * entry number, or any run of phone digits.
+ */
+export function findContestants(list: readonly Contestant[], query: string): Contestant[] {
+  const q = folded(query.trim());
+  if (!q) return [...list];
+  const digits = q.replace(/\D/g, '');
+  return list.filter((c) => {
+    const words = [c.name, c.handle, c.code, c.teamCode ?? '', c.entryNumber]
+      .map(folded)
+      .some((w) => w.includes(q));
+    const phone = digits.length >= 3 && c.phone.replace(/\D/g, '').includes(digits);
+    return words || phone;
+  });
 }

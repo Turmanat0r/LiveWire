@@ -219,3 +219,47 @@ describe('the overdue alert', () => {
     expect(alert.textContent).toContain('No position ever recorded');
   });
 });
+
+describe('contestants', () => {
+  it('finds an angler who has lost their Tournament ID, by phone or by name', async () => {
+    const { server, angler } = field();
+    const other = entryRows({
+      number: 2,
+      userId: 'device-2',
+      team: true,
+      names: ['Pat Morgan', 'Sam Lee'],
+    });
+    putEntry(server, other);
+    // The sample rows all share one number; these two have their own.
+    other.privates.forEach((p, i) => {
+      server.put('angler_private', { ...p, phone: `406-555-02${String(i)}0` });
+    });
+    const { user } = await open(server);
+    await signIn(user);
+    await user.click(screen.getByRole('button', { name: /Contestants/ }));
+    expect(screen.getByRole('button', { name: /Contestants/ }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    const search = screen.getByLabelText('Find an angler');
+    const rows = () =>
+      within(screen.getByRole('list', { name: 'Anglers' }))
+        .getAllByRole('listitem')
+        .map((li) => li.querySelector('.crow__name')?.textContent);
+    expect(rows()).toHaveLength(3);
+
+    // By the phone number, however it is typed.
+    const phone = angler.privates[0]?.phone ?? '';
+    await user.type(search, phone.replace(/\D/g, '').slice(-7));
+    expect(rows()).toEqual(['Daniel TurmanFee outstanding']);
+    const row = within(screen.getByRole('list', { name: 'Anglers' })).getByRole('listitem');
+    expect(row.querySelector('.crow__code')?.textContent).toBe('Tournament ID 7K4M');
+
+    // By part of a name, and by a Tournament ID.
+    await user.clear(search);
+    await user.type(search, 'sam');
+    expect(rows()).toEqual(['Sam LeeFee outstanding']);
+    await user.clear(search);
+    await user.type(search, '9hcx');
+    expect(rows()).toEqual(['Sam LeeFee outstanding']);
+  });
+});

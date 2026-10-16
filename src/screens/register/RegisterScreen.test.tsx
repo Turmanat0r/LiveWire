@@ -131,8 +131,10 @@ describe('bringing an entry onto this phone', () => {
     await user.type(screen.getByLabelText('Phone you registered with'), '406-555-0100');
     await user.click(screen.getByRole('button', { name: 'Bring my entry over' }));
     await waitFor(() => {
-      expect(alertText()).toMatch(/No entry matches/);
+      expect(alertText()).toMatch(/No entry matches.*ask the tournament director/);
     });
+    // Somebody who has lost their Tournament ID is told where to find it.
+    expect(screen.getByText(/Lost your Tournament ID\?/)).toBeTruthy();
     expect(server.calls[0]?.args).toEqual({ p_code: '7K4M', p_phone: '406-555-0100' });
 
     match = true;

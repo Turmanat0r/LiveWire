@@ -383,7 +383,7 @@ export function ClaimEntry() {
       const found = await sync.call('claim_entry', { p_code: normalizeCode(code), p_phone: phone });
       if (found === null) {
         setProblem(
-          'No entry matches that Tournament ID and phone number. Check both and try again.',
+          'No entry matches that Tournament ID and phone number. Check both and try again, or ask the tournament director to look up your Tournament ID.',
         );
         return;
       }
@@ -436,6 +436,10 @@ export function ClaimEntry() {
               )}
             </Field>
           </fieldset>
+          <p className="hint">
+            Lost your Tournament ID? It is on the home screen of the phone you registered with,
+            under your name. Or ask the tournament director, who can look it up.
+          </p>
           {problem ? (
             <p className="err" role="alert">
               {problem}

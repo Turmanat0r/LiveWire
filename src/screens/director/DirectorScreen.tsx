@@ -2,15 +2,20 @@ import { useId, useState } from 'react';
 import { failureText } from '../../app/failureText';
 import { screen } from '../../app/screens';
 import { useNow } from '../../app/useNow';
-import { useReviewItems } from '../../data/director';
+import { useContestants, useReviewItems } from '../../data/director';
 import { useMyEntry } from '../../data/myEntry';
 import { failureOf } from '../../data/remote';
 import { useSync, useSyncEngine } from '../../data/useSync';
+import { Icon, type IconName } from '../../ui/Icon';
 import { Page } from '../../ui/Page';
+import { useSearchParams } from 'react-router';
+import { Contestants } from './Contestants';
 import { OverdueAlert } from './OverdueAlert';
 import { ReviewLists } from './ReviewLists';
 import '../../ui/forms.css';
 import './director.css';
+
+type Tool = 'review' | 'contestants';
 
 /**
  * The tournament director's screens. Signing in is what lets the server
@@ -121,9 +126,33 @@ function DirectorPanel() {
   const email = useSync((s) => s.email);
   const now = useNow();
   const items = useReviewItems();
+  const contestants = useContestants();
+  const [params, setParams] = useSearchParams();
+  const tool: Tool = params.get('tool') === 'contestants' ? 'contestants' : 'review';
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const waiting = items.filter((i) => i.row.status === 'pending').length;
+  const owing = contestants.filter((c) => !c.feePaid).length;
+  const dq = contestants.filter((c) => c.disqualified).length;
+  const tools: readonly { id: Tool; icon: IconName; label: string; summary: string }[] = [
+    {
+      id: 'review',
+      icon: 'review',
+      label: 'Fish to review',
+      summary: waiting === 0 ? 'Nothing waiting' : `${String(waiting)} waiting`,
+    },
+    {
+      id: 'contestants',
+      icon: 'contestants',
+      label: 'Contestants',
+      summary:
+        contestants.length === 0
+          ? 'No anglers yet'
+          : `${String(contestants.length)} angler${contestants.length === 1 ? '' : 's'}` +
+            (owing ? ` · ${String(owing)} fee outstanding` : '') +
+            (dq ? ` · ${String(dq)} DQ` : ''),
+    },
+  ];
 
   async function signOut() {
     setBusy(true);
@@ -141,7 +170,7 @@ function DirectorPanel() {
     <Page
       title={screen('director').title}
       before={<OverdueAlert now={now} />}
-      after={<ReviewLists items={items} />}
+      after={tool === 'review' ? <ReviewLists items={items} /> : <Contestants list={contestants} />}
     >
       <p className="hint">
         Signed in as the tournament director{email ? ` (${email})` : ''}.{' '}
@@ -162,6 +191,26 @@ function DirectorPanel() {
       >
         {busy ? 'Signing out…' : 'Sign out'}
       </button>
+      <ul className="director-tools" aria-label="Director’s tools">
+        {tools.map((t) => (
+          <li key={t.id}>
+            <button
+              className="director-tool"
+              type="button"
+              aria-pressed={tool === t.id}
+              onClick={() => {
+                setParams({ tool: t.id }, { replace: true });
+              }}
+            >
+              <Icon name={t.icon} />
+              <span className="director-tool__copy">
+                <strong>{t.label}</strong>
+                <span>{t.summary}</span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
     </Page>
   );
 }
