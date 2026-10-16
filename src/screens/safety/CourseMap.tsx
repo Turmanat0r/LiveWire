@@ -1,7 +1,8 @@
-// The course on a map, with this phone, its entry's catches and any raised
-// beacons on it. Loaded only on the safety screen, and only a nicety: the
-// tiles need signal, and everything that decides in or out is worked out on
-// the phone without them.
+// The course on a map: on the Safety screen with this phone, its entry's
+// catches and any raised beacons; on the director's Positions with every
+// angler's last position. Loaded only there, and only a nicety: the tiles
+// need signal, and everything that decides in or out is worked out on the
+// phone without them.
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useEffect, useRef } from 'react';
@@ -16,7 +17,11 @@ export interface CourseMapProps {
   readonly course: Boundary;
   readonly me: LatLng | null;
   readonly beacons: readonly MapPin[];
-  readonly catches: readonly (MapPin & { readonly outside: boolean })[];
+  readonly catches?: readonly (MapPin & { readonly outside: boolean })[];
+  /** The director's view: where each angler last reported from. */
+  readonly anglers?: readonly (MapPin & { readonly stale: boolean })[];
+  /** What the map is, for a screen reader. */
+  readonly label?: string;
 }
 
 /** Canyon Ferry, for an event with no course and a phone with no fix yet. */
@@ -43,7 +48,14 @@ function courseShape(course: Boundary, style: L.PathOptions): L.Layer | null {
   );
 }
 
-export default function CourseMap({ course, me, beacons, catches }: CourseMapProps) {
+export default function CourseMap({
+  course,
+  me,
+  beacons,
+  catches = [],
+  anglers = [],
+  label: name = 'Course map, with your position and any raised beacons',
+}: CourseMapProps) {
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<{ map: L.Map; layers: L.LayerGroup; framed: boolean } | null>(null);
 
@@ -103,7 +115,18 @@ export default function CourseMap({ course, me, beacons, catches }: CourseMapPro
         .bindTooltip(label(c.label))
         .addTo(layers);
     }
-    // Beacons go on after the catches, so they sit on top.
+    for (const a of anglers) {
+      L.circleMarker([a.lat, a.lng], {
+        radius: 6,
+        weight: 2,
+        color: a.stale ? token('--steel') : token('--deep'),
+        fillColor: a.stale ? token('--paper-2') : token('--vf-cyan'),
+        fillOpacity: 1,
+      })
+        .bindTooltip(label(a.label))
+        .addTo(layers);
+    }
+    // Beacons go on after everything else, so they sit on top.
     for (const b of beacons) {
       L.circleMarker([b.lat, b.lng], {
         radius: 10,
@@ -134,18 +157,16 @@ export default function CourseMap({ course, me, beacons, catches }: CourseMapPro
       } else if (me) {
         m.setView([me.lat, me.lng], 13);
         current.framed = true;
+      } else if (anglers.length + beacons.length > 0) {
+        // No course drawn: frame wherever the field is.
+        const all = [...anglers, ...beacons].map((p) => [p.lat, p.lng] as [number, number]);
+        m.fitBounds(L.latLngBounds(all), { padding: [24, 24], maxZoom: 14 });
+        current.framed = true;
       }
     } else if (me && !boundaryIsUsable(course)) {
       m.panTo([me.lat, me.lng]);
     }
-  }, [course, me, beacons, catches]);
+  }, [course, me, beacons, catches, anglers]);
 
-  return (
-    <div
-      ref={box}
-      className="course-map"
-      role="region"
-      aria-label="Course map, with your position and any raised beacons"
-    />
-  );
+  return <div ref={box} className="course-map" role="region" aria-label={name} />;
 }

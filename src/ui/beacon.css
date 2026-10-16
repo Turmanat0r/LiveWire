@@ -74,4 +74,81 @@
   .beacon-banner--mine .beacon-pulse {
     background: var(--beacon-gold);
   }
+
+  /* The old app's beacon cards, red for the field and gold for your own: on
+     the Safety screen, and the director's Positions. */
+
+  .beacon-cards {
+    display: grid;
+    gap: var(--space-3);
+    padding: 0;
+    list-style: none;
+  }
+
+  .beacon-card {
+    padding: 12px;
+    border: 2px solid var(--danger);
+    border-radius: var(--radius-sm);
+    background: var(--status-rejected-bg);
+    color: var(--ink);
+  }
+
+  .beacon-card--mine {
+    border-color: var(--beacon-gold);
+    background: var(--status-pending-bg);
+  }
+
+  .beacon-card__title {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    color: var(--danger);
+    font-family: var(--font-display);
+    font-size: var(--text-md);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .beacon-card--mine .beacon-card__title {
+    color: var(--status-pending-text);
+  }
+
+  .beacon-card--mine .beacon-pulse {
+    background: var(--beacon-gold);
+  }
+
+  .beacon-card__row {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    justify-content: space-between;
+    padding-block: 7px;
+  }
+
+  .beacon-card__who {
+    font-family: var(--font-serif);
+    font-size: var(--text-md);
+  }
+
+  .beacon-card__where {
+    flex-shrink: 0;
+    color: var(--danger);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+
+  .beacon-card--mine .beacon-card__where {
+    color: var(--status-pending-text);
+  }
+
+  .beacon-card__note {
+    font-size: var(--text-sm);
+    font-style: italic;
+  }
+
+  .beacon-card__meta {
+    margin-block-start: 3px;
+    font-size: var(--text-sm);
+  }
 }

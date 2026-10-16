@@ -2,7 +2,8 @@ import { useId, useState } from 'react';
 import { failureText } from '../../app/failureText';
 import { screen } from '../../app/screens';
 import { useNow } from '../../app/useNow';
-import { useContestants, useReviewItems } from '../../data/director';
+import { signalAgeMinutes, SIGNAL_STALE_MINUTES } from '../../domain/safety';
+import { useContestants, usePositions, useReviewItems } from '../../data/director';
 import { useMyEntry } from '../../data/myEntry';
 import { failureOf } from '../../data/remote';
 import { useSync, useSyncEngine } from '../../data/useSync';
@@ -14,11 +15,12 @@ import { Contestants } from './Contestants';
 import { useDirectorMoney } from './money';
 import { OverdueAlert } from './OverdueAlert';
 import { PayoutTool } from './PayoutTool';
+import { PositionsTool } from './PositionsTool';
 import { ReviewLists } from './ReviewLists';
 import '../../ui/forms.css';
 import './director.css';
 
-const TOOLS = ['review', 'contestants', 'payouts'] as const;
+const TOOLS = ['review', 'contestants', 'positions', 'payouts'] as const;
 type Tool = (typeof TOOLS)[number];
 
 /**
@@ -132,6 +134,11 @@ function DirectorPanel() {
   const items = useReviewItems();
   const contestants = useContestants();
   const money = useDirectorMoney(contestants);
+  const placed = usePositions();
+  const raised = placed.rows.filter((p) => p.beacon).length;
+  const recent = placed.rows.filter(
+    (p) => signalAgeMinutes(p.at, now) <= SIGNAL_STALE_MINUTES,
+  ).length;
   const [params, setParams] = useSearchParams();
   const tool: Tool = TOOLS.find((t) => t === params.get('tool')) ?? 'review';
   const event = useSync((s) => s.event);
@@ -140,7 +147,13 @@ function DirectorPanel() {
   const waiting = items.filter((i) => i.row.status === 'pending').length;
   const owing = contestants.filter((c) => !c.feePaid).length;
   const dq = contestants.filter((c) => c.disqualified).length;
-  const tools: readonly { id: Tool; icon: IconName; label: string; summary: string }[] = [
+  const tools: readonly {
+    id: Tool;
+    icon: IconName;
+    label: string;
+    summary: string;
+    alert?: boolean;
+  }[] = [
     {
       id: 'review',
       icon: 'review',
@@ -159,6 +172,17 @@ function DirectorPanel() {
             (dq ? ` · ${String(dq)} DQ` : ''),
     },
     {
+      id: 'positions',
+      icon: 'positions',
+      label: 'Positions',
+      summary: raised
+        ? `${String(raised)} beacon${raised === 1 ? '' : 's'} raised`
+        : placed.rows.length === 0
+          ? 'No positions yet'
+          : `${String(recent)} recent of ${String(placed.rows.length)}`,
+      alert: raised > 0,
+    },
+    {
       id: 'payouts',
       icon: 'payouts',
       label: 'Payout calculator',
@@ -168,6 +192,8 @@ function DirectorPanel() {
   const panel =
     tool === 'contestants' ? (
       <Contestants list={contestants} />
+    ) : tool === 'positions' ? (
+      <PositionsTool placed={placed} />
     ) : tool === 'payouts' ? (
       money && event ? (
         <PayoutTool eventId={event.id} money={money} />
@@ -213,7 +239,7 @@ function DirectorPanel() {
         {tools.map((t) => (
           <li key={t.id}>
             <button
-              className="director-tool"
+              className={t.alert ? 'director-tool director-tool--alert' : 'director-tool'}
               type="button"
               aria-pressed={tool === t.id}
               onClick={() => {

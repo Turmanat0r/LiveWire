@@ -11,6 +11,9 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+// Leaflet needs a real browser; the map is only a nicety on Positions.
+vi.mock('../safety/CourseMap', () => ({ default: () => null }));
+
 const EMAIL = 'director@example.com';
 
 function evidence(
@@ -501,5 +504,78 @@ describe('the payout calculator', () => {
     expect(
       screen.getByText('The awards budget is more than the tournament has raised.'),
     ).toBeTruthy();
+  });
+});
+
+describe('positions', () => {
+  it('puts a raised beacon first, with a way to call, and stands it down for them', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2027-09-18T18:00:00+00:00'));
+    const { server, angler } = field();
+    const other = entryRows({ number: 2, userId: 'device-2', names: ['Pat Morgan'] });
+    putEntry(server, other);
+    const position = (anglerId: string, at: string): Row<'positions'> => ({
+      angler_id: anglerId,
+      event_id: EVENT_ID,
+      lat: 46.39,
+      lng: -111.57,
+      accuracy_miles: 0.01,
+      recorded_at: at,
+      updated_at: at,
+    });
+    server.put('positions', position(angler.captainId, '2027-09-18T16:00:00+00:00'));
+    server.put('positions', position(other.captainId, '2027-09-18T17:58:00+00:00'));
+    server.put('beacons', {
+      id: crypto.randomUUID(),
+      angler_id: other.captainId,
+      event_id: EVENT_ID,
+      note: 'Capsized, cold',
+      lat: 46.4,
+      lng: -111.6,
+      accuracy_miles: null,
+      position_at: '2027-09-18T17:58:00+00:00',
+      raised_at: '2027-09-18T17:55:00+00:00',
+      stood_down_at: null,
+      stood_down_by: null,
+    });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { sync, user } = await open(server);
+    await signIn(user);
+    const tile = screen.getByRole('button', { name: /Positions/ });
+    expect(tile.textContent).toContain('1 beacon raised');
+    expect(tile.className).toContain('director-tool--alert');
+    await user.click(tile);
+
+    const cards = screen.getByRole('list', { name: 'Raised beacons' });
+    expect(cards.textContent).toContain('Pat Morgan');
+    expect(cards.textContent).toContain('“Capsized, cold”');
+    expect(cards.textContent).toContain('46.40000, -111.60000 · position 2 min ago');
+    expect(
+      within(cards)
+        .getByRole('link', { name: /^Call 406/ })
+        .getAttribute('href'),
+    ).toMatch(/^tel:/);
+    const rows = within(screen.getByRole('list', { name: 'Last positions' })).getAllByRole(
+      'listitem',
+    );
+    expect(rows.map((r) => r.querySelector('.pos-row__who')?.textContent)).toEqual([
+      'Pat Morgan · Salty Bedrock Perch · Beacon',
+      'Daniel Turman · Salty Bedrock Perch',
+    ]);
+    expect(rows[1]?.textContent).toContain('±53 ft');
+    expect(rows[1]?.textContent).toContain('Older than 45 minutes: treat it as history.');
+    expect(screen.getByText(/2 of 2 anglers have reported a position/)).toBeTruthy();
+
+    server.online = false;
+    await user.click(within(cards).getByRole('button', { name: 'Stand down' }));
+    await act(settle);
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringMatching(/^Stand down Pat Morgan’s beacon\?/),
+    );
+    expect(sync.getState().outbox.items.flatMap((i) => i.steps)).toMatchObject([
+      { fn: 'stand_down_beacon', args: { p_angler_id: other.captainId } },
+    ]);
+    expect(cards.textContent).toContain('Stood down. Waiting to send: the field still sees it.');
+    expect(within(cards).queryByRole('button', { name: 'Stand down' })).toBeNull();
   });
 });

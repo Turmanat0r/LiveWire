@@ -444,3 +444,119 @@ export function findContestants(list: readonly Contestant[], query: string): Con
     return words || phone;
   });
 }
+
+export interface Placed {
+  readonly anglerId: string;
+  readonly name: string;
+  readonly handle: string;
+  readonly phone: string;
+  readonly emergencyName: string;
+  readonly emergencyPhone: string;
+  readonly lat: number;
+  readonly lng: number;
+  readonly accuracyMiles: number | null;
+  /** When the position was taken. */
+  readonly at: number;
+  /** Their beacon, while it is up. */
+  readonly beacon: Row<'beacons'> | null;
+  /** The director has stood it down, and that is still in the outbox. */
+  readonly standingDown: boolean;
+}
+
+export interface Positions {
+  /** Raised beacons first, then the newest position. */
+  readonly rows: readonly Placed[];
+  /** Every angler in the event, placed or not. */
+  readonly anglers: number;
+}
+
+/**
+ * Where each angler's phone last reported from. A beacon's own position is
+ * the one shown for it: it moves with every fix while it is up.
+ */
+export function placedAnglers(
+  positions: Iterable<Row<'positions'>>,
+  beacons: Iterable<Row<'beacons'>>,
+  anglers: Iterable<Row<'anglers'>>,
+  privates: Iterable<Row<'angler_private'>>,
+  items: readonly OutboxItem[],
+  eventId: string,
+): Positions {
+  const inEvent = [...anglers].filter((a) => a.event_id === eventId);
+  const byId = new Map(inEvent.map((a) => [a.id, a]));
+  const details = new Map([...privates].map((p) => [p.angler_id, p]));
+  const seen = new Map(
+    [...positions].filter((p) => p.event_id === eventId).map((p) => [p.angler_id, p]),
+  );
+  const up = new Map(
+    [...beacons]
+      .filter((b) => b.event_id === eventId && b.stood_down_at === null)
+      .map((b) => [b.angler_id, b]),
+  );
+  const standing = new Set<string>();
+  for (const item of items) {
+    if (item.failure !== null) continue;
+    for (const step of item.steps) {
+      const id = step.kind === 'call' ? step.args['p_angler_id'] : undefined;
+      if (step.kind === 'call' && step.fn === 'stand_down_beacon' && typeof id === 'string') {
+        standing.add(id);
+      }
+    }
+  }
+  const rows: Placed[] = [];
+  for (const id of new Set([...seen.keys(), ...up.keys()])) {
+    const a = byId.get(id);
+    if (!a) continue;
+    const p = details.get(id);
+    const beacon = up.get(id) ?? null;
+    const pos = seen.get(id);
+    const where = beacon
+      ? { lat: beacon.lat, lng: beacon.lng, acc: beacon.accuracy_miles, at: beacon.position_at }
+      : pos
+        ? { lat: pos.lat, lng: pos.lng, acc: pos.accuracy_miles, at: pos.recorded_at }
+        : null;
+    if (!where) continue;
+    rows.push({
+      anglerId: id,
+      name: p?.full_name ?? a.handle,
+      handle: a.handle,
+      phone: p?.phone ?? '',
+      emergencyName: p?.emergency_name ?? '',
+      emergencyPhone: p?.emergency_phone ?? '',
+      lat: where.lat,
+      lng: where.lng,
+      accuracyMiles: where.acc,
+      at: Date.parse(where.at),
+      beacon,
+      standingDown: beacon !== null && standing.has(id),
+    });
+  }
+  rows.sort((x, y) => {
+    if ((x.beacon === null) !== (y.beacon === null)) return x.beacon ? -1 : 1;
+    return y.at - x.at || x.name.localeCompare(y.name);
+  });
+  return { rows, anglers: inEvent.length };
+}
+
+export function usePositions(): Positions {
+  const event = useSync((s) => s.event);
+  const positions = useSync((s) => s.tables.positions);
+  const beacons = useSync((s) => s.tables.beacons);
+  const anglers = useSync((s) => s.tables.anglers);
+  const privates = useSync((s) => s.tables.angler_private);
+  const items = useSync((s) => s.outbox.items);
+  return useMemo(
+    () =>
+      event
+        ? placedAnglers(
+            positions.values(),
+            beacons.values(),
+            anglers.values(),
+            privates.values(),
+            items,
+            event.id,
+          )
+        : { rows: [], anglers: 0 },
+    [event, positions, beacons, anglers, privates, items],
+  );
+}
