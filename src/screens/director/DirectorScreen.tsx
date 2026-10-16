@@ -9,13 +9,17 @@ import { useSync, useSyncEngine } from '../../data/useSync';
 import { Icon, type IconName } from '../../ui/Icon';
 import { Page } from '../../ui/Page';
 import { useSearchParams } from 'react-router';
+import { centsText } from '../board/payouts';
 import { Contestants } from './Contestants';
+import { useDirectorMoney } from './money';
 import { OverdueAlert } from './OverdueAlert';
+import { PayoutTool } from './PayoutTool';
 import { ReviewLists } from './ReviewLists';
 import '../../ui/forms.css';
 import './director.css';
 
-type Tool = 'review' | 'contestants';
+const TOOLS = ['review', 'contestants', 'payouts'] as const;
+type Tool = (typeof TOOLS)[number];
 
 /**
  * The tournament director's screens. Signing in is what lets the server
@@ -127,8 +131,10 @@ function DirectorPanel() {
   const now = useNow();
   const items = useReviewItems();
   const contestants = useContestants();
+  const money = useDirectorMoney(contestants);
   const [params, setParams] = useSearchParams();
-  const tool: Tool = params.get('tool') === 'contestants' ? 'contestants' : 'review';
+  const tool: Tool = TOOLS.find((t) => t === params.get('tool')) ?? 'review';
+  const event = useSync((s) => s.event);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const waiting = items.filter((i) => i.row.status === 'pending').length;
@@ -152,7 +158,23 @@ function DirectorPanel() {
             (owing ? ` · ${String(owing)} fee outstanding` : '') +
             (dq ? ` · ${String(dq)} DQ` : ''),
     },
+    {
+      id: 'payouts',
+      icon: 'payouts',
+      label: 'Payout calculator',
+      summary: money ? `${centsText(money.raisedCents)} across current pools` : 'No event yet',
+    },
   ];
+  const panel =
+    tool === 'contestants' ? (
+      <Contestants list={contestants} />
+    ) : tool === 'payouts' ? (
+      money && event ? (
+        <PayoutTool eventId={event.id} money={money} />
+      ) : null
+    ) : (
+      <ReviewLists items={items} />
+    );
 
   async function signOut() {
     setBusy(true);
@@ -167,11 +189,7 @@ function DirectorPanel() {
   }
 
   return (
-    <Page
-      title={screen('director').title}
-      before={<OverdueAlert now={now} />}
-      after={tool === 'review' ? <ReviewLists items={items} /> : <Contestants list={contestants} />}
-    >
+    <Page title={screen('director').title} before={<OverdueAlert now={now} />} after={panel}>
       <p className="hint">
         Signed in as the tournament director{email ? ` (${email})` : ''}.{' '}
         {waiting === 0

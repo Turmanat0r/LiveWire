@@ -8,7 +8,8 @@ import { registerSolo, setUpEvent } from '../db/fixtures';
  * The director, on a real Supabase (CI starts one): sign in with the
  * director's account, see another angler's fish under their real name with
  * its evidence, approve it, find that angler's Tournament ID by their phone,
- * match their fee and check them in, and sign out to an ordinary phone.
+ * match their fee and check them in, log a donation and the awards budget,
+ * and sign out to an ordinary phone.
  */
 // Skipped on a PC with no Supabase. In CI one is always started, so there a
 // missing server fails these rather than quietly skipping them.
@@ -130,6 +131,34 @@ test('the director signs in, approves a fish, and signs out', async ({ page }) =
       { timeout: 20_000 },
     )
     .toEqual({ paid: true, checked_in: true });
+
+  // A sponsor's donation and the trophy budget, in the payout calculator.
+  await page.getByRole('button', { name: /Payout calculator/ }).click();
+  await page.getByLabel('Add to').selectOption({ label: 'Big Fish pot' });
+  await page.getByLabel('Amount ($)').fill('40');
+  await page.getByLabel('From / note (optional)').fill('Bait shop');
+  await page.getByRole('button', { name: 'Add donation' }).click();
+  await page.getByLabel('Awards budget ($)').fill('125.50');
+  await page.getByRole('button', { name: 'Save budget' }).click();
+  await expect
+    .poll(
+      async () =>
+        (
+          await db.admin<{ donated: string | null; budget: number }>(
+            `select (select string_agg(target || ' ' || amount_cents || ' ' || note, ', ')
+                       from public.donations where event_id = $1) as donated,
+                    awards_budget_cents as budget
+               from public.events where id = $1`,
+            [eventId],
+          )
+        )[0],
+      { timeout: 20_000 },
+    )
+    .toEqual({ donated: 'big_fish 4000 Bait shop', budget: 12_550 });
+  await expect(page.getByRole('list', { name: 'Donations' })).not.toContainText(
+    'Waiting to send.',
+    { timeout: 20_000 },
+  );
 
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible({ timeout: 20_000 });

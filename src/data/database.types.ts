@@ -1144,6 +1144,38 @@ export type Database = {
         };
       };
       director_set_ai_review: { Args: { p_id: string; p_review: Json }; Returns: undefined };
+      director_set_awards_budget: {
+        Args: { p_cents: number; p_event_id: string };
+        Returns: {
+          archived: boolean;
+          awards_budget_cents: number;
+          course: NonNullable<Json>;
+          course_label: string;
+          course_label_long: string;
+          created_at: string;
+          entry_prefix: string;
+          fee_big_fish_cents: number;
+          fee_solo_cents: number;
+          fee_team_cents: number;
+          final_check_in: string;
+          id: string;
+          is_current: boolean;
+          lines_in: string;
+          lines_out: string;
+          name: string;
+          payout_basis_points: number[];
+          presenter: string;
+          registration_closes_at: string;
+          time_zone: string;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'events';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       director_set_catch_boundary: { Args: { p_boundary: Json; p_id: string }; Returns: undefined };
       director_set_check_in: {
         Args: { p_angler_id: string; p_day: string; p_in_at: string; p_out_at: string };

@@ -7,6 +7,7 @@ import {
   eligibleEntries,
   outstandingFees,
   paidEntries,
+  parseDollars,
   splitPool,
 } from './money';
 
@@ -104,5 +105,21 @@ describe('dollars', () => {
     expect(dollarsText(3000)).toBe('$30');
     expect(dollarsText(1250)).toBe('$12.50');
     expect(dollarsText(0)).toBe('$0');
+  });
+});
+
+describe('parseDollars', () => {
+  it('reads dollars however they are typed', () => {
+    expect(parseDollars('25')).toBe(2500);
+    expect(parseDollars('25.5')).toBe(2550);
+    expect(parseDollars(' $1,250.05 ')).toBe(125_005);
+    expect(parseDollars('.75')).toBe(75);
+    expect(parseDollars('0')).toBe(0);
+  });
+
+  it('refuses what is not an amount', () => {
+    for (const text of ['', '.', '$', '-5', '2.505', 'ten', '12 50', '99999999']) {
+      expect(parseDollars(text)).toBeNull();
+    }
   });
 });

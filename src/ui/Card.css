@@ -23,6 +23,14 @@
     font-weight: 600;
   }
 
+  /* A part of a card with several. */
+  .card__subtitle {
+    color: var(--deep);
+    font-family: var(--font-serif);
+    font-size: var(--text-md);
+    font-weight: 600;
+  }
+
   .card--notice {
     border-inline-start: 4px solid var(--gold);
   }

@@ -6,6 +6,11 @@ import type { Row } from '../../data/tables';
 import { splitPool, type Award, type FeeSchedule, type PayoutShare } from '../../domain/money';
 import type { Cents } from '../../domain/types';
 
+/** $12.00: money on the payout screens always shows cents, as the old ones did. */
+export function centsText(cents: Cents): string {
+  return `${cents < 0 ? '−' : ''}$${(Math.abs(cents) / 100).toFixed(2)}`;
+}
+
 /** 1st, 2nd, 3rd, 4th, ... 11th, 12th, 13th, ... 21st. */
 export function placeName(place: number): string {
   const teen = place % 100 >= 11 && place % 100 <= 13;
