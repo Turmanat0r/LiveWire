@@ -130,6 +130,10 @@ test('files a catch with its photo, and the director’s approval arrives by its
   await db.call(director, 'director_review_catch', { p_id: filed.id, p_status: 'approved' });
   await expect(page.getByText('Approved', { exact: true })).toBeVisible({ timeout: 20_000 });
 
+  // A fresh page: the phone signs in and reads again, so give it the time the
+  // other trips to the server get.
   await page.goto('/livewell');
-  await expect(page.getByText('Currently counts', { exact: true })).toBeVisible();
+  await expect(page.getByText('Currently counts', { exact: true })).toBeVisible({
+    timeout: 20_000,
+  });
 });

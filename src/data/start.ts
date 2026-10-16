@@ -24,6 +24,10 @@ export function startSync(): Sync {
     if (document.visibilityState === 'visible') sync.becameVisible();
     else sync.becameHidden();
   });
+  // Leaving or reloading the page. Safari does not always say "hidden" first.
+  window.addEventListener('pagehide', () => {
+    sync.becameHidden();
+  });
   // Ask the browser not to clear the outbox to make room. Installed apps are
   // usually granted this; if not, it is kept anyway until space runs short.
   void navigator.storage.persist().catch(() => false);
