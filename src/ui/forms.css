@@ -96,7 +96,9 @@
       [type='email'],
       [type='number'],
       [type='password'],
-      [type='search']
+      [type='search'],
+      [type='date'],
+      [type='time']
     ),
   .field select,
   .field textarea {

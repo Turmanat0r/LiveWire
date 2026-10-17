@@ -183,3 +183,31 @@ export function scheduleFrom(linesIn: string, linesOut: string, finalCheckIn: st
     finalCheckInMinutes: minutesOf(finalCheckIn) ?? DEFAULT_SCHEDULE.finalCheckInMinutes,
   };
 }
+
+/** The day after a date: "2027-06-01" → "2027-06-02". */
+export function nextDateKey(dateKey: DateKey): DateKey {
+  const [y = 0, m = 1, d = 1] = dateKey.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+}
+
+/** The instant a date begins on the event's clock: local midnight. */
+export function midnightIn(dateKey: DateKey, timeZone: string): EpochMs {
+  const [y = 0, m = 1, d = 1] = dateKey.split('-').map(Number);
+  const wanted = Date.UTC(y, m - 1, d);
+  let at = wanted;
+  // Each pass corrects by the zone's offset at the guess; two settle any day,
+  // a third covers a guess that lands across a clock change.
+  for (let pass = 0; pass < 3; pass++) {
+    const here = zonedParts(at, timeZone);
+    const [hy = 0, hm = 1, hd = 1] = here.dateKey.split('-').map(Number);
+    const off = Date.UTC(hy, hm - 1, hd) + here.secondsOfDay * 1000 - wanted;
+    if (off === 0) break;
+    at -= off;
+  }
+  return at;
+}
+
+/** The last day registration is open, as a date: the day before it closes. */
+export function lastOpenDateKey(closesAt: EpochMs, timeZone: string): DateKey {
+  return zonedParts(closesAt - 1, timeZone).dateKey;
+}

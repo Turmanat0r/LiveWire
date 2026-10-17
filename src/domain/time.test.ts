@@ -7,6 +7,9 @@ import {
   dayPhase,
   formatCountdown,
   lastDayText,
+  lastOpenDateKey,
+  midnightIn,
+  nextDateKey,
   scheduleFrom,
   timeOfDayText,
   zonedParts,
@@ -106,5 +109,26 @@ describe('scheduleFrom', () => {
       ...DEFAULT_SCHEDULE,
       finalCheckInMinutes: 960,
     });
+  });
+});
+
+describe('dates on the event’s clock', () => {
+  it('finds local midnight, in summer and winter and across a clock change', () => {
+    expect(midnightIn('2027-06-02', DENVER)).toBe(Date.parse('2027-06-02T00:00:00-06:00'));
+    expect(midnightIn('2027-01-15', DENVER)).toBe(Date.parse('2027-01-15T00:00:00-07:00'));
+    // Clocks go forward at 2am on 14 March 2027; midnight is still MST.
+    expect(midnightIn('2027-03-14', DENVER)).toBe(Date.parse('2027-03-14T00:00:00-07:00'));
+    expect(midnightIn('2027-03-15', DENVER)).toBe(Date.parse('2027-03-15T00:00:00-06:00'));
+    expect(midnightIn('2027-09-18', 'Pacific/Auckland')).toBe(
+      Date.parse('2027-09-18T00:00:00+12:00'),
+    );
+  });
+
+  it('closes registration at the end of the last day, and reads that day back', () => {
+    const closes = midnightIn(nextDateKey('2027-06-01'), DENVER);
+    expect(lastOpenDateKey(closes, DENVER)).toBe('2027-06-01');
+    expect(lastDayText(closes, DENVER)).toBe('June 1, 2027');
+    expect(nextDateKey('2027-12-31')).toBe('2028-01-01');
+    expect(nextDateKey('2028-02-28')).toBe('2028-02-29');
   });
 });

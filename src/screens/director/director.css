@@ -743,4 +743,136 @@
   .pos-row--stale .pos-row__top {
     color: var(--steel);
   }
+
+  /* ---- the event tool ---- */
+
+  .evs,
+  .sps,
+  .event-days {
+    display: grid;
+    gap: 8px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .ev {
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-inline-start: 3px solid var(--line);
+    background: var(--paper);
+  }
+
+  .ev--editing {
+    border-inline-start-color: var(--gold);
+  }
+
+  .card .ev__name {
+    color: var(--ink);
+    font-size: var(--text-md);
+  }
+
+  .ev__tag {
+    margin-inline-start: 6px;
+    padding: 2px 5px;
+    border-radius: 3px;
+    background: var(--line);
+    color: var(--ink);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .ev__tag--live {
+    background: var(--status-approved-bg);
+    color: var(--status-approved-text);
+  }
+
+  .card .ev__sub {
+    margin-block: 2px 8px;
+    color: var(--steel);
+    font-size: var(--text-sm);
+  }
+
+  .ev__editing {
+    align-self: center;
+    color: var(--gold-deep);
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+
+  .event-form > * + *,
+  .event-form__fields > * + *,
+  .event-form__days > * + * {
+    margin-block-start: var(--space-3);
+  }
+
+  .event-form__fields,
+  .event-form__days {
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .event-form__pair,
+  .event-form__trio {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: var(--space-3);
+  }
+
+  .event-form__trio {
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  }
+
+  /* A phone's time box needs room for "07:00 AM" and its clock. */
+  .event-form__times {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
+    gap: var(--space-3);
+  }
+
+  .event-form__days > legend {
+    margin-block-end: 6px;
+    padding: 0;
+  }
+
+  .event-days__day {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .event-days__day input {
+    flex: 1;
+    min-inline-size: 0;
+    min-block-size: var(--tap-target);
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--paper);
+    color: var(--ink);
+    font: inherit;
+  }
+
+  .sp {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    align-items: center;
+    padding: 10px;
+    border: 1px solid var(--line);
+    background: var(--paper);
+  }
+
+  .sp__name {
+    flex: 1 1 140px;
+    color: var(--ink);
+    font-size: var(--text-md);
+  }
+
+  .sp__ceiling {
+    color: var(--steel);
+    font-size: var(--text-sm);
+  }
 }
