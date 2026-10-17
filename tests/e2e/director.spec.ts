@@ -239,7 +239,7 @@ test('the director signs in, approves a fish, and signs out', async ({ page }) =
 
   // The course shrinks to a tenth of a mile, and the fish filed inside the old
   // one is judged again from the position stored with it: now outside.
-  const course = page.getByRole('region', { name: 'Course boundary' });
+  const course = page.getByRole('region', { name: 'Course boundary', exact: true });
   await course.getByLabel('Radius (miles)').fill('0.1');
   await course.getByRole('button', { name: 'Save boundary' }).click();
   await expect(course).toContainText('In force now: 0.1 mile circle', { timeout: 20_000 });
