@@ -47,6 +47,46 @@ describe('setting up an event', () => {
     expect(days.map((d) => d.day)).toEqual([DAY_2]);
   });
 
+  it('leaves the course and the awards budget alone when a details edit does not give them', async () => {
+    const id = randomUUID();
+    const course = { kind: 'circle', center: { lat: 46.38917, lng: -111.57556 }, radiusMiles: 4 };
+    const fresh = rowOf(
+      await db.call<{ course: unknown; awards_budget_cents: number }>(
+        director,
+        'director_save_event',
+        {
+          p_id: id,
+          p_name: 'Practice day',
+          p_entry_prefix: 'prac',
+          p_time_zone: 'America/Denver',
+          p_registration_closes_at: new Date(Date.now() + 86_400_000).toISOString(),
+          p_days: [DAY_1],
+        },
+      ),
+    );
+    expect(fresh).toMatchObject({ course: { kind: 'none' }, awards_budget_cents: 0 });
+    rowOf(await save(director, { p_id: id, p_course: course, p_awards_budget_cents: 20_000 }));
+    const edited = rowOf(
+      await db.call<{ name: string; course: unknown; awards_budget_cents: number }>(
+        director,
+        'director_save_event',
+        {
+          p_id: id,
+          p_name: 'Practice day (renamed)',
+          p_entry_prefix: 'prac',
+          p_time_zone: 'America/Denver',
+          p_registration_closes_at: new Date(Date.now() + 86_400_000).toISOString(),
+          p_days: [DAY_1],
+        },
+      ),
+    );
+    expect(edited).toMatchObject({
+      name: 'Practice day (renamed)',
+      course,
+      awards_budget_cents: 20_000,
+    });
+  });
+
   it('refuses what the phones could not use', async () => {
     expect(errorOf(await save(director, { p_time_zone: 'Mars/Olympus' }))).toBe(
       'invalid_time_zone',

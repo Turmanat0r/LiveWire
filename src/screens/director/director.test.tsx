@@ -1,4 +1,4 @@
-import { act, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Row } from '../../data/tables';
@@ -577,5 +577,134 @@ describe('positions', () => {
     ]);
     expect(cards.textContent).toContain('Stood down. Waiting to send: the field still sees it.');
     expect(within(cards).queryByRole('button', { name: 'Stand down' })).toBeNull();
+  });
+});
+
+describe('the event tool', () => {
+  async function openTool(server: FakeServer) {
+    // What the server would do with a save: keep the event as sent.
+    server.answers.set('director_save_event', (a) => {
+      const text = (key: string) => {
+        const value = a[key];
+        return typeof value === 'string' ? value : '';
+      };
+      server.put(
+        'events',
+        eventRow({
+          id: text('p_id'),
+          name: text('p_name'),
+          entry_prefix: text('p_entry_prefix'),
+          is_current: a['p_id'] === EVENT_ID,
+        }),
+      );
+      return {};
+    });
+    const sent = await open(server);
+    await signIn(sent.user);
+    await sent.user.click(screen.getByRole('button', { name: /^Event/ }));
+    const callsTo = (fn: string) => server.calls.filter((c) => c.fn === fn).map((c) => c.args);
+    return { ...sent, callsTo };
+  }
+
+  it('edits the live event’s details, species and safety number, leaving its course alone', async () => {
+    const { server } = field();
+    const { user, callsTo } = await openTool(server);
+    const events = screen.getByRole('list', { name: 'Events' });
+    expect(events.textContent).toContain('Montana Kayak Walleye Open Live');
+    expect(events.textContent).toContain('Editing below');
+
+    const name = screen.getByLabelText('Tournament name');
+    expect((name as HTMLInputElement).value).toBe('Montana Kayak Walleye Open');
+    expect(screen.getByLabelText<HTMLInputElement>('Last day to register').value).toBe(
+      '2027-09-16',
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Day 1').value).toBe('2027-09-18');
+
+    // A mistake is named before anything is sent.
+    await user.clear(screen.getByLabelText('Entry ID prefix'));
+    await user.click(screen.getByRole('button', { name: 'Save details' }));
+    expect(screen.getByRole('alert').textContent).toMatch(/2 to 10 letters and numbers/);
+    expect(callsTo('director_save_event')).toEqual([]);
+
+    await user.type(screen.getByLabelText('Entry ID prefix'), 'mkwo27');
+    await user.clear(name);
+    await user.type(name, 'Montana Kayak Walleye Open XII');
+    await user.click(screen.getByRole('button', { name: 'Save details' }));
+    await act(settle);
+    const [saved] = callsTo('director_save_event');
+    expect(saved).toMatchObject({
+      p_id: EVENT_ID,
+      p_name: 'Montana Kayak Walleye Open XII',
+      p_entry_prefix: 'MKWO27',
+      p_days: ['2027-09-18'],
+      p_registration_closes_at: '2027-09-17T06:00:00.000Z',
+      p_payout_basis_points: [5000, 3000, 2000],
+    });
+    expect(saved).not.toHaveProperty('p_course');
+    expect(saved).not.toHaveProperty('p_awards_budget_cents');
+    expect(screen.getByText('Saved.')).toBeTruthy();
+
+    // Species: Walleye is the main one; a preset brings its ceiling.
+    const species = screen.getByRole('list', { name: 'Scoring species' });
+    expect(species.textContent).toContain('WalleyeMain36″ ceiling');
+    await user.selectOptions(screen.getByLabelText('Add a species'), 'Northern Pike');
+    expect(screen.getByLabelText<HTMLInputElement>('Length ceiling (in)').value).toBe('56');
+    await user.click(screen.getByRole('button', { name: 'Add to this event' }));
+    await act(settle);
+    expect(callsTo('director_set_event_species')).toEqual([
+      {
+        p_event_id: EVENT_ID,
+        p_species: [
+          { name: 'Walleye', recordInches: 36 },
+          { name: 'Northern Pike', recordInches: 56 },
+        ],
+      },
+    ]);
+
+    await user.type(screen.getByLabelText('Phone'), '406-555-01');
+    await user.click(screen.getByRole('button', { name: 'Save number' }));
+    expect(screen.getByRole('alert').textContent).toMatch(/looks incomplete/);
+    await user.type(screen.getByLabelText('Phone'), '50');
+    await user.click(screen.getByRole('button', { name: 'Save number' }));
+    await act(settle);
+    expect(callsTo('director_set_safety_contact')).toEqual([
+      { p_event_id: EVENT_ID, p_phone: '406-555-0150', p_contact_name: 'Tournament director' },
+    ]);
+  });
+
+  it('adds next year’s event without the field noticing, then makes it live', async () => {
+    const { server } = field();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { user, callsTo } = await openTool(server);
+    await user.click(screen.getByRole('button', { name: 'Add an event' }));
+    const form = screen.getByRole('region', { name: 'Add an event' });
+    expect(within(form).getByLabelText<HTMLInputElement>('Tournament name').value).toBe('');
+    await user.type(within(form).getByLabelText('Tournament name'), 'Fall Classic');
+    await user.type(within(form).getByLabelText('Entry ID prefix'), 'fall27');
+    fireEvent.change(within(form).getByLabelText('Day 1'), { target: { value: '2027-10-09' } });
+    fireEvent.change(within(form).getByLabelText('Last day to register'), {
+      target: { value: '2027-10-01' },
+    });
+    await user.click(within(form).getByRole('button', { name: 'Add event' }));
+    await act(settle);
+
+    const [added] = callsTo('director_save_event');
+    expect(added).toMatchObject({ p_name: 'Fall Classic', p_entry_prefix: 'FALL27' });
+    expect(added?.['p_id']).not.toBe(EVENT_ID);
+    // Nothing moved: the field is still on the live event.
+    expect(callsTo('director_set_current_event')).toEqual([]);
+    expect(screen.getByText(/^Added\. Nothing changes for the field/)).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Fall Classic' })).toBeTruthy();
+
+    const row = within(screen.getByRole('list', { name: 'Events' }))
+      .getAllByRole('listitem')
+      .find((li) => li.textContent.includes('Fall Classic'));
+    if (!row) throw new Error('the new event in the list');
+    await user.click(within(row).getByRole('button', { name: 'Make live' }));
+    await act(settle);
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringMatching(/^Make Fall Classic the live event\?/),
+    );
+    expect(callsTo('director_set_current_event')).toEqual([{ p_event_id: added?.['p_id'] }]);
   });
 });

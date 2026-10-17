@@ -298,6 +298,23 @@ export class Sync {
     );
   }
 
+  /** Reads the list of events now, rather than waiting for its signal. Needs signal. */
+  async refreshEvents(): Promise<void> {
+    if (!this.remote) throw new RemoteError({ kind: 'offline' });
+    await this.readEvents();
+  }
+
+  /**
+   * One table of any event, read and handed back without being kept: the
+   * director setting up an event that is not the current one. Needs signal.
+   */
+  async peek<T extends Exclude<TableName, 'events'>>(table: T, eventId: string): Promise<Row<T>[]> {
+    const remote = this.remote;
+    if (!remote) throw new RemoteError({ kind: 'offline' });
+    this.signedIn(await remote.signIn());
+    return remote.readTable(table, eventId);
+  }
+
   /** Reads back a file kept with an outbox item: a catch photo still waiting to send. */
   async readFile(itemId: string, name: string): Promise<StoredFile | undefined> {
     return (await this.local).file(itemId, name);

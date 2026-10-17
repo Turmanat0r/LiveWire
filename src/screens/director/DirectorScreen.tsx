@@ -2,6 +2,8 @@ import { useId, useState } from 'react';
 import { failureText } from '../../app/failureText';
 import { screen } from '../../app/screens';
 import { useNow } from '../../app/useNow';
+import { useEventDates } from '../../data/selectors';
+import { dateRangeText } from '../../domain/time';
 import { signalAgeMinutes, SIGNAL_STALE_MINUTES } from '../../domain/safety';
 import { useContestants, usePositions, useReviewItems } from '../../data/director';
 import { useMyEntry } from '../../data/myEntry';
@@ -14,13 +16,14 @@ import { centsText } from '../board/payouts';
 import { Contestants } from './Contestants';
 import { useDirectorMoney } from './money';
 import { OverdueAlert } from './OverdueAlert';
+import { EventTool } from './EventTool';
 import { PayoutTool } from './PayoutTool';
 import { PositionsTool } from './PositionsTool';
 import { ReviewLists } from './ReviewLists';
 import '../../ui/forms.css';
 import './director.css';
 
-const TOOLS = ['review', 'contestants', 'positions', 'payouts'] as const;
+const TOOLS = ['review', 'contestants', 'positions', 'payouts', 'event'] as const;
 type Tool = (typeof TOOLS)[number];
 
 /**
@@ -142,6 +145,7 @@ function DirectorPanel() {
   const [params, setParams] = useSearchParams();
   const tool: Tool = TOOLS.find((t) => t === params.get('tool')) ?? 'review';
   const event = useSync((s) => s.event);
+  const dates = useEventDates(event);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const waiting = items.filter((i) => i.row.status === 'pending').length;
@@ -188,12 +192,22 @@ function DirectorPanel() {
       label: 'Payout calculator',
       summary: money ? `${centsText(money.raisedCents)} across current pools` : 'No event yet',
     },
+    {
+      id: 'event',
+      icon: 'event',
+      label: 'Event',
+      summary: event
+        ? [event.name, dateRangeText(dates)].filter(Boolean).join(' · ')
+        : 'No live event: set one up',
+    },
   ];
   const panel =
     tool === 'contestants' ? (
       <Contestants list={contestants} />
     ) : tool === 'positions' ? (
       <PositionsTool placed={placed} />
+    ) : tool === 'event' ? (
+      <EventTool />
     ) : tool === 'payouts' ? (
       money && event ? (
         <PayoutTool eventId={event.id} money={money} />

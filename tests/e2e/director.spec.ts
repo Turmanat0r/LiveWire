@@ -9,7 +9,7 @@ import { registerSolo, setUpEvent } from '../db/fixtures';
  * director's account, see another angler's fish under their real name with
  * its evidence, approve it, find that angler's Tournament ID by their phone,
  * match their fee and check them in, stand down their beacon, log a donation
- * and the awards budget, and sign out to an ordinary phone.
+ * and the awards budget, set up the event, and sign out to an ordinary phone.
  */
 // Skipped on a PC with no Supabase. In CI one is always started, so there a
 // missing server fails these rather than quietly skipping them.
@@ -193,6 +193,48 @@ test('the director signs in, approves a fish, and signs out', async ({ page }) =
     'Waiting to send.',
     { timeout: 20_000 },
   );
+
+  // The Event tool: details saved without touching the course or the budget,
+  // a species added, and the director's number for the Safety screen.
+  await page.getByRole('button', { name: /^Event/ }).click();
+  await page.getByLabel('Presented by (optional)').fill('Canyon Ferry Paddlers');
+  await page.getByRole('button', { name: 'Save details' }).click();
+  await expect(page.getByText('Saved.')).toBeVisible({ timeout: 20_000 });
+  await page.getByLabel('Add a species').selectOption('Northern Pike');
+  await page.getByRole('button', { name: 'Add to this event' }).click();
+  await expect(page.getByRole('list', { name: 'Scoring species' })).toContainText('Northern Pike', {
+    timeout: 20_000,
+  });
+  await page.getByLabel('Phone', { exact: true }).fill('406-555-0123');
+  await page.getByRole('button', { name: 'Save number' }).click();
+  await expect
+    .poll(
+      async () =>
+        (
+          await db.admin<{
+            presenter: string;
+            course: string;
+            budget: number;
+            species: string;
+            phone: string | null;
+          }>(
+            `select e.presenter, e.course ->> 'kind' as course, e.awards_budget_cents as budget,
+                    (select string_agg(name, ', ' order by position)
+                       from public.event_species where event_id = e.id) as species,
+                    (select phone from public.event_safety where event_id = e.id) as phone
+               from public.events e where e.id = $1`,
+            [eventId],
+          )
+        )[0],
+      { timeout: 20_000 },
+    )
+    .toEqual({
+      presenter: 'Canyon Ferry Paddlers',
+      course: 'circle',
+      budget: 12_550,
+      species: 'Walleye, Pike, Northern Pike',
+      phone: '406-555-0123',
+    });
 
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible({ timeout: 20_000 });
