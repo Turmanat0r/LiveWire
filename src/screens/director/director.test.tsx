@@ -6,6 +6,7 @@ import { FakeServer, settle } from '../../test/fakes';
 import { putEntry, renderApp } from '../../test/render';
 import { catchRow, checkInRow, dayRow, entryRows, EVENT_ID, eventRow } from '../../test/rows';
 import { testSync } from '../../test/sync';
+import type { BoundaryDraft } from './boundary';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -13,6 +14,36 @@ afterEach(() => {
 
 // Leaflet needs a real browser; the map is only a nicety on Positions.
 vi.mock('../safety/CourseMap', () => ({ default: () => null }));
+// The boundary editor's map, played by a button that taps it at a few spots
+// in turn, through the same rule the real map uses.
+vi.mock('./BoundaryMap', async () => {
+  const { tapped } = await import('./boundary');
+  const spots = [
+    { lat: 46.412, lng: -111.601 },
+    { lat: 46.412, lng: -111.54 },
+    { lat: 46.36, lng: -111.54 },
+  ];
+  let next = 0;
+  return {
+    default: ({
+      draft,
+      onChange,
+    }: {
+      draft: BoundaryDraft;
+      onChange: (d: BoundaryDraft) => void;
+    }) => (
+      <button
+        type="button"
+        onClick={() => {
+          onChange(tapped(draft, spots[next % spots.length] ?? { lat: 0, lng: 0 }));
+          next += 1;
+        }}
+      >
+        Tap the map
+      </button>
+    ),
+  };
+});
 
 const EMAIL = 'director@example.com';
 
@@ -706,5 +737,108 @@ describe('the event tool', () => {
       expect.stringMatching(/^Make Fall Classic the live event\?/),
     );
     expect(callsTo('director_set_current_event')).toEqual([{ p_event_id: added?.['p_id'] }]);
+  });
+});
+
+describe('the course boundary', () => {
+  async function openCourse(server: FakeServer) {
+    server.answers.set('director_set_course', (a) => {
+      const course = a['p_course'] ?? { kind: 'none' };
+      server.put('events', eventRow({ course }));
+      return {};
+    });
+    const sent = await open(server);
+    await signIn(sent.user);
+    await sent.user.click(screen.getByRole('button', { name: /^Event/ }));
+    const region = screen.getByRole('region', { name: 'Course boundary' });
+    const sets = () =>
+      server.calls.filter((c) => c.fn === 'director_set_course').map((c) => c.args);
+    return { ...sent, region, sets };
+  }
+
+  it('saves a typed circle, and an outline tapped onto the map', async () => {
+    const { server } = field();
+    const { user, region, sets } = await openCourse(server);
+    expect(region.textContent).toContain('In force now: No boundary.');
+
+    await user.click(within(region).getByRole('button', { name: 'Circle' }));
+    await user.type(within(region).getByLabelText('Centre latitude'), '46.38917');
+    await user.type(within(region).getByLabelText('Centre longitude'), '-111.57556');
+    await user.clear(within(region).getByLabelText('Radius (miles)'));
+    await user.type(within(region).getByLabelText('Radius (miles)'), '4');
+    await user.click(within(region).getByRole('button', { name: 'Save boundary' }));
+    await act(settle);
+    expect(sets()).toEqual([
+      {
+        p_event_id: EVENT_ID,
+        p_course: { kind: 'circle', center: { lat: 46.38917, lng: -111.57556 }, radiusMiles: 4 },
+      },
+    ]);
+    expect(region.textContent).toContain('In force now: 4 mile circle around 46.3892, -111.5756.');
+
+    // An outline: two corners are not enough, and Undo takes the last one off.
+    await user.click(within(region).getByRole('button', { name: 'Outline' }));
+    await user.click(within(region).getByRole('button', { name: 'Tap the map' }));
+    await user.click(within(region).getByRole('button', { name: 'Tap the map' }));
+    await user.click(within(region).getByRole('button', { name: 'Save boundary' }));
+    expect(within(region).getByRole('alert').textContent).toBe(
+      'An outline needs at least three corners. Tap the map to add them.',
+    );
+    await user.click(within(region).getByRole('button', { name: 'Tap the map' }));
+    expect(within(region).getByLabelText<HTMLTextAreaElement>(/^Corners/).value).toBe(
+      '46.41200, -111.60100\n46.41200, -111.54000\n46.36000, -111.54000',
+    );
+    await user.click(within(region).getByRole('button', { name: 'Save boundary' }));
+    await act(settle);
+    expect(sets()[1]).toEqual({
+      p_event_id: EVENT_ID,
+      p_course: {
+        kind: 'polygon',
+        points: [
+          { lat: 46.412, lng: -111.601 },
+          { lat: 46.412, lng: -111.54 },
+          { lat: 46.36, lng: -111.54 },
+        ],
+      },
+    });
+    expect(region.textContent).toContain('In force now: 3-corner outline.');
+  });
+
+  it('re-judges filed catches against a changed boundary, after saying how many flip', async () => {
+    const { server, angler } = field();
+    server.put(
+      'events',
+      eventRow({
+        course: { kind: 'circle', center: { lat: 46.38917, lng: -111.57556 }, radiusMiles: 2 },
+      }),
+    );
+    const near = catchRow({ angler_id: angler.captainId });
+    const far = catchRow({ angler_id: angler.captainId });
+    server.put('catches', near);
+    server.put('catches', far);
+    // Both filed as inside, against a bigger circle than the one in force now.
+    server.put('catch_evidence', evidence(near.id));
+    server.put(
+      'catch_evidence',
+      evidence(far.id, {
+        lat: 46.45,
+        lng: -111.5,
+        boundary: { kind: 'circle', within: true, fromLaunchMiles: 5.1, outsideMiles: 0 },
+      }),
+    );
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { sync, user, region } = await openCourse(server);
+    expect(region.textContent).toMatch(/1 of 2 catches change between in and out/);
+    server.online = false;
+    await user.click(within(region).getByRole('button', { name: 'Re-check every catch' }));
+    await act(settle);
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/1 change between in and out/));
+    const steps = sync.getState().outbox.items.flatMap((i) => i.steps);
+    const step = steps.find(
+      (s) =>
+        s.kind === 'call' && s.fn === 'director_set_catch_boundary' && s.args['p_id'] === far.id,
+    );
+    expect(step).toMatchObject({ args: { p_boundary: { kind: 'circle', within: false } } });
+    expect(region.textContent).toContain('The re-check is waiting to send.');
   });
 });

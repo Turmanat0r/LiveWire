@@ -16,6 +16,7 @@ import {
   TIME_ZONES,
   type EventDraft,
 } from './eventForm';
+import { CourseEditor } from './CourseEditor';
 import { presetCeiling, SPECIES_PRESETS } from './species';
 
 /** What an event is set up with besides its own row. */
@@ -295,6 +296,8 @@ function EventSetup({
           />
         )}
       </section>
+      <hr className="divider" />
+      <CourseEditor event={event} isLive={isLive} />
       {setup.state === 'ready' ? (
         <>
           <hr className="divider" />

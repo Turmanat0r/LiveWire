@@ -99,6 +99,36 @@ describe('setting up an event', () => {
     expect((await save(director, { p_lines_in: '15:00', p_lines_out: '14:00' })).ok).toBe(false);
   });
 
+  it('sets the course on its own, for the director only, and only a shape phones can judge', async () => {
+    const { id } = rowOf(await save(director));
+    const outline = {
+      kind: 'polygon',
+      points: [
+        { lat: 46.412, lng: -111.601 },
+        { lat: 46.412, lng: -111.54 },
+        { lat: 46.36, lng: -111.54 },
+      ],
+    };
+    const set = (who: Caller, course: unknown, eventId = id) =>
+      db.call<{ course: unknown; name: string }>(who, 'director_set_course', {
+        p_event_id: eventId,
+        p_course: course,
+      });
+    expect(errorOf(await set(await db.device('angler'), outline))).toBe('director_only');
+    expect(rowOf(await set(director, outline))).toMatchObject({
+      course: outline,
+      name: 'Practice day',
+    });
+    expect(errorOf(await set(director, { kind: 'polygon', points: [] }))).toBe('invalid_course');
+    expect(
+      errorOf(await set(director, { kind: 'circle', center: { lat: 99, lng: 0 }, radiusMiles: 1 })),
+    ).toBe('invalid_course');
+    expect(errorOf(await set(director, { kind: 'none' }, randomUUID()))).toBe('event_not_found');
+    expect(rowOf(await set(director, { kind: 'none' }))).toMatchObject({
+      course: { kind: 'none' },
+    });
+  });
+
   it('keeps the species in order, and never scores Other', async () => {
     const { id } = rowOf(await save(director));
     const species = rowsOf(
