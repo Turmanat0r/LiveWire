@@ -152,13 +152,15 @@ test('files a catch with its photo, and the director’s approval arrives by its
   await viewer.getByRole('button', { name: 'Close' }).click();
 
   // The highlight reel, made on the phone from that one fish. Chromium records
-  // it for real; the test WebKit is not Safari's recorder, so there the card
-  // only has to be there.
+  // it for real. The test WebKit has no video recorder at all (Safari on an
+  // iPhone does), so there the card has to say so rather than offer to try.
   const reel = page
     .locator('section')
     .filter({ has: page.getByRole('heading', { name: 'Highlight reel' }) });
-  await expect(reel).toContainText('Your fish, biggest first');
-  if (browserName === 'chromium') {
+  if (browserName !== 'chromium') {
+    await expect(reel).toContainText(/Your fish, biggest first|This browser cannot record video/);
+  } else {
+    await expect(reel).toContainText('Your fish, biggest first');
     await reel.getByRole('button', { name: 'Make my highlight reel' }).click();
     await expect(reel.getByText(/^Done:/)).toBeVisible({ timeout: 30_000 });
     await expect(reel.getByLabel('Your highlight reel')).toHaveAttribute('src', /^blob:/);
