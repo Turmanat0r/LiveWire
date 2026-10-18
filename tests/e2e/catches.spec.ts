@@ -6,7 +6,7 @@ import { newPhone, setUpEvent } from '../db/fixtures';
  * Filing a fish, on a real Supabase (CI starts one): register, photograph a
  * catch (the in-app camera on Android, the camera roll on the iPhone), see it
  * on My catches, and watch the director's approval arrive by itself, with the
- * fish counting in the livewell.
+ * fish counting in the livewell and on the gallery wall, saved from there.
  */
 // Skipped on a PC with no Supabase. In CI one is always started, so there a
 // missing server fails these rather than quietly skipping them.
@@ -136,4 +136,16 @@ test('files a catch with its photo, and the director’s approval arrives by its
   await expect(page.getByText('Currently counts', { exact: true })).toBeVisible({
     timeout: 20_000,
   });
+
+  // On the gallery wall, marked yours: opened full size from the server, and
+  // saved to the phone under a name it can be found by again.
+  await page.goto('/gallery');
+  const tile = page.getByRole('button', { name: /21\.50″ Walleye, yours$/ });
+  await expect(tile).toBeVisible({ timeout: 20_000 });
+  await tile.click();
+  const viewer = page.getByRole('dialog');
+  await expect(viewer.getByRole('img')).toBeVisible({ timeout: 20_000 });
+  const download = page.waitForEvent('download');
+  await viewer.getByRole('button', { name: 'Save photo' }).click();
+  expect((await download).suggestedFilename()).toBe('MKWO-Walleye-21.50in.jpg');
 });

@@ -1,0 +1,102 @@
+@layer components {
+  /* Square tiles, so a wall of fish reads as a wall of fish. The caption sits
+     on the photo rather than under it: a grid of cards with captions beneath
+     turns into a list at this size. */
+  .gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 8px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .gallery-tile {
+    position: relative;
+    display: block;
+    inline-size: 100%;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--paper-2);
+    cursor: zoom-in;
+  }
+
+  /* Your own fish, so you can find them in a wall of forty. */
+  .gallery-tile--mine {
+    border-color: var(--gold);
+    box-shadow: 0 0 0 1px var(--gold);
+  }
+
+  .gallery-tile__photo {
+    position: absolute;
+    inset: 0;
+    display: block;
+  }
+
+  .gallery-tile__img,
+  .gallery-tile__photo .catch-card__photo--none {
+    position: absolute;
+    inset: 0;
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+  }
+
+  .gallery-tile__photo .catch-card__photo--none {
+    display: grid;
+    place-items: center;
+    color: var(--steel);
+    font-size: var(--text-sm);
+  }
+
+  .gallery-tile__cap {
+    position: absolute;
+    inset: auto 0 0;
+    z-index: 1;
+    padding: 14px 7px 5px;
+    background: linear-gradient(
+      to top,
+      color-mix(in srgb, var(--viewer-bg) 85%, transparent),
+      transparent
+    );
+    color: var(--viewer-text);
+    font-size: var(--text-sm);
+    line-height: 1.35;
+    text-align: start;
+  }
+
+  .gallery-tile__who {
+    display: block;
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .gallery-tile__len {
+    display: block;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .gallery-tile__mine {
+    position: absolute;
+    inset: 5px auto auto 5px;
+    z-index: 1;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: var(--gold);
+    color: var(--ink);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .viewer__save {
+    background: var(--gold);
+    color: var(--ink);
+  }
+}

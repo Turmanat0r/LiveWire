@@ -46,7 +46,7 @@ export const SCREENS: readonly Screen[] = [
   { id: 'payouts', path: '/payouts', title: 'Payouts', summary: 'What each pool holds and how it splits.', theme: 'payouts', milestone: null },
   { id: 'chat', path: '/chat', title: 'Chat', summary: 'The boat-ramp group chat, with every catch announced.', theme: 'chat', milestone: null },
   { id: 'director', path: '/director', title: 'Director', summary: 'Review catches, run the roster, set up the event and file the state report.', theme: 'director', milestone: null },
-  { id: 'gallery', path: '/gallery', title: 'Gallery', summary: 'Every approved fish, yours first.', theme: 'gallery', milestone: 8 },
+  { id: 'gallery', path: '/gallery', title: 'Fish gallery', summary: 'Every approved fish, yours first.', theme: 'gallery', milestone: null },
   { id: 'trophies', path: '/trophies', title: 'Trophy case', summary: 'Your placings across every tournament.', theme: 'trophies', milestone: 8 },
 ];
 
