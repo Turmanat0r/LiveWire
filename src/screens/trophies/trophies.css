@@ -1,0 +1,157 @@
+@layer components {
+  /* Personal bests: a grid of small panels, a number over what it is. */
+  .trophy-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+    gap: 8px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .trophy-stat {
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--paper-2);
+  }
+
+  .trophy-stat__value {
+    display: block;
+    color: var(--ink);
+    font-size: var(--text-xl);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
+  }
+
+  .trophy-stat__label,
+  .trophy-stat__sub {
+    display: block;
+    margin-block-start: 2px;
+    color: var(--steel);
+    font-size: var(--text-sm);
+  }
+
+  /* A line for every tournament: what it was and how you did on the left,
+     the placing on the right. */
+  .trophy-history {
+    display: grid;
+    gap: 6px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .trophy-history__row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+  }
+
+  .trophy-history__row--won {
+    border-color: var(--gold);
+    box-shadow: 0 0 0 1px var(--gold);
+  }
+
+  .trophy-history__main {
+    min-inline-size: 0;
+  }
+
+  .trophy-history__name {
+    display: block;
+    color: var(--ink);
+    font-size: var(--text-md);
+    font-weight: 600;
+  }
+
+  .trophy-history__sub {
+    display: block;
+    margin-block-start: 2px;
+    color: var(--steel);
+    font-size: var(--text-sm);
+  }
+
+  .trophy-history__won {
+    display: block;
+    margin-block-start: 3px;
+    color: var(--gold-text);
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+
+  .trophy-history__place {
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+  }
+
+  .trophy-history__pl {
+    display: block;
+    color: var(--ink);
+    font-size: var(--text-lg);
+    font-weight: 700;
+  }
+
+  .trophy-history__pl-sub {
+    display: block;
+    color: var(--steel);
+    font-size: var(--text-sm);
+  }
+
+  /* The badge wall. A locked badge keeps its words at full strength, so they
+     stay readable: only the picture greys out. */
+  .trophy-badges {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 7px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .trophy-badge {
+    padding: 9px 6px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--paper-2);
+    text-align: center;
+  }
+
+  .trophy-badge__icon {
+    display: block;
+    font-size: 1.375rem;
+    line-height: 1.1;
+  }
+
+  .trophy-badge__name {
+    display: block;
+    margin-block-start: 4px;
+    color: var(--ink);
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+
+  .trophy-badge__status {
+    display: block;
+    margin-block-start: 2px;
+    color: var(--steel);
+    font-size: var(--text-sm);
+    line-height: 1.35;
+  }
+
+  .trophy-badge--locked {
+    border-style: dashed;
+    background: transparent;
+  }
+
+  .trophy-badge--locked .trophy-badge__icon {
+    opacity: 0.4;
+    filter: grayscale(1);
+  }
+
+  .trophy-badge--locked .trophy-badge__name {
+    color: var(--steel);
+  }
+}

@@ -39,6 +39,9 @@ export interface LegacyAngler {
   disqualified?: boolean;
   resident?: boolean;
   checkins?: Record<string, { in: number | null; out: number | null }>;
+  /** The trophy case reads these; nothing else here does. */
+  eventId?: string;
+  phone?: string;
 }
 
 export interface LegacyCatch {
@@ -49,6 +52,7 @@ export interface LegacyCatch {
   length: number;
   timestamp: number;
   status: string;
+  eventId?: string;
 }
 
 export interface LegacyLatLng {
@@ -167,6 +171,71 @@ export interface LegacyApi {
     overridden: boolean;
     hours: number | null;
   };
+  trophyStats(
+    anglers: LegacyAngler[],
+    catches: LegacyCatch[],
+    bets: { kind: 'bet'; id: string; eventId: string; title: string; winnerId: string | null }[],
+    myIds: string[],
+    infoFor: (eventId: string) => LegacyTrophyInfo,
+  ): LegacyTrophyStats;
+  trophyBadges(
+    stats: LegacyTrophyStats,
+  ): { id: string; name: string; icon: string; need: string; earned: boolean }[];
+}
+
+export interface LegacyTrophyInfo {
+  name: string;
+  year: string;
+  targetSpecies: string[];
+  timeZone: string;
+  results: {
+    targetSpecies: string[];
+    divisions: Record<'solo' | 'team', { anglerIds: string[] }[]>;
+    bigFish: { anglerId: string } | null;
+    bets: { title: string; winnerId: string | null }[];
+  } | null;
+}
+
+export interface LegacyTrophyRow {
+  eventId: string;
+  name: string;
+  year: string;
+  handle: string;
+  frozen: boolean;
+  bigFishWon: boolean;
+  betsWon: string[];
+  division: string;
+  fish: number;
+  scoring: number;
+  best: number;
+  bestCatch: LegacyCatch | null;
+  top3: number;
+  bestDay: number;
+  placing: number;
+  entrants: number;
+  disqualified: boolean;
+  bigfish: boolean;
+  fullDays: number;
+  species: string[];
+}
+
+export interface LegacyTrophyStats {
+  history: LegacyTrophyRow[];
+  events: number;
+  fish: number;
+  species: string[];
+  longest: LegacyCatch | null;
+  best: number;
+  bestTop3: number;
+  bestDay: number;
+  mostInEvent: number;
+  fullDays: number;
+  bigFishBuyIns: number;
+  bestPlacing: number;
+  wins: number;
+  podiums: number;
+  bigFishWins: number;
+  betsWon: number;
 }
 
 export interface LegacyDayHours {
@@ -215,6 +284,8 @@ const EXPORTS: readonly (keyof LegacyApi)[] = [
   'winningFish',
   'reportDueDate',
   'reportDayRow',
+  'trophyStats',
+  'trophyBadges',
 ];
 
 function fakeElement(): Record<string, unknown> {

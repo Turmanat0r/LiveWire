@@ -1344,6 +1344,14 @@ export type Database = {
       leave_bet: { Args: { p_angler_id: string; p_bet_id: string }; Returns: undefined };
       leave_entry: { Args: { p_entry_id: string }; Returns: undefined };
       my_history_angler_ids: { Args: Record<PropertyKey, never>; Returns: string[] };
+      my_trophy_anglers: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          angler_id: string;
+          event_id: string;
+          full_days: string[];
+        }[];
+      };
       pool_counts: {
         Args: { p_event_id: string };
         Returns: {

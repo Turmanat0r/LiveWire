@@ -9,6 +9,7 @@ import { LivewellScreen } from '../screens/catches/LivewellScreen';
 import { MyCatchesScreen } from '../screens/catches/MyCatchesScreen';
 import { PlannedScreen } from '../screens/PlannedScreen';
 import { GalleryScreen } from '../screens/gallery/GalleryScreen';
+import { TrophyScreen } from '../screens/trophies/TrophyScreen';
 import { SafetyScreen } from '../screens/safety/SafetyScreen';
 import { BigFishScreen } from '../screens/board/BigFishScreen';
 import { PayoutsScreen } from '../screens/board/PayoutsScreen';
@@ -43,6 +44,7 @@ export const routes: RouteObject[] = [
       { path: screen('chat').path, element: <ChatScreen /> },
       { path: screen('director').path, element: <DirectorScreen /> },
       { path: screen('gallery').path, element: <GalleryScreen /> },
+      { path: screen('trophies').path, element: <TrophyScreen /> },
       ...SCREENS.filter((s) => s.milestone !== null).map((s): RouteObject => ({
         path: s.path,
         element: <PlannedScreen screen={s} />,
