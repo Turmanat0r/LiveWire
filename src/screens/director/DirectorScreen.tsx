@@ -19,11 +19,12 @@ import { OverdueAlert } from './OverdueAlert';
 import { EventTool } from './EventTool';
 import { PayoutTool } from './PayoutTool';
 import { PositionsTool } from './PositionsTool';
+import { ResultsTool, useResults } from './ResultsTool';
 import { ReviewLists } from './ReviewLists';
 import '../../ui/forms.css';
 import './director.css';
 
-const TOOLS = ['review', 'contestants', 'positions', 'payouts', 'event'] as const;
+const TOOLS = ['review', 'contestants', 'positions', 'payouts', 'event', 'results'] as const;
 type Tool = (typeof TOOLS)[number];
 
 /**
@@ -138,6 +139,7 @@ function DirectorPanel() {
   const contestants = useContestants();
   const money = useDirectorMoney(contestants);
   const placed = usePositions();
+  const results = useResults();
   const raised = placed.rows.filter((p) => p.beacon).length;
   const recent = placed.rows.filter(
     (p) => signalAgeMinutes(p.at, now) <= SIGNAL_STALE_MINUTES,
@@ -200,6 +202,15 @@ function DirectorPanel() {
         ? [event.name, dateRangeText(dates)].filter(Boolean).join(' · ')
         : 'No live event: set one up',
     },
+    {
+      id: 'results',
+      icon: 'results',
+      label: 'Results',
+      summary: !results
+        ? 'No event yet'
+        : (results.view.record ? 'Frozen' : 'Not frozen') +
+          (results.view.sending ? ' · waiting to send' : ''),
+    },
   ];
   const panel =
     tool === 'contestants' ? (
@@ -208,6 +219,8 @@ function DirectorPanel() {
       <PositionsTool placed={placed} />
     ) : tool === 'event' ? (
       <EventTool />
+    ) : tool === 'results' ? (
+      <ResultsTool />
     ) : tool === 'payouts' ? (
       money && event ? (
         <PayoutTool eventId={event.id} money={money} />
