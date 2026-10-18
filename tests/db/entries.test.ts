@@ -3,6 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { errorOf, rowOf, rowsOf, TestDb, type Caller } from './harness';
 import {
   codeOf,
+  DAY_1,
+  DAY_2,
   registerSolo,
   registerTeam,
   registrant,
@@ -394,5 +396,60 @@ describe('history across events', () => {
     ).map((r) => r.my_history_angler_ids);
     expect(ids).toHaveLength(2);
     expect(ids).toContain(me.id);
+  });
+
+  it('hands the trophy case your anglers in every year, and only the days you finished', async () => {
+    const { eventId: lastYear } = await setUpEvent(db, { current: false, director });
+    const me = registrant();
+    const phone = await db.device('trophy phone');
+    rowOf(await register(await db.device('last year’s phone'), me, { event: lastYear }));
+    // This year a team, with a partner who left the phone number blank.
+    const captain = {
+      ...me,
+      id: randomUUID(),
+      handle: `Trophy Captain ${randomUUID().slice(0, 4)}`,
+    };
+    const partner = registrant({ phone: '', emergencyName: '', emergencyPhone: '' });
+    rowOf(await register(phone, captain, { partner }));
+    const stranger = await registerSolo(db, await db.device('a stranger'), lastYear);
+
+    const at = (hour: number) => `${DAY_1}T${String(hour).padStart(2, '0')}:00:00-06:00`;
+    const set = (anglerId: string, day: string, out: string | null) =>
+      db.call(director, 'director_set_check_in', {
+        p_angler_id: anglerId,
+        p_day: day,
+        p_in_at: at(6),
+        p_out_at: out,
+      });
+    rowOf(await set(me.id, DAY_1, at(15)));
+    // Never checked back out: not a full day.
+    rowOf(await set(me.id, DAY_2, null));
+    rowOf(await set(stranger.angler.id, DAY_1, at(15)));
+
+    const rows = rowsOf(
+      await db.call<{ angler_id: string; event_id: string; full_days: (string | Date)[] }>(
+        phone,
+        'my_trophy_anglers',
+      ),
+    );
+    const days = (v: (string | Date)[]) =>
+      v.map((d) => (typeof d === 'string' ? d : d.toISOString().slice(0, 10)));
+    expect(
+      rows
+        .map((r) => ({ id: r.angler_id, event: r.event_id, days: days(r.full_days) }))
+        .sort((a, b) => a.id.localeCompare(b.id)),
+    ).toEqual(
+      [
+        { id: me.id, event: lastYear, days: [DAY_1] },
+        { id: captain.id, event: eventId, days: [] },
+        { id: partner.id, event: eventId, days: [] },
+      ].sort((a, b) => a.id.localeCompare(b.id)),
+    );
+    // Last year's check-in times themselves stay out of reach of this phone.
+    expect(
+      rowsOf(await db.as(phone, `select * from public.check_ins where angler_id = $1`, [me.id])),
+    ).toEqual([]);
+    expect(rowsOf(await db.call(await db.device('nobody'), 'my_trophy_anglers'))).toEqual([]);
+    expect((await db.call(db.anon, 'my_trophy_anglers')).ok).toBe(false);
   });
 });

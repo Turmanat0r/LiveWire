@@ -6,7 +6,8 @@ import { newPhone, setUpEvent } from '../db/fixtures';
  * Filing a fish, on a real Supabase (CI starts one): register, photograph a
  * catch (the in-app camera on Android, the camera roll on the iPhone), see it
  * on My catches, and watch the director's approval arrive by itself, with the
- * fish counting in the livewell and on the gallery wall, saved from there.
+ * fish counting in the livewell and on the gallery wall, saved from there,
+ * and in the trophy case.
  */
 // Skipped on a PC with no Supabase. In CI one is always started, so there a
 // missing server fails these rather than quietly skipping them.
@@ -148,4 +149,22 @@ test('files a catch with its photo, and the director’s approval arrives by its
   const download = page.waitForEvent('download');
   await viewer.getByRole('button', { name: 'Save photo' }).click();
   expect((await download).suggestedFilename()).toBe('MKWO-Walleye-21.50in.jpg');
+
+  // In the trophy case, through the server's own answer to who this phone is:
+  // a line for this tournament, and the badge the fish earned.
+  await page.goto('/trophies');
+  await expect(page.getByText('Looking up your earlier tournaments…')).toHaveCount(0, {
+    timeout: 20_000,
+  });
+  await expect(page.getByText(/need signal/)).toHaveCount(0);
+  await expect(page.getByRole('list', { name: 'Tournaments fished' })).toContainText(
+    '1 fish · best 21.50″',
+  );
+  await expect(page.getByRole('list', { name: 'Personal bests' })).toContainText('21.50″');
+  await expect(
+    page
+      .getByRole('list', { name: 'Badges' })
+      .getByRole('listitem')
+      .filter({ hasText: 'Twenty-Incher' }),
+  ).toContainText('Earned');
 });
