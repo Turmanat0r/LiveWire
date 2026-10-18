@@ -99,6 +99,13 @@ const LAST_RETRY_MS = 60_000;
 const RELAY_STARTS_MS = 5_000;
 /** Hidden longer than this, the app reads everything again when it comes back. */
 const STALE_AFTER_HIDDEN_MS = 60_000;
+/**
+ * While connected and on screen, beacons are read again this often whatever
+ * the signals say. Supabase relays a signal at most once, so one can be lost;
+ * a lost beacon is the one loss that cannot wait for the next reconnect. This
+ * is the longest a raised beacon can go unseen on a phone that is open.
+ */
+export const BEACON_BACKSTOP_MS = 60_000;
 /** Photo addresses last an hour; ask for a fresh one after fifty minutes. */
 const PHOTO_URL_REUSE_MS = 50 * 60_000;
 
@@ -136,6 +143,7 @@ export class Sync {
   private cancelSave: (() => void) | null = null;
   private cancelGather: (() => void) | null = null;
   private cancelSecondLook: (() => void) | null = null;
+  private cancelBackstop: (() => void) | null = null;
   private readonly pending = new Map<TableName, Pending>();
   /** One read at a time per table, so an older answer never lands on a newer one. */
   private readonly reads = new Map<TableName, Promise<void>>();
@@ -212,6 +220,7 @@ export class Sync {
       this.cancelSave,
       this.cancelGather,
       this.cancelSecondLook,
+      this.cancelBackstop,
     ])
       cancel?.();
   }
@@ -467,6 +476,7 @@ export class Sync {
         this.cancelSecondLook = null;
         if (this.live) void this.readEverything();
       }, RELAY_STARTS_MS);
+      this.armBackstop();
       this.outbox.kick();
     } else if (status === 'lost') {
       // Start over: a channel closed for an expired sign-in is never reopened by itself.
@@ -475,6 +485,18 @@ export class Sync {
       this.live = false;
       this.lost({ kind: 'offline' });
     }
+  }
+
+  /** The beacon backstop: see BEACON_BACKSTOP_MS. */
+  private armBackstop(): void {
+    this.cancelBackstop?.();
+    this.cancelBackstop = this.setTimer(() => {
+      this.cancelBackstop = null;
+      if (!this.live || this.stopped) return;
+      // Hidden, the phone is not showing anything; coming back reads afresh.
+      if (this.hiddenAt === null) void this.refresh(['beacons']).catch(() => undefined);
+      this.armBackstop();
+    }, BEACON_BACKSTOP_MS);
   }
 
   private async readEverything(): Promise<void> {
