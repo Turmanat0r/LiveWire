@@ -19,6 +19,7 @@ export function lazyRemote(load: () => Promise<Remote>): Remote {
     signIn: async () => (await remote()).signIn(),
     signInDirector: async (email, password) => (await remote()).signInDirector(email, password),
     signOut: async () => (await remote()).signOut(),
+    accessToken: async () => (await remote()).accessToken(),
     readTable: async (table, eventId) => (await remote()).readTable(table, eventId),
     readMatching: async (table, column, values) =>
       (await remote()).readMatching(table, column, values),

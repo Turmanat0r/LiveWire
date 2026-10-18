@@ -15,7 +15,7 @@
     "lint": "eslint . && stylelint \"src/**/*.css\"",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "vitest run --project unit",
+    "test": "vitest run --project unit --project api",
     "test:watch": "vitest --project unit",
     "test:parity": "vitest run --project parity",
     "test:db": "vitest run --project db",

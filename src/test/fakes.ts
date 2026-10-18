@@ -71,6 +71,13 @@ export class FakeServer implements Remote {
   /** Director accounts by email, with their passwords. */
   readonly directors = new Map<string, string>();
 
+  /** The session a server function would be handed. */
+  token: string | null = 'session-token';
+
+  accessToken(): Promise<string | null> {
+    return Promise.resolve(this.token);
+  }
+
   signIn(): Promise<Account> {
     this.reachable();
     if (this.signInsRefused) {

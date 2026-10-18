@@ -159,6 +159,15 @@ export default defineConfig(({ mode }) => {
         {
           extends: true,
           test: {
+            // The Vercel functions in api/, run as Node runs them on Vercel.
+            name: 'api',
+            include: ['tests/api/**/*.test.ts'],
+            environment: 'node',
+          },
+        },
+        {
+          extends: true,
+          test: {
             // The database: every migration applied to a fresh Postgres, and every
             // rule acted out as an angler, a teammate, a stranger and the director.
             // In CI, SUPABASE_DB_URL points the same tests at the real Supabase.

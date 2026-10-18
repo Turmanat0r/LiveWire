@@ -46,6 +46,8 @@ against the testing site:
    - director: review, approve and reject; Contestants (fee paid,
      disqualify); Positions;
    - standings, Big Fish, side bets, chat, payouts;
+   - **Fish-I**: on a pending catch, Run Fish-I vision check (the testing
+     site needs `GEMINI_API_KEY` in its Vercel settings first);
    - freeze the results; trophy case; fish gallery; **make a highlight reel on
      the iPhone** (no automated test can, so this is its first real run);
    - print the FWP report.

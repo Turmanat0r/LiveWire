@@ -76,6 +76,23 @@ changed row (its table and key, never its contents) on the event's topic.
 Phones listen, read just that row again under their own rules, and drop it if
 it comes back empty: that is how an overturned catch leaves every board.
 
+## Server functions
+
+Two small functions run on Vercel, in [`api/`](api):
+
+- `keep-alive.ts`: once a week (`vercel.json`, `crons`) it reads one event's
+  id, so a free Supabase project never counts as idle and goes to sleep.
+- `fish-i.ts`: **Fish-I**, an AI look at a catch photo for the director, on
+  Google Gemini's free tier. The director's review asks it about one catch at a
+  time; it reads that catch with the director's own session, asks Gemini, and
+  saves the answer on the catch. It needs one setting in the Vercel project,
+  **`GEMINI_API_KEY`**: aistudio.google.com/apikey, Create API key (no card),
+  then Vercel, Settings, Environment Variables, and redeploy. `FISHI_MODEL`
+  pins a model by name; leave it unset and the function picks one.
+
+Both read the two `VITE_SUPABASE_*` settings the app is built with. The Gemini
+key is the only secret either one holds.
+
 ## Where things are
 
 |                 |                                                                                                                                                                |

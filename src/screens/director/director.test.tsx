@@ -194,6 +194,116 @@ describe('fish to review', () => {
     expect(within(all).getByText('Approved')).toBeTruthy();
   });
 
+  it('asks Fish-I about a photo, as the director, and shows what to look at', async () => {
+    const asked: { method: string; auth: string | null; body: string | null }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url !== '/api/fish-i') return Promise.reject(new Error(`not ${url}`));
+        const headers = new Headers(init?.headers);
+        asked.push({
+          method: init?.method ?? 'GET',
+          auth: headers.get('authorization'),
+          body: typeof init?.body === 'string' ? init.body : null,
+        });
+        if ((init?.method ?? 'GET') === 'GET') {
+          return Promise.resolve(Response.json({ ready: true, model: 'gemini-2.5-flash' }));
+        }
+        return Promise.resolve(
+          Response.json({
+            saved: true,
+            review: {
+              species: 'walleye',
+              speciesConfidence: 0.93,
+              matchesClaim: true,
+              boardVisible: true,
+              fishFlat: true,
+              noseAtStop: false,
+              tailInFrame: true,
+              handBlocking: false,
+              concerns: [],
+              notes: 'A clear photo on a bump board.',
+            },
+          }),
+        );
+      }),
+    );
+    const { server, angler } = field();
+    server.put(
+      'catches',
+      catchRow({ id: 'c1', angler_id: angler.captainId, status: 'pending', length_inches: 23.5 }),
+    );
+    server.put('catch_evidence', evidence('c1'));
+    const { user } = await open(server);
+    await signIn(user);
+    const [card] = within(screen.getByRole('list', { name: 'Pending catches' })).getAllByRole(
+      'listitem',
+    );
+    if (!card) throw new Error('a pending card');
+    await user.click(await within(card).findByRole('button', { name: 'Run Fish-I vision check' }));
+    await within(card).findByText(/^reads as walleye \(93% confidence\)/);
+    expect(card.textContent).toContain('Nose does not appear to be against the zero stop.');
+    expect(within(card).getByRole('button', { name: 'Re-run' })).toBeTruthy();
+    // One health check for the whole screen, then the look, both as the director.
+    expect(asked).toEqual([
+      { method: 'GET', auth: 'Bearer session-token', body: null },
+      { method: 'POST', auth: 'Bearer session-token', body: JSON.stringify({ catchId: 'c1' }) },
+    ]);
+    vi.unstubAllGlobals();
+  });
+
+  it('shows a saved Fish-I answer, and says why Fish-I cannot answer now', async () => {
+    let ready = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init?: RequestInit) =>
+        Promise.resolve(
+          (init?.method ?? 'GET') === 'GET'
+            ? Response.json(ready ? { ready: true } : { ready: false, reason: 'no-api-key' })
+            : Response.json(
+                { error: 'Gemini is rate limited right now. Wait a minute, then try again.' },
+                { status: 429 },
+              ),
+        ),
+      ),
+    );
+    const { server, angler } = field();
+    server.put(
+      'catches',
+      catchRow({ id: 'c1', angler_id: angler.captainId, status: 'pending', species: 'Walleye' }),
+    );
+    server.put(
+      'catch_evidence',
+      evidence('c1', {
+        ai_review: {
+          species: 'northern pike',
+          matchesClaim: false,
+          concerns: ['Hand over the tail.'],
+        },
+      }),
+    );
+    const { user } = await open(server);
+    await signIn(user);
+    const [card] = within(screen.getByRole('list', { name: 'Pending catches' })).getAllByRole(
+      'listitem',
+    );
+    if (!card) throw new Error('a pending card');
+    expect(card.textContent).toContain('Fish-I vision: reads as northern pike');
+    expect(card.textContent).toContain('Does not look like the Walleye the angler entered.');
+    expect(card.textContent).toContain('Hand over the tail.');
+    await within(card).findByText(/^Fish-I vision not ready: the server has no Gemini API key/);
+
+    ready = true;
+    await user.click(within(card).getByRole('button', { name: 'Retry Fish-I' }));
+    await user.click(await within(card).findByRole('button', { name: 'Re-run' }));
+    expect((await within(card).findByRole('alert')).textContent).toBe(
+      'Gemini is rate limited right now. Wait a minute, then try again.',
+    );
+    // The saved answer stays up.
+    expect(card.textContent).toContain('reads as northern pike');
+    vi.unstubAllGlobals();
+  });
+
   it('corrects a misread length before the ruling', async () => {
     const { server, angler } = field();
     server.put(
