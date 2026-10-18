@@ -10,7 +10,7 @@ import { registerSolo, setUpEvent } from '../db/fixtures';
  * its evidence, approve it, find that angler's Tournament ID by their phone,
  * match their fee and check them in, stand down their beacon, log a donation
  * and the awards budget, set up the event, tighten its course and re-check the
- * fish against it, and sign out to an ordinary phone.
+ * fish against it, freeze the results, and sign out to an ordinary phone.
  */
 // Skipped on a PC with no Supabase. In CI one is always started, so there a
 // missing server fails these rather than quietly skipping them.
@@ -260,6 +260,26 @@ test('the director signs in, approves a fish, and signs out', async ({ page }) =
       { timeout: 20_000 },
     )
     .toEqual({ radius: '0.1', within: 'false' });
+
+  // The results are frozen: the approved fish is written down as first place.
+  await page.getByRole('button', { name: /^Results/ }).click();
+  page.once('dialog', (dialog) => void dialog.accept());
+  await page.getByRole('button', { name: 'Freeze this year’s results' }).click();
+  await expect
+    .poll(
+      async () =>
+        (
+          await db.admin<{ version: string; first: string }>(
+            `select record ->> 'version' as version,
+                    record -> 'divisions' -> 'solo' -> 0 ->> 'bestInches' as first
+               from public.results where event_id = $1`,
+            [eventId],
+          )
+        )[0],
+      { timeout: 20_000 },
+    )
+    .toEqual({ version: '1', first: '24.75' });
+  await expect(page.getByRole('button', { name: /^Results/ })).toContainText('Frozen');
 
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible({ timeout: 20_000 });

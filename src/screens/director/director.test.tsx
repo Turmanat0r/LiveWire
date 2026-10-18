@@ -842,3 +842,51 @@ describe('the course boundary', () => {
     expect(region.textContent).toContain('The re-check is waiting to send.');
   });
 });
+
+describe('the results tool', () => {
+  it('previews the podium, freezes it, and can unfreeze it, with no signal', async () => {
+    const { server, angler } = field();
+    server.put('catches', catchRow({ angler_id: angler.captainId, length_inches: 24.75 }));
+    server.put('catches', catchRow({ angler_id: angler.captainId, status: 'pending' }));
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { sync, user } = await open(server);
+    await signIn(user);
+    server.online = false;
+    const tile = () => screen.getByRole('button', { name: /^Results/ });
+    expect(tile().textContent).toContain('Not frozen');
+    await user.click(tile());
+    expect(screen.getByText(/^Not frozen\. 1 catch is still waiting on review/)).toBeTruthy();
+    const solo = screen.getByRole('region', { name: 'Solo division' });
+    expect(solo.textContent).toContain('1Salty Bedrock Perch24.75″');
+    expect(screen.getByRole('region', { name: 'Big Fish pot' }).textContent).toContain('24.75″');
+
+    await user.click(screen.getByRole('button', { name: 'Freeze this year’s results' }));
+    await act(settle);
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringMatching(/1 catch is still waiting on review and will NOT count/),
+    );
+    const steps = () => sync.getState().outbox.items.flatMap((i) => i.steps);
+    expect(steps()).toMatchObject([
+      {
+        fn: 'director_freeze_results',
+        args: {
+          p_event_id: EVENT_ID,
+          p_record: {
+            version: 1,
+            divisions: { solo: [{ place: 1, bestInches: 24.75 }], team: [] },
+          },
+        },
+      },
+    ]);
+    expect(screen.getByText(/^Frozen .*\(waiting to send\)\./)).toBeTruthy();
+    expect(tile().textContent).toContain('Frozen · waiting to send');
+
+    await user.click(screen.getByRole('button', { name: 'Unfreeze' }));
+    await act(settle);
+    expect(steps()[1]).toMatchObject({
+      fn: 'director_unfreeze_results',
+      args: { p_event_id: EVENT_ID },
+    });
+    expect(screen.getByRole('button', { name: 'Freeze this year’s results' })).toBeTruthy();
+  });
+});
