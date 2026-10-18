@@ -276,6 +276,40 @@ describe('the sync engine', () => {
     expect(catchIds(setup.sync)).toEqual(['while-frozen']);
   });
 
+  it('reads beacons again every minute while open, in case a signal was lost', async () => {
+    const setup = setUp();
+    await live(setup);
+    const beaconIds = () => [...setup.sync.getState().tables.beacons.values()].map((b) => b.id);
+    // Raised, and its signal lost on the way.
+    setup.server.put('beacons', {
+      id: 'b1',
+      angler_id: 'angler-1',
+      event_id: EVENT_ID,
+      note: 'Taking on water',
+      lat: 46.39,
+      lng: -111.57,
+      accuracy_miles: 0.01,
+      position_at: '2027-09-18T15:00:00Z',
+      raised_at: '2027-09-18T15:00:00Z',
+      stood_down_at: null,
+      stood_down_by: null,
+    });
+    await setup.timers.advance(54_000);
+    await setup.sync.settled();
+    expect(beaconIds()).toEqual([]);
+    await setup.timers.advance(1_000);
+    await setup.sync.settled();
+    expect(beaconIds()).toEqual(['b1']);
+    expect(setup.server.reads).toEqual([`beacons ${EVENT_ID}`]);
+
+    // Hidden, it waits: coming back after a minute reads everything anyway.
+    setup.server.reads.length = 0;
+    setup.sync.becameHidden();
+    await setup.timers.advance(180_000);
+    await setup.sync.settled();
+    expect(setup.server.reads).toEqual([]);
+  });
+
   it('waits for signal, then connects', async () => {
     const setup = setUp();
     setup.server.online = false;
