@@ -32,3 +32,18 @@ test('opens on any screen with no signal, once it has been opened with signal', 
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('LiveWire');
   await context.setOffline(false);
 });
+
+/**
+ * At switch-over this app replaces the old one at the same address, and an
+ * installed old app hands over through its own Update button. That works only
+ * while the offline worker still loads the hand-over script (see
+ * public/sw-handover.js); docs/SWITCH-OVER.md has the full rehearsal.
+ */
+test('the offline worker still carries the hand-over from the old app', async ({ request }) => {
+  const worker = await request.get('/sw.js');
+  expect(worker.ok()).toBe(true);
+  expect(await worker.text()).toContain('sw-handover.js');
+  const handover = await request.get('/sw-handover.js');
+  expect(handover.ok()).toBe(true);
+  expect(await handover.text()).toContain("event.data === 'skip-waiting'");
+});

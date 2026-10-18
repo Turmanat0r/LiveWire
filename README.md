@@ -60,6 +60,10 @@ the last job applies any new migrations to the staging database,
   Supabase: open the project, **Connect**, **Connection string**, method
   **Session pooler**. It reaches that one database and nothing else in the
   account. If the password is ever reset, update the secret.
+- `PRODUCTION_DB_URL`: the same for the production database, added at
+  switch-over. Once it is there, the next job applies the same migrations to
+  production and then moves the `production` branch, which the live site is
+  built from. See [docs/SWITCH-OVER.md](docs/SWITCH-OVER.md).
 
 **Types.** `src/data/database.types.ts` is generated, never written by hand:
 `npm run db:types` builds the database from the migrations (on the stand-in,

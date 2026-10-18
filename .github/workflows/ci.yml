@@ -2,12 +2,15 @@
 # results for its branch. A red X there means do not merge; the job name says
 # which kind of check failed.
 #
-# After a merge to main, and only if every check passed, the last job applies
-# any new database changes to the staging database (livewire-staging).
+# After a merge to main, and only if every check passed, the last jobs apply
+# any new database changes to the staging database (livewire-staging), then to
+# production, and only then publish the live site (docs/SWITCH-OVER.md).
+# "Run workflow" on main does the same by hand.
 name: CI
 
 on:
   push:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -128,7 +131,7 @@ jobs:
 
   deploy-staging:
     name: Apply database changes to staging
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: [check, parity, phones, database]
     runs-on: ubuntu-24.04
     steps:
@@ -157,3 +160,55 @@ jobs:
         env:
           STAGING_DB_URL: ${{ secrets.STAGING_DB_URL }}
         run: npx supabase db push --db-url "$STAGING_DB_URL" --yes
+
+  deploy-production:
+    name: Apply database changes to production, then publish
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: [deploy-staging]
+    runs-on: ubuntu-24.04
+    permissions:
+      # Moves the production branch, which the live site is built from.
+      contents: write
+    steps:
+      # PRODUCTION_DB_URL is the production database's session-pooler
+      # connection string. Until it is added at switch-over, nothing here
+      # touches production.
+      - name: Is production set up yet?
+        id: ready
+        env:
+          PRODUCTION_DB_URL: ${{ secrets.PRODUCTION_DB_URL }}
+        run: |
+          if [ -z "$PRODUCTION_DB_URL" ]; then
+            echo "::notice title=Production not set up yet::No PRODUCTION_DB_URL secret, so nothing went to production. See docs/SWITCH-OVER.md."
+            echo "set=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "set=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.ready.outputs.set == 'true'
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - if: steps.ready.outputs.set == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - if: steps.ready.outputs.set == 'true'
+        run: npm ci
+      - name: What will change
+        if: steps.ready.outputs.set == 'true'
+        env:
+          PRODUCTION_DB_URL: ${{ secrets.PRODUCTION_DB_URL }}
+        run: npx supabase db push --db-url "$PRODUCTION_DB_URL" --dry-run
+      - name: Apply it
+        if: steps.ready.outputs.set == 'true'
+        env:
+          PRODUCTION_DB_URL: ${{ secrets.PRODUCTION_DB_URL }}
+        run: npx supabase db push --db-url "$PRODUCTION_DB_URL" --yes
+      # The live site's Vercel project builds the production branch, so moving
+      # it only now means the live app never calls a database function that is
+      # not there yet. A plain push: re-running an old run cannot move the live
+      # site backwards, because the branch is already ahead of it.
+      - name: Publish the live site
+        if: steps.ready.outputs.set == 'true'
+        run: git push origin HEAD:refs/heads/production

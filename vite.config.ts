@@ -104,7 +104,12 @@ export default defineConfig(({ mode }) => {
           // never mix this deploy's page with last deploy's stylesheet.
           globPatterns: ['**/*.{js,css,html,woff2,png,svg,webmanifest}'],
           navigateFallback: '/index.html',
+          // An API answer is never the app's page.
+          navigateFallbackDenylist: [/^\/api\//],
           cleanupOutdatedCaches: true,
+          // Lets an installed copy of the old app hand over to this one from its
+          // own Update button; see public/sw-handover.js.
+          importScripts: ['/sw-handover.js'],
           runtimeCaching: [
             {
               // A catch photo never changes once filed. Its address carries a

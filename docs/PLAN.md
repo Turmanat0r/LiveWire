@@ -154,6 +154,9 @@ switch-over, and after any change to the offline setup:
   reach it and cannot reach the live database. The old LiveWire project was
   paused to free the slot. GitHub applies database changes to it after each
   merge.
+- **Production.** Decided: it starts empty (the old database only ever held
+  testing), in the old LiveWire project rebuilt, kept awake by a weekly
+  keep-alive. The steps, in order, are in [SWITCH-OVER.md](SWITCH-OVER.md).
 - **Fish-I provider.** Stay on Google's free tier, or pay for a stronger model.
   It is a cost decision; the code will take either.
 - **Fonts.** Decided: all four of the old app's. Inter to read, Oswald for
