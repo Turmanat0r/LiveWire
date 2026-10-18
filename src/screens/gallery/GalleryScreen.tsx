@@ -6,6 +6,7 @@ import { useSync, useSyncEngine } from '../../data/useSync';
 import { Page } from '../../ui/Page';
 import { CatchPhoto, PhotoViewer } from '../../ui/PhotoViewer';
 import { inchesText } from '../board/StandingsScreen';
+import { ReelCard } from './ReelCard';
 import './gallery.css';
 
 /**
@@ -90,7 +91,7 @@ export function GalleryScreen() {
   }
 
   return (
-    <Page title={screen('gallery').title}>
+    <Page title={screen('gallery').title} after={<ReelCard rows={rows} />}>
       <p className="hint">
         {rows.length === 0
           ? 'Nothing approved yet. Every fish the director approves shows up here.'

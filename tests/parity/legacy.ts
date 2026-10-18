@@ -181,6 +181,29 @@ export interface LegacyApi {
   trophyBadges(
     stats: LegacyTrophyStats,
   ): { id: string; name: string; icon: string; need: string; earned: boolean }[];
+  galleryOrder(
+    catches: LegacyCatch[],
+    anglers: LegacyAngler[],
+    myIds: string[],
+  ): { id: string; mine: boolean }[];
+  reelRows(
+    catches: LegacyCatch[],
+    anglers: LegacyAngler[],
+    myIds: string[],
+  ): { id: string; mine: boolean }[];
+  reelPlan<T>(rows: T[], opts?: { maxShots?: number }): LegacyReelPlan<T>;
+  reelSceneAt<T>(
+    plan: LegacyReelPlan<T>,
+    ms: number,
+  ): { scene: LegacyReelPlan<T>['scenes'][number]; index: number; progress: number } | null;
+  reelFileName(evt: { prefix: string; dates: string[] }, handle: string, ext: string): string;
+}
+
+export interface LegacyReelPlan<T> {
+  scenes: { kind: string; ms: number; row?: T }[];
+  shots: number;
+  dropped: number;
+  totalMs: number;
 }
 
 export interface LegacyTrophyInfo {
@@ -286,6 +309,11 @@ const EXPORTS: readonly (keyof LegacyApi)[] = [
   'reportDayRow',
   'trophyStats',
   'trophyBadges',
+  'galleryOrder',
+  'reelRows',
+  'reelPlan',
+  'reelSceneAt',
+  'reelFileName',
 ];
 
 function fakeElement(): Record<string, unknown> {
