@@ -305,10 +305,14 @@ export class Sync {
   }
 
   /**
-   * One table of any event, read and handed back without being kept: the
-   * director setting up an event that is not the current one. Needs signal.
+   * One table of any event, or of every event (null), read and handed back
+   * without being kept: the director setting up an event that is not the
+   * current one, or carrying last year's answers forward. Needs signal.
    */
-  async peek<T extends Exclude<TableName, 'events'>>(table: T, eventId: string): Promise<Row<T>[]> {
+  async peek<T extends Exclude<TableName, 'events'>>(
+    table: T,
+    eventId: string | null,
+  ): Promise<Row<T>[]> {
     const remote = this.remote;
     if (!remote) throw new RemoteError({ kind: 'offline' });
     this.signedIn(await remote.signIn());

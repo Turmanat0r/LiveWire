@@ -13,6 +13,11 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: CI,
   retries: CI ? 1 : 0,
+  // Tests that share the one current event take turns on a database lock, and
+  // waiting for a turn counts toward a test's time; the director's walk
+  // through every tool is the longest turn there is. A minute covers that
+  // without leaving a test that is stuck, rather than slow, running for long.
+  timeout: 60_000,
   reporter: CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: `http://localhost:${PORT}`,

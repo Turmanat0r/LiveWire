@@ -101,6 +101,12 @@
   --radius: 6px;
   --radius-sm: 4px;
   --tap-target: 3rem;
+
+  /* The state's contest report is a copy of a paper form, so it leaves the
+     palette behind: black on white, with the form's grey heading cells. */
+  --sheet-ink: #000;
+  --sheet-paper: #fff;
+  --sheet-shade: #d9d9d9;
 }
 
 /* The old app's screen themes, renamed to the new addresses. */

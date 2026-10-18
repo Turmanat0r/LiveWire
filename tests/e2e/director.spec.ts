@@ -10,7 +10,8 @@ import { registerSolo, setUpEvent } from '../db/fixtures';
  * its evidence, approve it, find that angler's Tournament ID by their phone,
  * match their fee and check them in, stand down their beacon, log a donation
  * and the awards budget, set up the event, tighten its course and re-check the
- * fish against it, freeze the results, and sign out to an ordinary phone.
+ * fish against it, freeze the results, fill in the state's contest report,
+ * and sign out to an ordinary phone.
  */
 // Skipped on a PC with no Supabase. In CI one is always started, so there a
 // missing server fails these rather than quietly skipping them.
@@ -280,6 +281,31 @@ test('the director signs in, approves a fish, and signs out', async ({ page }) =
     )
     .toEqual({ version: '1', first: '24.75' });
   await expect(page.getByRole('button', { name: /^Results/ })).toContainText('Frozen');
+
+  // The state's contest report: worked out from the records, and the
+  // director's answers saved with the event.
+  await page.getByRole('button', { name: /^FWP report/ }).click();
+  const sheet = page.getByRole('region', { name: 'The state’s contest report form' });
+  await expect(sheet).toContainText('FISHING CONTEST REPORT');
+  await expect(sheet).toContainText('24.75"');
+  // Unique: a report saved by the other phone's run carries into this one.
+  const filer = `Pat Director ${randomUUID().slice(0, 6)}`;
+  await page.getByLabel('Form completed by').fill(filer);
+  await page.getByLabel('FWP region').fill('3');
+  await page.getByRole('button', { name: 'Save report' }).click();
+  await expect
+    .poll(
+      async () =>
+        (
+          await db.admin<{ filer: string; region: string }>(
+            `select settings ->> 'filerName' as filer, settings ->> 'region' as region
+               from public.event_reports where event_id = $1`,
+            [eventId],
+          )
+        )[0],
+      { timeout: 20_000 },
+    )
+    .toEqual({ filer, region: '3' });
 
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible({ timeout: 20_000 });
