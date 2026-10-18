@@ -3,6 +3,7 @@ import { failureText } from '../../app/failureText';
 import { screen } from '../../app/screens';
 import { useNow } from '../../app/useNow';
 import { useEventDates } from '../../data/selectors';
+import { reportDue } from '../../domain/report';
 import { dateRangeText } from '../../domain/time';
 import { signalAgeMinutes, SIGNAL_STALE_MINUTES } from '../../domain/safety';
 import { useContestants, usePositions, useReviewItems } from '../../data/director';
@@ -19,13 +20,35 @@ import { OverdueAlert } from './OverdueAlert';
 import { EventTool } from './EventTool';
 import { PayoutTool } from './PayoutTool';
 import { PositionsTool } from './PositionsTool';
+import { ReportTool } from './report/ReportTool';
 import { ResultsTool, useResults } from './ResultsTool';
 import { ReviewLists } from './ReviewLists';
 import '../../ui/forms.css';
 import './director.css';
 
-const TOOLS = ['review', 'contestants', 'positions', 'payouts', 'event', 'results'] as const;
+const TOOLS = [
+  'review',
+  'contestants',
+  'positions',
+  'payouts',
+  'event',
+  'results',
+  'report',
+] as const;
 type Tool = (typeof TOOLS)[number];
+
+/** "Due Oct 18 · 12 days", "Was due Oct 18": the state wants it within 30 days. */
+function dueSummary(due: ReturnType<typeof reportDue>): string {
+  if (!due) return 'No fishing days set';
+  const on = new Date(due.due).toLocaleDateString('en-US', {
+    timeZone: 'UTC',
+    month: 'short',
+    day: 'numeric',
+  });
+  if (due.daysLeft < 0) return `Was due ${on}`;
+  if (due.daysLeft === 0) return `Due today, ${on}`;
+  return `Due ${on} · ${String(due.daysLeft)} day${due.daysLeft === 1 ? '' : 's'}`;
+}
 
 /**
  * The tournament director's screens. Signing in is what lets the server
@@ -211,6 +234,12 @@ function DirectorPanel() {
         : (results.view.record ? 'Frozen' : 'Not frozen') +
           (results.view.sending ? ' · waiting to send' : ''),
     },
+    {
+      id: 'report',
+      icon: 'report',
+      label: 'FWP report',
+      summary: dueSummary(reportDue(dates, now)),
+    },
   ];
   const panel =
     tool === 'contestants' ? (
@@ -221,6 +250,8 @@ function DirectorPanel() {
       <EventTool />
     ) : tool === 'results' ? (
       <ResultsTool />
+    ) : tool === 'report' ? (
+      <ReportTool />
     ) : tool === 'payouts' ? (
       money && event ? (
         <PayoutTool eventId={event.id} money={money} />

@@ -4,7 +4,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Row } from '../../data/tables';
 import { FakeServer, settle } from '../../test/fakes';
 import { putEntry, renderApp } from '../../test/render';
-import { catchRow, checkInRow, dayRow, entryRows, EVENT_ID, eventRow } from '../../test/rows';
+import {
+  catchRow,
+  checkInRow,
+  dayRow,
+  entryRows,
+  EVENT_ID,
+  eventRow,
+  OTHER_EVENT_ID,
+} from '../../test/rows';
 import { testSync } from '../../test/sync';
 import type { BoundaryDraft } from './boundary';
 
@@ -888,5 +896,95 @@ describe('the results tool', () => {
       args: { p_event_id: EVENT_ID },
     });
     expect(screen.getByRole('button', { name: 'Freeze this year’s results' })).toBeTruthy();
+  });
+});
+
+describe('the FWP contest report', () => {
+  it('fills the state’s form, carries last year’s filer, and saves what is typed', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2027-09-25T18:00:00Z'));
+    const { server, angler } = field();
+    // Somebody who entered before the app asked about residency.
+    const early = entryRows({
+      number: 2,
+      userId: 'device-2',
+      names: ['Early Bird'],
+      feePaid: true,
+    });
+    putEntry(server, early);
+    for (const p of early.privates) server.put('angler_private', { ...p, resident: null });
+    server.put('catches', catchRow({ angler_id: angler.captainId, length_inches: 24.75 }));
+    server.put(
+      'check_ins',
+      checkInRow({
+        angler_id: angler.captainId,
+        in_at: '2027-09-18T12:30:00+00:00',
+        out_at: '2027-09-18T20:15:00+00:00',
+      }),
+    );
+    server.put('event_reports', {
+      event_id: OTHER_EVENT_ID,
+      settings: { filerName: 'Daniel Turman', region: '3', airTemp: '60', savedAt: 1 },
+      updated_at: '2026-10-01T00:00:00Z',
+    });
+    const { sync, user } = await open(server);
+    await signIn(user);
+    const tile = screen.getByRole('button', { name: /^FWP report/ });
+    expect(tile.textContent).toContain('Due Oct 18 · 23 days');
+    await user.click(tile);
+    // Last year's report is read from the server as this one opens.
+    await act(settle);
+    server.online = false;
+
+    expect(screen.getByText('Due October 18, 2027: 23 days from now.')).toBeTruthy();
+    const warnings = screen.getByRole('list', { name: 'To settle before filing' });
+    expect(warnings.textContent).toMatch(/1 angler has no fee matched/);
+    expect(warnings.textContent).toMatch(/1 angler entered before the app asked about residency/);
+
+    // Last year’s filer, but not last year’s weather.
+    expect(screen.getByLabelText<HTMLInputElement>('Form completed by').value).toBe(
+      'Daniel Turman',
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('FWP region').value).toBe('3');
+    expect(screen.getByLabelText<HTMLInputElement>('Air temperature (°F)').value).toBe('');
+    expect(screen.getByLabelText<HTMLInputElement>('Contest sponsor').value).toBe(
+      'Big Sky Kayak Anglers',
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Day 1 start').value).toBe('06:30');
+
+    const sheet = screen.getByRole('region', { name: 'The state’s contest report form' });
+    expect(sheet.textContent).toContain('FISHING CONTEST REPORT');
+    expect(sheet.textContent).toContain('Total # of Anglers:2');
+    expect(sheet.textContent).toContain('Size of Winning Fish:24.75"');
+
+    await user.type(screen.getByLabelText('Air temperature (°F)'), '58');
+    expect(sheet.textContent).toContain('58');
+    await user.click(screen.getByRole('button', { name: 'Save report' }));
+    await act(settle);
+    const steps = sync.getState().outbox.items.flatMap((i) => i.steps);
+    expect(steps).toMatchObject([
+      {
+        fn: 'director_save_report',
+        args: {
+          p_event_id: EVENT_ID,
+          p_settings: { filerName: 'Daniel Turman', region: '3', airTemp: '58' },
+        },
+      },
+    ]);
+    expect(screen.getByText('Saved on this phone; waiting to send.')).toBeTruthy();
+
+    // Residency, set from the report: shows at once.
+    const unknown = screen.getByRole('list', { name: 'Residency not asked' });
+    await user.click(within(unknown).getByRole('button', { name: 'Montana' }));
+    await act(settle);
+    expect(sync.getState().outbox.items.flatMap((i) => i.steps)[1]).toMatchObject({
+      fn: 'director_update_angler',
+      args: { p_angler_id: early.captainId, p_full_name: 'Early Bird', p_resident: true },
+    });
+    expect(screen.queryByRole('list', { name: 'Residency not asked' })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Copy as text' }));
+    await act(settle);
+    expect(await navigator.clipboard.readText()).toContain('Air temperature: 58 degrees F');
   });
 });

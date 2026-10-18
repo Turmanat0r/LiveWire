@@ -1,0 +1,336 @@
+@layer components {
+  /* ---- the report tool around the sheet ---- */
+
+  .report-warnings {
+    display: grid;
+    gap: 6px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .card .report-warning {
+    padding: 9px 11px;
+    border-inline-start: 3px solid var(--beacon-gold);
+    background: var(--best-bg);
+    color: var(--ink);
+    font-size: var(--text-sm);
+  }
+
+  .report-save {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    align-items: center;
+  }
+
+  .report-days,
+  .report-residency {
+    display: grid;
+    gap: 8px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .report-day {
+    padding: 10px;
+    border: 1px solid var(--line);
+    background: var(--paper);
+  }
+
+  .card .report-day__head {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-block-end: 6px;
+    color: var(--ink);
+  }
+
+  .report-residency__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    background: var(--paper);
+  }
+
+  .card .report-note {
+    padding-inline-start: 10px;
+    border-inline-start: 3px solid var(--line);
+    font-size: var(--text-sm);
+  }
+
+  /* ---- the sheet ----
+     A copy of a state form, so it leaves the app's look behind: black on
+     white, Arial, ruled boxes. On screen it is sized to read on a phone; on
+     paper it takes the form's own point sizes. */
+
+  .fwp-sheet {
+    --fwp-cell-pad: 5px 6px;
+
+    padding: 14px;
+    border: 1px solid var(--line);
+    background: var(--sheet-paper);
+    color: var(--sheet-ink);
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: var(--text-sm);
+    line-height: 1.35;
+  }
+
+  .fwp-sheet p {
+    color: var(--sheet-ink);
+    font-size: inherit;
+  }
+
+  .fwp-page + .fwp-page {
+    margin-block-start: 24px;
+    padding-block-start: 20px;
+    border-block-start: 2px dashed var(--line);
+  }
+
+  .fwp-region {
+    margin-block-end: 8px;
+    font-weight: 700;
+    text-align: end;
+  }
+
+  .fwp-sheet .fwp-title {
+    margin-block-end: 14px;
+    color: var(--sheet-ink);
+    font-family: inherit;
+    font-size: var(--text-lg);
+    font-weight: 700;
+    text-align: center;
+    text-decoration: underline;
+  }
+
+  .fwp-sheet .fwp-return {
+    margin-block-end: 8px;
+    font-weight: 700;
+  }
+
+  .fwp-address {
+    margin: 0 0 16px 30px;
+    line-height: 1.5;
+  }
+
+  .fwp-sheet .fwp-head {
+    margin: 18px 0 6px;
+    color: var(--sheet-ink);
+    font-family: inherit;
+    font-size: var(--text-sm);
+    font-weight: 700;
+    text-align: center;
+    text-decoration: underline;
+  }
+
+  .fwp-sheet .fwp-sub {
+    margin-block-end: 6px;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .fwp-sheet .fwp-sub--em {
+    font-style: italic;
+  }
+
+  .fwp-grid,
+  .fwp-table {
+    inline-size: 100%;
+    margin-block-end: 14px;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+
+  .fwp-grid th,
+  .fwp-grid td,
+  .fwp-table th,
+  .fwp-table td {
+    padding: var(--fwp-cell-pad);
+    border: 1px solid var(--sheet-ink);
+    vertical-align: top;
+    text-align: start;
+    overflow-wrap: anywhere;
+  }
+
+  .fwp-grid th {
+    background: var(--sheet-shade);
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .fwp-table th {
+    background: var(--sheet-paper);
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .fwp-table td {
+    block-size: 22px;
+  }
+
+  .fwp-grid .fwp-num,
+  .fwp-table .fwp-num {
+    text-align: center;
+  }
+
+  /* Twenty-two inch columns will never fit a phone: the table scrolls, not the page. */
+  .fwp-scroll {
+    overflow-x: auto;
+  }
+
+  .fwp-table--size {
+    table-layout: auto;
+  }
+
+  .fwp-table--size th,
+  .fwp-table--size td {
+    padding: 3px 2px;
+    white-space: nowrap;
+  }
+
+  .fwp-species-col {
+    inline-size: 130px;
+  }
+
+  .fwp-sheet .fwp-line {
+    margin-block-end: 12px;
+  }
+
+  .fwp-fill {
+    display: inline-block;
+    min-inline-size: 150px;
+    padding: 0 4px;
+    border-block-end: 1px solid var(--sheet-ink);
+    text-align: center;
+  }
+
+  .fwp-fill--wide {
+    min-inline-size: 60%;
+  }
+
+  .fwp-box {
+    display: inline-block;
+    min-inline-size: 40px;
+    margin-inline-start: 14px;
+    padding: 0 4px;
+    border-block-end: 1px solid var(--sheet-ink);
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .fwp-gap {
+    display: inline-block;
+    inline-size: 36px;
+  }
+
+  .fwp-area {
+    min-block-size: 70px;
+    margin-block-end: 14px;
+    padding: 7px 8px;
+    border: 1px solid var(--sheet-ink);
+  }
+
+  .fwp-foot {
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+    margin-block-start: 16px;
+    font-size: var(--text-sm);
+    font-weight: 700;
+  }
+
+  /* What an empty box says, for the director. Paper gets the empty box. */
+  .fwp-blank {
+    color: var(--danger);
+    font-style: italic;
+  }
+
+  /* Printing exists for one thing: the state's form. Everything else is
+     hidden by visibility rather than display, because the sheet sits deep
+     inside the director's screen and display: none on any ancestor would
+     take it along. */
+  @media print {
+    body * {
+      visibility: hidden;
+    }
+
+    .fwp-sheet,
+    .fwp-sheet * {
+      visibility: visible;
+    }
+
+    /* Hidden is not gone: the director's screen would still take up paper,
+       as blank pages after the form. Everything that neither holds the sheet
+       nor is part of it goes entirely. */
+    body *:not(:has(.fwp-sheet), .fwp-sheet, .fwp-sheet *) {
+      display: none;
+    }
+
+    .fwp-sheet {
+      --fwp-cell-pad: 3px 4px;
+
+      position: absolute;
+      inset-block-start: 0;
+      inset-inline-start: 0;
+      inline-size: 100%;
+      padding: 0;
+      border: 0;
+      font-size: 10pt;
+    }
+
+    .fwp-sheet .fwp-title {
+      font-size: 14pt;
+    }
+
+    .fwp-sheet .fwp-head,
+    .fwp-grid,
+    .fwp-table {
+      font-size: 9pt;
+    }
+
+    .fwp-table--size {
+      font-size: 6.5pt;
+    }
+
+    .fwp-foot {
+      font-size: 7.5pt;
+    }
+
+    .fwp-sheet .fwp-blank {
+      display: none;
+    }
+
+    .fwp-page--break {
+      break-after: page;
+    }
+
+    .fwp-page + .fwp-page {
+      margin-block-start: 0;
+      padding-block-start: 0;
+      border-block-start: 0;
+    }
+
+    .fwp-scroll {
+      overflow: visible;
+    }
+
+    .fwp-sheet .fwp-head,
+    .fwp-sheet .fwp-sub {
+      break-after: avoid;
+    }
+
+    .fwp-grid,
+    .fwp-table,
+    .fwp-area {
+      break-inside: avoid;
+    }
+
+    @page {
+      margin: 12mm;
+    }
+  }
+}

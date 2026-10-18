@@ -37,6 +37,7 @@ export interface LegacyAngler {
   bigfish: boolean;
   pending?: true;
   disqualified?: boolean;
+  resident?: boolean;
   checkins?: Record<string, { in: number | null; out: number | null }>;
 }
 
@@ -126,6 +127,61 @@ export interface LegacyApi {
     a: { hash: string; hashes: string[] },
     b: { hash: string; hashes: string[] },
   ): { distance: number; cropped: boolean };
+  reportFieldCounts(anglers: LegacyAngler[]): {
+    anglers: number;
+    teams: number;
+    paid: number;
+    unpaid: number;
+  };
+  residencyCounts(anglers: LegacyAngler[]): {
+    resident: number;
+    nonresident: number;
+    unknown: number;
+    unknownAnglers: LegacyAngler[];
+  };
+  contestDayHours(anglers: LegacyAngler[], dates: string[]): LegacyDayHours[];
+  catchesPerDay(
+    catches: LegacyCatch[],
+    dates: string[],
+  ): { counts: Record<string, number>; offDays: number };
+  speciesTally(
+    catches: LegacyCatch[],
+    died?: Record<string, number>,
+  ): { species: string; caught: number; longest: number; died: number; released: number }[];
+  sizeDistribution(catches: LegacyCatch[]): {
+    small: LegacySizeRow[];
+    large: LegacySizeRow[];
+    under8: number;
+  };
+  winningFish(catches: LegacyCatch[], anglers: LegacyAngler[]): LegacyCatch | null;
+  reportDueDate(evt: { dates: string[] }): Date | null;
+  reportDayRow(
+    day: LegacyDayHours,
+    settings?: { hours?: Record<string, { start?: string; stop?: string }> },
+  ): {
+    day: number;
+    dateKey: string;
+    dayKey: string;
+    start: string;
+    stop: string;
+    overridden: boolean;
+    hours: number | null;
+  };
+}
+
+export interface LegacyDayHours {
+  day: number;
+  dateKey: string;
+  dayKey: string;
+  start: number | null;
+  stop: number | null;
+  hours: number | null;
+}
+
+export interface LegacySizeRow {
+  species: string;
+  counts: Record<number, number>;
+  split: boolean;
 }
 
 const EXPORTS: readonly (keyof LegacyApi)[] = [
@@ -150,6 +206,15 @@ const EXPORTS: readonly (keyof LegacyApi)[] = [
   'normPhone',
   'hammingHex',
   'photoHashDistance',
+  'reportFieldCounts',
+  'residencyCounts',
+  'contestDayHours',
+  'catchesPerDay',
+  'speciesTally',
+  'sizeDistribution',
+  'winningFish',
+  'reportDueDate',
+  'reportDayRow',
 ];
 
 function fakeElement(): Record<string, unknown> {
