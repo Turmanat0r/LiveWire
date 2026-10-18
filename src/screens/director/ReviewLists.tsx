@@ -1,10 +1,11 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import type { ReviewItem } from '../../data/director';
 import type { OutboxItem } from '../../data/local';
 import type { Row } from '../../data/tables';
 import { useSync, useSyncEngine } from '../../data/useSync';
 import type { FirstPass } from '../../domain/review';
 import { Card } from '../../ui/Card';
+import { CatchPhoto, PhotoViewer } from '../../ui/PhotoViewer';
 import { parseLength } from '../catch/filing';
 import { StatusBadge } from '../catches/CatchCard';
 import { inchesText } from '../board/StandingsScreen';
@@ -99,7 +100,7 @@ export function ReviewLists({ items }: { readonly items: readonly ReviewItem[] }
         )}
       </Card>
       {viewing ? (
-        <PhotoViewer
+        <ReviewViewer
           list={list}
           id={viewing.id}
           onMove={(id) => {
@@ -153,7 +154,7 @@ function ReviewCard({
         aria-label={`Open the photo of ${item.review.anglerName}’s ${item.species} full size`}
         onClick={onOpen}
       >
-        <Photo path={item.row.photo_path} alt="" />
+        <CatchPhoto path={item.row.photo_path} alt="" />
       </button>
       <div className="catch-card__info">
         <p className="catch-card__top">
@@ -350,64 +351,12 @@ function FixForm({ item, onDone }: { readonly item: Shown; readonly onDone: () =
   );
 }
 
-/** A catch photo from the server, by a short-lived address. */
-function Photo({
-  path,
-  alt,
-  large = false,
-}: {
-  readonly path: string;
-  readonly alt: string;
-  readonly large?: boolean;
-}) {
-  const sync = useSyncEngine();
-  const [url, setUrl] = useState<string | null>(null);
-  const [missing, setMissing] = useState(false);
-  useEffect(() => {
-    // A new photo is a new component (see its key), so this starts empty.
-    let alive = true;
-    sync.photoUrl(path).then(
-      (signed) => {
-        if (alive) setUrl(signed);
-      },
-      () => {
-        if (alive) setMissing(true);
-      },
-    );
-    return () => {
-      alive = false;
-    };
-  }, [sync, path]);
-  if (url) {
-    return (
-      <img
-        className={large ? 'viewer__img' : 'catch-card__photo'}
-        src={url}
-        alt={alt}
-        onError={() => {
-          setUrl(null);
-          setMissing(true);
-        }}
-      />
-    );
-  }
-  return (
-    <span className={large ? 'viewer__empty' : 'catch-card__photo catch-card__photo--none'}>
-      {missing
-        ? large
-          ? 'No photo reached the server for this catch. It may still be waiting on the angler’s phone.'
-          : 'No photo'
-        : 'Loading…'}
-    </span>
-  );
-}
-
 /**
  * The photo, big: a thumbnail cannot show whether a tail is pinched or where
  * the nose sits on the tape, and that is the whole of the judgement. The same
  * rulings are on it, and the arrows walk the list it was opened from.
  */
-function PhotoViewer({
+function ReviewViewer({
   list,
   id,
   onMove,
@@ -418,106 +367,41 @@ function PhotoViewer({
   readonly onMove: (id: string) => void;
   readonly onClose: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
   const rule = useRule();
-  const [zoomed, setZoomed] = useState(false);
-  const index = list.findIndex((i) => i.row.id === id);
-  const item = list[index];
-
-  useEffect(() => {
-    const d = dialog.current;
-    if (d && !d.open) d.showModal();
-  }, []);
-
-  if (!item) return null;
-  const prev = list[index - 1];
-  const next = list[index + 1];
-  const title = `${item.review.anglerName} · ${inchesText(item.length)} ${item.species}`;
-
+  const items = list.map((shown) => ({
+    id: shown.row.id,
+    title: `${shown.review.anglerName} · ${inchesText(shown.length)} ${shown.species}`,
+    path: shown.row.photo_path,
+    shown,
+  }));
   return (
-    <dialog
-      ref={dialog}
-      className={zoomed ? 'viewer viewer--zoomed' : 'viewer'}
-      aria-label={title}
+    <PhotoViewer
+      items={items}
+      id={id}
+      onMove={onMove}
       onClose={onClose}
-    >
-      <div className="viewer__bar">
-        <p className="viewer__title">{title}</p>
-        {list.length > 1 ? (
-          <p className="viewer__nav">
-            <button
-              className="button button--small"
-              type="button"
-              disabled={!prev}
-              aria-label="Previous fish"
-              onClick={() => {
-                if (prev) onMove(prev.row.id);
-              }}
-            >
-              ←
-            </button>
-            <span className="viewer__count">
-              {index + 1} of {list.length}
-            </span>
-            <button
-              className="button button--small"
-              type="button"
-              disabled={!next}
-              aria-label="Next fish"
-              onClick={() => {
-                if (next) onMove(next.row.id);
-              }}
-            >
-              →
-            </button>
-          </p>
-        ) : null}
-        <button
-          className="button button--small"
-          type="button"
-          onClick={() => {
-            dialog.current?.close();
-          }}
-        >
-          Close
-        </button>
-      </div>
-      <button
-        className="viewer__stage"
-        type="button"
-        aria-label={zoomed ? 'Fit the photo to the screen' : 'Show the photo at full size'}
-        onClick={() => {
-          setZoomed((z) => !z);
-        }}
-      >
-        <Photo key={item.row.id} path={item.row.photo_path} alt={title} large />
-      </button>
-      {item.status === 'pending' ? (
-        <div className="viewer__actions">
-          <button
-            className="button viewer__approve"
-            type="button"
-            onClick={() => {
-              rule(item, 'approved');
-              if (next) onMove(next.row.id);
-              else dialog.current?.close();
-            }}
-          >
-            Approve
-          </button>
-          <button
-            className="button button--danger viewer__reject"
-            type="button"
-            onClick={() => {
-              rule(item, 'rejected');
-              if (next) onMove(next.row.id);
-              else dialog.current?.close();
-            }}
-          >
-            Reject
-          </button>
-        </div>
-      ) : null}
-    </dialog>
+      actions={(item) =>
+        item.shown.status === 'pending'
+          ? [
+              {
+                label: 'Approve',
+                className: 'button viewer__approve',
+                advance: true,
+                onClick: () => {
+                  rule(item.shown, 'approved');
+                },
+              },
+              {
+                label: 'Reject',
+                className: 'button button--danger viewer__reject',
+                advance: true,
+                onClick: () => {
+                  rule(item.shown, 'rejected');
+                },
+              },
+            ]
+          : []
+      }
+    />
   );
 }
