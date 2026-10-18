@@ -86,4 +86,14 @@ export default tseslint.config(
     files: ['**/*.js'],
     ...tseslint.configs.disableTypeChecked,
   },
+  {
+    // Loaded into the offline worker.
+    files: ['public/**/*.js'],
+    languageOptions: { globals: globals.serviceworker },
+  },
+  {
+    // Vercel functions: run on the server, not the phone.
+    files: ['api/**/*.ts'],
+    languageOptions: { globals: globals.node },
+  },
 );
