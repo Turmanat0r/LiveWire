@@ -11,6 +11,7 @@ import { useDirectorQueue } from '../queue';
 import {
   buildReport,
   carriedDetails,
+  FILER_FIELDS,
   parseReportSettings,
   settingsJson,
   withDefaults,
@@ -219,7 +220,12 @@ function Report({ data }: { readonly data: NonNullable<ReturnType<typeof useRepo
     day: 'numeric',
     year: 'numeric',
   });
-  const unsaved = Object.keys(draft).length > 0;
+  // Last year's filer shows straight away, but it is not this event's until
+  // it is saved: that counts as a change too.
+  const carriedOnly = FILER_FIELDS.some(
+    (f) => carried[f] !== undefined && data.saved[f] === undefined && draft[f] === undefined,
+  );
+  const unsaved = Object.keys(draft).length > 0 || carriedOnly;
   const derivedDays = dayHours(data.checkIns, data.dates);
 
   const set = (field: TextField, value: string) => {
@@ -313,13 +319,15 @@ function Report({ data }: { readonly data: NonNullable<ReturnType<typeof useRepo
           Save report
         </button>
         <span className="hint">
-          {unsaved
+          {Object.keys(draft).length > 0
             ? 'Unsaved changes. The sheet below already shows them.'
-            : data.sending
-              ? 'Saved on this phone; waiting to send.'
-              : data.saved.savedAt
-                ? 'Saved with the event.'
-                : 'Nothing saved for this event yet.'}
+            : carriedOnly
+              ? 'Last year’s filer is filled in but not saved for this event yet.'
+              : data.sending
+                ? 'Saved on this phone; waiting to send.'
+                : data.saved.savedAt
+                  ? 'Saved with the event.'
+                  : 'Nothing saved for this event yet.'}
         </span>
       </div>
 

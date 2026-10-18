@@ -951,6 +951,13 @@ describe('the FWP contest report', () => {
       'Big Sky Kayak Anglers',
     );
     expect(screen.getByLabelText<HTMLInputElement>('Day 1 start').value).toBe('06:30');
+    // Carried is not saved: the report says so, and Save is ready for it.
+    expect(
+      screen.getByText('Last year’s filer is filled in but not saved for this event yet.'),
+    ).toBeTruthy();
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save report' }).disabled).toBe(
+      false,
+    );
 
     const sheet = screen.getByRole('region', { name: 'The state’s contest report form' });
     expect(sheet.textContent).toContain('FISHING CONTEST REPORT');

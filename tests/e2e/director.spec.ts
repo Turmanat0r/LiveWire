@@ -288,7 +288,9 @@ test('the director signs in, approves a fish, and signs out', async ({ page }) =
   const sheet = page.getByRole('region', { name: 'The state’s contest report form' });
   await expect(sheet).toContainText('FISHING CONTEST REPORT');
   await expect(sheet).toContainText('24.75"');
-  await page.getByLabel('Form completed by').fill('Pat Director');
+  // Unique: a report saved by the other phone's run carries into this one.
+  const filer = `Pat Director ${randomUUID().slice(0, 6)}`;
+  await page.getByLabel('Form completed by').fill(filer);
   await page.getByLabel('FWP region').fill('3');
   await page.getByRole('button', { name: 'Save report' }).click();
   await expect
@@ -303,7 +305,7 @@ test('the director signs in, approves a fish, and signs out', async ({ page }) =
         )[0],
       { timeout: 20_000 },
     )
-    .toEqual({ filer: 'Pat Director', region: '3' });
+    .toEqual({ filer, region: '3' });
 
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible({ timeout: 20_000 });
