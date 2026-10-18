@@ -21,4 +21,35 @@
   .course-map .leaflet-control-attribution {
     font-size: var(--text-sm);
   }
+
+  /* The boundary editor needs room to place corners with a thumb. */
+  .course-map--tall {
+    block-size: 360px;
+  }
+
+  /* Its handles: big enough to grab on a phone, and readable over any tile. */
+  .bnd-handle {
+    display: grid;
+    place-items: center;
+    inline-size: 30px;
+    block-size: 30px;
+    border: 2px solid var(--deep);
+    border-radius: 50%;
+    background: var(--white);
+    color: var(--deep);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 40%, transparent);
+    cursor: grab;
+  }
+
+  .bnd-handle--centre {
+    background: var(--gold);
+    color: var(--ink);
+  }
+
+  .bnd-handle--radius {
+    background: var(--deep);
+    color: var(--white);
+  }
 }

@@ -1195,6 +1195,38 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      director_set_course: {
+        Args: { p_course: Json; p_event_id: string };
+        Returns: {
+          archived: boolean;
+          awards_budget_cents: number;
+          course: NonNullable<Json>;
+          course_label: string;
+          course_label_long: string;
+          created_at: string;
+          entry_prefix: string;
+          fee_big_fish_cents: number;
+          fee_solo_cents: number;
+          fee_team_cents: number;
+          final_check_in: string;
+          id: string;
+          is_current: boolean;
+          lines_in: string;
+          lines_out: string;
+          name: string;
+          payout_basis_points: number[];
+          presenter: string;
+          registration_closes_at: string;
+          time_zone: string;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'events';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       director_set_current_event: {
         Args: { p_event_id: string };
         Returns: {
