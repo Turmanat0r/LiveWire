@@ -6,8 +6,8 @@ import { newPhone, setUpEvent } from '../db/fixtures';
  * Filing a fish, on a real Supabase (CI starts one): register, photograph a
  * catch (the in-app camera on Android, the camera roll on the iPhone), see it
  * on My catches, and watch the director's approval arrive by itself, with the
- * fish counting in the livewell and on the gallery wall, saved from there,
- * and in the trophy case.
+ * fish counting in the livewell and on the gallery wall, saved from there and
+ * made into a highlight reel, and in the trophy case.
  */
 // Skipped on a PC with no Supabase. In CI one is always started, so there a
 // missing server fails these rather than quietly skipping them.
@@ -149,6 +149,23 @@ test('files a catch with its photo, and the director’s approval arrives by its
   const download = page.waitForEvent('download');
   await viewer.getByRole('button', { name: 'Save photo' }).click();
   expect((await download).suggestedFilename()).toBe('MKWO-Walleye-21.50in.jpg');
+  await viewer.getByRole('button', { name: 'Close' }).click();
+
+  // The highlight reel, made on the phone from that one fish. Chromium records
+  // it for real; the test WebKit is not Safari's recorder, so there the card
+  // only has to be there.
+  const reel = page
+    .locator('section')
+    .filter({ has: page.getByRole('heading', { name: 'Highlight reel' }) });
+  await expect(reel).toContainText('Your fish, biggest first');
+  if (browserName === 'chromium') {
+    await reel.getByRole('button', { name: 'Make my highlight reel' }).click();
+    await expect(reel.getByText(/^Done:/)).toBeVisible({ timeout: 30_000 });
+    await expect(reel.getByLabel('Your highlight reel')).toHaveAttribute('src', /^blob:/);
+    const video = page.waitForEvent('download');
+    await reel.getByRole('button', { name: 'Download' }).click();
+    expect((await video).suggestedFilename()).toMatch(/^MKWO-2027-.+-highlights\.(mp4|webm)$/);
+  }
 
   // In the trophy case, through the server's own answer to who this phone is:
   // a line for this tournament, and the badge the fish earned.

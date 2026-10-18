@@ -95,6 +95,16 @@
     text-transform: uppercase;
   }
 
+  /* The finished reel, at the size of a phone held upright. */
+  .reel__video {
+    display: block;
+    inline-size: 100%;
+    max-inline-size: 320px;
+    aspect-ratio: 9 / 16;
+    border-radius: var(--radius-sm);
+    background: var(--deep);
+  }
+
   .viewer__save {
     background: var(--gold);
     color: var(--ink);

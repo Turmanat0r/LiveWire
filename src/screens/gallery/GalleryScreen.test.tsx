@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { galleryRows, photoFileName } from '../../data/gallery';
 import { FakeServer, settle } from '../../test/fakes';
 import { putEntry, renderApp } from '../../test/render';
-import { catchRow, entryRows, EVENT_ID, eventRow, OTHER_EVENT_ID } from '../../test/rows';
+import { catchRow, dayRow, entryRows, EVENT_ID, eventRow, OTHER_EVENT_ID } from '../../test/rows';
 import { testSync } from '../../test/sync';
 
 afterEach(() => {
@@ -109,6 +109,118 @@ describe('the fish gallery', () => {
     expect(
       screen.getByText('Nothing approved yet. Every fish the director approves shows up here.'),
     ).toBeTruthy();
+  });
+});
+
+/** A recorder that hands back one small piece of video when stopped. */
+class FakeRecorder {
+  static isTypeSupported = (mime: string) => mime === 'video/mp4';
+  readonly mimeType: string;
+  ondataavailable: ((e: { data: Blob }) => void) | null = null;
+  onstop: (() => void) | null = null;
+  constructor(_stream: unknown, options?: { mimeType?: string }) {
+    this.mimeType = options?.mimeType ?? '';
+  }
+  recording = false;
+  start() {
+    this.recording = true;
+  }
+  stop() {
+    this.ondataavailable?.({ data: new Blob(['video'], { type: this.mimeType }) });
+    this.onstop?.();
+  }
+}
+
+/** Pretends the browser can draw and record, and that time flies. */
+function canRecord() {
+  const painted: string[] = [];
+  const ctx = {
+    font: '',
+    fillStyle: '',
+    textAlign: 'left',
+    fillRect: () => undefined,
+    drawImage: () => undefined,
+    fillText: (text: string) => painted.push(text),
+    createLinearGradient: () => ({ addColorStop: () => undefined }),
+  };
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ctx as never);
+  Object.defineProperty(HTMLCanvasElement.prototype, 'captureStream', {
+    configurable: true,
+    value: () => ({ getTracks: () => [{ stop: () => undefined }] }),
+  });
+  vi.stubGlobal('MediaRecorder', FakeRecorder);
+  // Each frame is 0.7 seconds after the last, whoever else reads the clock.
+  let now = 0;
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation((step) =>
+    window.setTimeout(() => {
+      now += 700;
+      step(now);
+    }, 0),
+  );
+  return painted;
+}
+
+describe('the highlight reel', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(HTMLCanvasElement.prototype, 'captureStream');
+  });
+
+  it('makes a video of your own fish only, biggest first, and saves it by name', async () => {
+    const painted = canRecord();
+    const fetched = vi.fn<(url: string) => Promise<Response>>(() =>
+      Promise.resolve(new Response(new Blob(['jpeg'], { type: 'image/jpeg' }))),
+    );
+    vi.stubGlobal('fetch', fetched);
+    URL.createObjectURL = vi.fn(() => 'blob:reel');
+    URL.revokeObjectURL = vi.fn();
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined);
+    const server = field();
+    server.put('event_days', dayRow('2027-09-18'));
+    const { user } = await open(server);
+
+    const card = screen.getByRole('heading', { name: 'Highlight reel' }).closest('section');
+    if (!card) throw new Error('no reel card');
+    expect(card.textContent).toContain(
+      'Your 2 best fish, biggest first, as an 8-second vertical video to post.',
+    );
+    await user.click(within(card).getByRole('button', { name: 'Make my highlight reel' }));
+    await within(card).findByText(/^Done:/);
+    // Theirs never: only your two, the 22″ first.
+    expect(fetched.mock.calls.map(([url]) => url)).toEqual([
+      `https://photos.test/${EVENT_ID}/mine-new.jpg`,
+      `https://photos.test/${EVENT_ID}/mine-old.jpg`,
+    ]);
+    expect(painted).toContain('Montana Kayak Walleye Open');
+    expect(painted).toContain('22.00″');
+    expect(painted).not.toContain('24.75″');
+    expect(within(card).getByLabelText('Your highlight reel').getAttribute('src')).toBe(
+      'blob:reel',
+    );
+    await user.click(within(card).getByRole('button', { name: 'Download' }));
+    const anchor = click.mock.contexts.at(-1) as HTMLAnchorElement;
+    expect(anchor.download).toBe('MKWO-2027-Salty-Bedrock-Perch-highlights.mp4');
+  });
+
+  it('says so when the browser cannot record', async () => {
+    await open(field());
+    expect(screen.getByText(/This browser cannot record video\./)).toBeTruthy();
+    expect(
+      screen.getByRole<HTMLButtonElement>('button', { name: 'Make my highlight reel' }).disabled,
+    ).toBe(true);
+  });
+
+  it('is not there for a phone with no approved fish of its own', async () => {
+    const server = new FakeServer();
+    server.put('events', eventRow());
+    const them = entryRows({ userId: 'device-9' });
+    putEntry(server, them);
+    server.put('catches', catchRow({ id: 'theirs', angler_id: them.captainId }));
+    await open(server);
+    expect(screen.getByRole('list', { name: 'Approved fish' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Highlight reel' })).toBeNull();
   });
 });
 

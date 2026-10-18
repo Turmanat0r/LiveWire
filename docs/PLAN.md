@@ -103,7 +103,7 @@ a preview on staging.
 | 5   | **Safety** (done)               | Where am I against the line, the course map, beacons the whole field sees on every screen, text-the-director               |
 | 6   | **The board** (done)            | Standings, Big Fish, payouts; side bets and chat                                                                           |
 | 7   | **Director's tools** (done)     | Sign-in, review and overdue alerts; contestants, fees and positions; event and course setup, results and the FWP report    |
-| 8   | Memories                        | Gallery, trophy case, highlight reel                                                                                       |
+| 8   | **Memories** (done)             | Gallery, trophy case, highlight reel                                                                                       |
 | 9   | Field test and switch-over      | A practice day on real phones, then production moves to the new app                                                        |
 | 10  | Fish-I                          | The AI photo check, on Gemini's free tier through a Vercel function as before: Daniel's call to do it last                 |
 
