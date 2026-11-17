@@ -148,7 +148,7 @@ function FeeBanner({ list }: { readonly list: readonly Contestant[] }) {
           type="button"
           onClick={() => {
             const sure = window.confirm(
-              `Mark all ${String(n)} outstanding ${n === 1 ? 'entry' : 'entries'} as paid?\n\nThat is ${money(owed.cents)} added to the pools. Only do this once the money is actually in the account.`,
+              `Mark ${n === 1 ? 'the 1 outstanding entry' : `all ${String(n)} outstanding entries`} as paid?\n\nThat is ${money(owed.cents)} added to the pools. Only do this once the money is actually in the account.`,
             );
             if (!sure) return;
             queue(
@@ -161,7 +161,7 @@ function FeeBanner({ list }: { readonly list: readonly Contestant[] }) {
             );
           }}
         >
-          Mark all {n} received
+          {n === 1 ? 'Mark it received' : `Mark all ${String(n)} received`}
         </button>
       </div>
     </div>

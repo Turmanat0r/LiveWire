@@ -214,7 +214,7 @@ export function CourseEditor({
           <div className="event-form__pair">
             <div className="field">
               <label className="field__label" htmlFor={ids.lat}>
-                Centre latitude
+                Center latitude
               </label>
               <input
                 id={ids.lat}
@@ -229,7 +229,7 @@ export function CourseEditor({
             </div>
             <div className="field">
               <label className="field__label" htmlFor={ids.lng}>
-                Centre longitude
+                Center longitude
               </label>
               <input
                 id={ids.lng}

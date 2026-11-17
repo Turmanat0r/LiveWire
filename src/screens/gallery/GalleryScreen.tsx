@@ -95,7 +95,7 @@ export function GalleryScreen() {
       <p className="hint">
         {rows.length === 0
           ? 'Nothing approved yet. Every fish the director approves shows up here.'
-          : `${String(rows.length)} approved ${rows.length === 1 ? 'fish' : 'fish'}${mineCount > 0 ? ', yours first' : ''}. Tap one to see it full size.`}
+          : `${String(rows.length)} approved fish${mineCount > 0 ? ', yours first' : ''}. Tap one to see it full size.`}
       </p>
       {rows.length > 0 ? (
         <ul className="gallery-grid" aria-label="Approved fish">

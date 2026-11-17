@@ -81,7 +81,7 @@ export function SideBetsScreen() {
           ))}
         </ul>
       )}
-      {!me ? <p className="hint">Register on this device to start or join a bet.</p> : null}
+      {!me ? <p className="hint">Register on this phone to start or join a bet.</p> : null}
     </Page>
   );
 }

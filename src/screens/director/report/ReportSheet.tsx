@@ -18,7 +18,7 @@ const SPECIES_ROWS = 6;
 const SIZE_SMALL_ROWS = 6;
 const SIZE_LARGE_ROWS = 7;
 export const FWP_FOOTER =
-  'Send to: MT Fish, Wildlife and Parks - Attn: Fishing Contest Reporting- PO Box 200701 - Helena, MT 59620-0701';
+  'Send to: MT Fish, Wildlife and Parks - Attn: Fishing Contest Reporting - PO Box 200701 - Helena, MT 59620-0701';
 
 /** What an empty box says on screen. The print styles hide it: paper shows an empty box. */
 export const SHEET_BLANK = 'not filled in';

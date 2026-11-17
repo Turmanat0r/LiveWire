@@ -86,7 +86,7 @@ export function locationBadge(hasPosition: boolean, verdict: BoundaryVerdict | n
     verdict.outsideMiles > 0
       ? ` · ${verdict.outsideMiles.toFixed(1)} mi outside the line`
       : fromLaunch;
-  return { tone: 'out', text: `Outside course boundary${out}` };
+  return { tone: 'out', text: `Outside the course boundary${out}` };
 }
 
 /**

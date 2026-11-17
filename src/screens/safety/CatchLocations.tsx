@@ -35,7 +35,7 @@ export function CatchLocations({
   return (
     <Card title="Your catch locations">
       {!mine ? (
-        <p className="empty">Register on this device to see where your catches were filed.</p>
+        <p className="empty">Register on this phone to see where your catches were filed.</p>
       ) : rows.length === 0 ? (
         <p className="empty">You have not submitted any catches yet.</p>
       ) : (

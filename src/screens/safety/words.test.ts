@@ -67,7 +67,7 @@ describe('a catch’s location', () => {
     ).toEqual({ tone: 'good', text: 'In bounds · 1.2 mi from launch' });
     expect(
       locationBadge(true, { kind: 'polygon', within: false, edgeMiles: 0.42, outsideMiles: 0.42 }),
-    ).toEqual({ tone: 'out', text: 'Outside course boundary · 0.4 mi outside the line' });
+    ).toEqual({ tone: 'out', text: 'Outside the course boundary · 0.4 mi outside the line' });
   });
 });
 

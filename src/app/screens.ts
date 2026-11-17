@@ -1,7 +1,6 @@
-// Every screen in the app, in one list: its address, its name, its colour
-// theme, and (until it is built) the milestone it arrives in. The router, the
-// home tiles and the placeholders all read from here, so a screen is added in
-// exactly one place.
+// Every screen in the app, in one list: its address, its name, what it is for
+// and its colour theme. The router, the tab bar and the home tiles all read
+// from here, so a screen is added in exactly one place.
 
 export type ScreenId =
   | 'home'
@@ -27,27 +26,25 @@ export interface Screen {
   readonly summary: string;
   /** Sets data-theme on the shell; see tokens.css. */
   readonly theme: string;
-  /** The milestone that builds it, while it is still a placeholder. */
-  readonly milestone: number | null;
 }
 
 // prettier-ignore
 export const SCREENS: readonly Screen[] = [
-  { id: 'home', path: '/', title: 'LiveWire', summary: 'The tournament at a glance.', theme: 'home', milestone: null },
-  { id: 'register', path: '/register', title: 'Register', summary: 'Enter the tournament, or bring your entry onto this phone.', theme: 'register', milestone: null },
-  { id: 'check-in', path: '/check-in', title: 'Check in / check out', summary: 'Check in before you launch and out when you are back on shore.', theme: 'check-in', milestone: null },
-  { id: 'catch', path: '/catch', title: 'Submit a catch', summary: 'Photograph a fish on the board and file it, with or without signal.', theme: 'catch', milestone: null },
-  { id: 'my-catches', path: '/my-catches', title: 'My catches', summary: 'Everything you have filed, and where each one stands.', theme: 'my-catches', milestone: null },
-  { id: 'livewell', path: '/livewell', title: 'Livewell', summary: 'Your running tally of released fish.', theme: 'livewell', milestone: null },
-  { id: 'safety', path: '/safety', title: 'Safety', summary: 'Where you are against the course line, and a beacon if you need help.', theme: 'safety', milestone: null },
-  { id: 'standings', path: '/standings', title: 'Standings', summary: 'Solo and team boards, longest fish first.', theme: 'standings', milestone: null },
-  { id: 'big-fish', path: '/big-fish', title: 'Big Fish', summary: 'The side pot for the single longest fish.', theme: 'big-fish', milestone: null },
-  { id: 'side-bets', path: '/side-bets', title: 'Side bets', summary: 'Smallest fish, most fish, first fish, or anything else you can settle.', theme: 'side-bets', milestone: null },
-  { id: 'payouts', path: '/payouts', title: 'Payouts', summary: 'What each pool holds and how it splits.', theme: 'payouts', milestone: null },
-  { id: 'chat', path: '/chat', title: 'Chat', summary: 'The boat-ramp group chat, with every catch announced.', theme: 'chat', milestone: null },
-  { id: 'director', path: '/director', title: 'Director', summary: 'Review catches, run the roster, set up the event and file the state report.', theme: 'director', milestone: null },
-  { id: 'gallery', path: '/gallery', title: 'Fish gallery', summary: 'Every approved fish, yours first.', theme: 'gallery', milestone: null },
-  { id: 'trophies', path: '/trophies', title: 'Trophy case', summary: 'Your placings across every tournament.', theme: 'trophies', milestone: null },
+  { id: 'home', path: '/', title: 'LiveWire', summary: 'The tournament at a glance.', theme: 'home' },
+  { id: 'register', path: '/register', title: 'Register', summary: 'Enter the tournament, or bring your entry onto this phone.', theme: 'register' },
+  { id: 'check-in', path: '/check-in', title: 'Check in / check out', summary: 'Check in before you launch and out when you are back on shore.', theme: 'check-in' },
+  { id: 'catch', path: '/catch', title: 'Submit a catch', summary: 'Photograph a fish on the board and file it, with or without signal.', theme: 'catch' },
+  { id: 'my-catches', path: '/my-catches', title: 'My catches', summary: 'Everything you have filed, and where each one stands.', theme: 'my-catches' },
+  { id: 'livewell', path: '/livewell', title: 'Livewell', summary: 'Your running tally of released fish.', theme: 'livewell' },
+  { id: 'safety', path: '/safety', title: 'Safety', summary: 'Where you are against the course line, and a beacon if you need help.', theme: 'safety' },
+  { id: 'standings', path: '/standings', title: 'Standings', summary: 'Solo and team boards, longest fish first.', theme: 'standings' },
+  { id: 'big-fish', path: '/big-fish', title: 'Big Fish', summary: 'The side pot for the single longest fish.', theme: 'big-fish' },
+  { id: 'side-bets', path: '/side-bets', title: 'Side bets', summary: 'Smallest fish, most fish, first fish, or anything else you can settle.', theme: 'side-bets' },
+  { id: 'payouts', path: '/payouts', title: 'Payouts', summary: 'What each pool holds and how it splits.', theme: 'payouts' },
+  { id: 'chat', path: '/chat', title: 'Chat', summary: 'The boat-ramp group chat, with every catch announced.', theme: 'chat' },
+  { id: 'director', path: '/director', title: 'Director', summary: 'Review catches, run the roster, set up the event and file the state report.', theme: 'director' },
+  { id: 'gallery', path: '/gallery', title: 'Fish gallery', summary: 'Every approved fish, yours first.', theme: 'gallery' },
+  { id: 'trophies', path: '/trophies', title: 'Trophy case', summary: 'Your placings across every tournament.', theme: 'trophies' },
 ];
 
 export function screen(id: ScreenId): Screen {

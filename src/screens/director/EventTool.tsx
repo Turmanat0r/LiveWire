@@ -754,7 +754,7 @@ function SpeciesEditor({
               ))}
             </optgroup>
           ))}
-          <option value={CUSTOM}>Other — type it in</option>
+          <option value={CUSTOM}>Other: type it in</option>
         </select>
       </div>
       {pick === CUSTOM ? (

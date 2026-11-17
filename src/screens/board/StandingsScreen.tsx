@@ -77,7 +77,7 @@ export function StandingsScreen() {
       <p className="hint">
         {division === 'team'
           ? `Ranked by the single longest ${sp} caught by either teammate. Ties broken by the combined length of the team’s best 3 fish, then by whichever fish was logged first.`
-          : `Ranked by single longest ${sp}. Ties broken by combined length of best 3 fish, then by whichever fish was logged first.`}
+          : `Ranked by the single longest ${sp}. Ties broken by the combined length of the best 3 fish, then by whichever fish was logged first.`}
       </p>
     </Page>
   );

@@ -20,9 +20,10 @@ interface Tile {
   readonly accent: Accent;
 }
 
-// The old home screen's quick-access tiles, in its order and with its words.
+// The old home screen's quick-access tiles, in its order and with its words,
+// but for "Both event days": an event runs for one to seven.
 const ACTIONS: readonly Tile[] = [
-  { to: 'check-in', label: 'Check In / Out', sub: 'Both event days', accent: 'gold' },
+  { to: 'check-in', label: 'Check In / Out', sub: 'Each event day', accent: 'gold' },
   { to: 'my-catches', label: 'Manage Catch', sub: 'Edit or withdraw', accent: 'green' },
   { to: 'livewell', label: 'CPR Livewell', sub: 'Your scoring fish', accent: 'steel' },
   { to: 'trophies', label: 'Trophy Case', sub: 'Bests, history, badges', accent: 'amber' },
@@ -133,7 +134,7 @@ function AnglerCard({
             Angler profile
           </h2>
           <p className="home-profile__name">Not registered yet</p>
-          <p className="home-profile__sub">Register above to receive your tournament ID</p>
+          <p className="home-profile__sub">Register above to receive your Tournament ID</p>
         </div>
       </section>
     );

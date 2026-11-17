@@ -29,7 +29,7 @@ export function BeaconCards({ beacons }: { readonly beacons: readonly ActiveBeac
             {beacon.note ? <p className="beacon-card__note">“{beacon.note}”</p> : null}
             <p className="beacon-card__meta">
               {mine
-                ? 'The director and the whole field can see you. Your position refreshes every minute while the app is open on screen. Stand it down when you are safe.'
+                ? 'The director and the whole field can see you. Your position refreshes about once a minute while the app stays open on screen. Stand it down when you are safe.'
                 : `Raised ${ageText(raised, now)} · position ${ageText(placed, now)}`}
             </p>
           </li>

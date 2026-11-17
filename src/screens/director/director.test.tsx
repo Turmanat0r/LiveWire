@@ -880,8 +880,8 @@ describe('the course boundary', () => {
     expect(region.textContent).toContain('In force now: No boundary.');
 
     await user.click(within(region).getByRole('button', { name: 'Circle' }));
-    await user.type(within(region).getByLabelText('Centre latitude'), '46.38917');
-    await user.type(within(region).getByLabelText('Centre longitude'), '-111.57556');
+    await user.type(within(region).getByLabelText('Center latitude'), '46.38917');
+    await user.type(within(region).getByLabelText('Center longitude'), '-111.57556');
     await user.clear(within(region).getByLabelText('Radius (miles)'));
     await user.type(within(region).getByLabelText('Radius (miles)'), '4');
     await user.click(within(region).getByRole('button', { name: 'Save boundary' }));

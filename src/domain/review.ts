@@ -5,7 +5,15 @@ import { CLOCK_TOLERANCE_MS, skewText } from './capture';
 import type { BoundaryVerdict } from './geo';
 import { isDuplicate, photoHashDistance } from './photo';
 import { isScoringSpecies } from './scoring';
-import { DEFAULT_SCHEDULE, timeOfDayText, zonedParts, type DaySchedule } from './time';
+import {
+  clockText,
+  dateRangeText,
+  dayLabelText,
+  DEFAULT_SCHEDULE,
+  timeOfDayText,
+  zonedParts,
+  type DaySchedule,
+} from './time';
 import type { Catch, DateKey, EpochMs } from './types';
 
 /** Shortest edge of the original photo, in pixels: below this the board's marks blur. */
@@ -81,8 +89,9 @@ export interface FirstPass {
   readonly checks: readonly FirstPassCheck[];
 }
 
-const hhmm = (minutes: number) =>
-  `${String(Math.floor(minutes / 60)).padStart(2, '0')}${String(minutes % 60).padStart(2, '0')}`;
+/** "7:00 AM", from minutes after midnight. */
+const clock = (minutes: number) =>
+  clockText(`${String(Math.floor(minutes / 60))}:${String(minutes % 60)}`);
 
 export function firstPass(r: ReviewFish, ctx: ReviewContext): FirstPass {
   const checks: FirstPassCheck[] = [];
@@ -183,7 +192,10 @@ export function firstPass(r: ReviewFish, ctx: ReviewContext): FirstPass {
     checks.push({
       level: 'info',
       label: 'Not an event day',
-      detail: `Logged ${t.dateKey}; the tournament runs ${ctx.dates.join(' and ')}.`,
+      detail:
+        ctx.dates.length === 0
+          ? `Logged ${dayLabelText(t.dateKey)}; this event has no fishing days set.`
+          : `Logged ${dayLabelText(t.dateKey)}; the tournament runs ${dateRangeText(ctx.dates)}.`,
     });
   } else {
     const minutes = Math.floor(t.secondsOfDay / 60);
@@ -191,7 +203,7 @@ export function firstPass(r: ReviewFish, ctx: ReviewContext): FirstPass {
       checks.push({
         level: 'flag',
         label: 'Submitted outside fishing hours',
-        detail: `Logged at ${timeOfDayText(fish.loggedAt, ctx.timeZone)}; lines are ${hhmm(schedule.linesInMinutes)} to ${hhmm(schedule.linesOutMinutes)}.`,
+        detail: `Logged at ${timeOfDayText(fish.loggedAt, ctx.timeZone)}; lines are ${clock(schedule.linesInMinutes)} to ${clock(schedule.linesOutMinutes)}.`,
       });
     }
   }

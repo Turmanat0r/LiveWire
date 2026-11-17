@@ -110,6 +110,17 @@ describe('the first pass', () => {
     expect(labels(fish({ loggedAt: at('10:00', '2027-09-20') }))).toEqual(['Not an event day']);
   });
 
+  it('says when, in the words the rest of the app uses for dates and times', () => {
+    const detail = (r: ReviewFish, ctx = context()) => firstPass(r, ctx).checks[0]?.detail;
+    expect(detail(fish({ loggedAt: at('14:30') }))).toMatch(/; lines are 7:00 AM to 2:00 PM\.$/);
+    expect(detail(fish({ loggedAt: at('10:00', '2027-09-20') }))).toBe(
+      'Logged Mon, Sep 20; the tournament runs Sep 18–19, 2027.',
+    );
+    expect(detail(fish({ loggedAt: at('10:00', '2027-09-20') }), { ...context(), dates: [] })).toBe(
+      'Logged Mon, Sep 20; this event has no fishing days set.',
+    );
+  });
+
   it('flags a fish outside the line, and asks about one with no GPS', () => {
     expect(
       labels(

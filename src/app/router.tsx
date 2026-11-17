@@ -1,13 +1,12 @@
 import { createBrowserRouter, type RouteObject } from 'react-router';
 import { AppShell } from './AppShell';
-import { SCREENS, screen } from './screens';
+import { screen } from './screens';
 import { CheckInScreen } from '../screens/CheckInScreen';
 import { HomeScreen } from '../screens/HomeScreen';
 import { RegisterScreen } from '../screens/register/RegisterScreen';
 import { CatchScreen } from '../screens/catch/CatchScreen';
 import { LivewellScreen } from '../screens/catches/LivewellScreen';
 import { MyCatchesScreen } from '../screens/catches/MyCatchesScreen';
-import { PlannedScreen } from '../screens/PlannedScreen';
 import { GalleryScreen } from '../screens/gallery/GalleryScreen';
 import { TrophyScreen } from '../screens/trophies/TrophyScreen';
 import { SafetyScreen } from '../screens/safety/SafetyScreen';
@@ -45,10 +44,6 @@ export const routes: RouteObject[] = [
       { path: screen('director').path, element: <DirectorScreen /> },
       { path: screen('gallery').path, element: <GalleryScreen /> },
       { path: screen('trophies').path, element: <TrophyScreen /> },
-      ...SCREENS.filter((s) => s.milestone !== null).map((s): RouteObject => ({
-        path: s.path,
-        element: <PlannedScreen screen={s} />,
-      })),
       { path: '*', element: <NotFoundScreen /> },
     ],
   },

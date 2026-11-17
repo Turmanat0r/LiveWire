@@ -656,8 +656,8 @@ export async function POST(request: Request): Promise<Response> {
       return json(502, {
         error:
           (env('FISHI_MODEL')
-            ? `This key cannot use the model "${model}" pinned in FISHI_MODEL. Clear that variable to let the server pick one.`
-            : `This key cannot call "${model}".`) + (detail ? ` Google says: ${detail}` : ''),
+            ? `This key cannot use the model “${model}” pinned in FISHI_MODEL. Clear that variable to let the server pick one.`
+            : `This key cannot call “${model}”.`) + (detail ? ` Google says: ${detail}` : ''),
       });
     }
     return json(502, {

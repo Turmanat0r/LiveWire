@@ -94,7 +94,7 @@ export function ReelCard({ rows }: { readonly rows: readonly GalleryRow[] }) {
     <Card title="Highlight reel">
       <p className="hint">
         {supported
-          ? `Your ${plan.shots === 1 ? 'fish' : `${String(plan.shots)} best fish`}, biggest first, as ${article} ${String(seconds)}-second vertical video to post. ${plan.dropped > 0 ? `Your other ${String(plan.dropped)} stay off it so it does not run long. ` : ''}Yours only: nobody else’s fish go into a file you are about to put online.`
+          ? `Your ${plan.shots === 1 ? 'fish' : `${String(plan.shots)} best fish`}, biggest first, as ${article} ${String(seconds)}-second vertical video to post. ${plan.dropped > 0 ? `${plan.dropped === 1 ? 'Your other one stays' : `Your other ${String(plan.dropped)} stay`} off it so it does not run long. ` : ''}Yours only: nobody else’s fish go into a file you are about to put online.`
           : 'This browser cannot record video. Safari on iPhone and Chrome on Android both can: open the app there and the button works.'}
       </p>
       <button

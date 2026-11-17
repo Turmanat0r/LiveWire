@@ -91,7 +91,7 @@ export function checkDraft(d: BoundaryDraft): CheckedBoundary {
       return {
         ok: false,
         problem:
-          'Set a centre first: tap the map, use your location, or type a latitude and longitude.',
+          'Set a center first: tap the map, use your location, or type a latitude and longitude.',
       };
     }
     if (!real(d.center)) {

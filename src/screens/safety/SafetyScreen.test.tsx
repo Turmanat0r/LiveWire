@@ -148,7 +148,7 @@ describe('raising a beacon', () => {
   it('asks a phone with no entry to register first', async () => {
     const { server } = serverWith({ registered: false });
     await open(server);
-    expect(screen.getByRole('link', { name: 'Register on this device first' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Register on this phone first' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Raise a beacon' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Call 911' }).getAttribute('href')).toBe('tel:911');
   });
@@ -262,6 +262,6 @@ describe('catch locations', () => {
     await open(server);
     const summary = screen.getByText('In bounds', { selector: 'dt' }).closest('dl');
     expect(summary?.textContent).toBe('In bounds1Flagged1No GPS1');
-    expect(screen.getByText('Outside course boundary · 0.5 mi outside the line')).toBeTruthy();
+    expect(screen.getByText('Outside the course boundary · 0.5 mi outside the line')).toBeTruthy();
   });
 });

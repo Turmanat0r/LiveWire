@@ -214,7 +214,7 @@ function HelpCard({
       </p>
       {!mine ? (
         <Link className="button button--secondary" to={screen('register').path}>
-          Register on this device first
+          Register on this phone first
         </Link>
       ) : phase === 'none' ? (
         <>
@@ -240,8 +240,8 @@ function HelpCard({
             <div className="beacon-ask">
               <p>
                 <strong>Raise a beacon?</strong> Your position goes to the tournament director and
-                to every other angler on the water, and refreshes about every minute while the app
-                stays open. It keeps going until you stand it down.
+                to every other angler on the water, and refreshes about once a minute while the app
+                stays open on screen. It keeps going until you stand it down.
               </p>
               <div className="actions">
                 <button

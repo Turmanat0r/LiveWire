@@ -74,7 +74,7 @@ export function ChatScreen() {
       <p className="hint">
         {me
           ? `You post as ${me.handle}. Catches you submit show up here automatically, so the field knows.`
-          : 'Register on this device to join in. You can read along either way.'}
+          : 'Register on this phone to join in. You can read along either way.'}
       </p>
       {me ? (
         <form

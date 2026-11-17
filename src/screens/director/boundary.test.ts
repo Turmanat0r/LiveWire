@@ -73,7 +73,7 @@ describe('the boundary editor', () => {
   it('refuses a circle with no centre or no radius, or a position that is not real', () => {
     const none = draftFrom({ kind: 'none' });
     expect(checkDraft({ ...none, kind: 'circle' })).toMatchObject({
-      problem: /Set a centre first/,
+      problem: /Set a center first/,
     });
     expect(
       checkDraft({ ...none, kind: 'circle', center: { lat: 46, lng: -111 }, radiusMiles: 0 }),
