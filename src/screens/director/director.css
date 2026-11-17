@@ -216,6 +216,26 @@
     background: var(--danger);
   }
 
+  /* Fish-I's look at the photo, under the automatic checks. */
+  .fp__ai {
+    display: grid;
+    gap: 6px;
+    justify-items: start;
+    margin-block-start: 8px;
+    padding-block-start: 8px;
+    border-block-start: 1px dashed var(--line);
+  }
+
+  .card .fp__ai-note {
+    color: var(--ink);
+    font-size: var(--text-sm);
+    line-height: 1.4;
+  }
+
+  .card .fp__ai .fp__item {
+    margin-block-start: 0;
+  }
+
   /* ---- the director's rulings, under a photo in the viewer ---- */
 
   .viewer__approve {

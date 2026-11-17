@@ -105,7 +105,7 @@ a preview on staging.
 | 7   | **Director's tools** (done)     | Sign-in, review and overdue alerts; contestants, fees and positions; event and course setup, results and the FWP report    |
 | 8   | **Memories** (done)             | Gallery, trophy case, highlight reel                                                                                       |
 | 9   | Field test and switch-over      | A practice day on real phones, then production moves to the new app                                                        |
-| 10  | Fish-I                          | The AI photo check, on Gemini's free tier through a Vercel function as before: Daniel's call to do it last                 |
+| 10  | **Fish-I** (built)              | The AI photo check, on Gemini's free tier through a Vercel function as before; built before the practice day to test there |
 
 The switch-over should land well before registration opens for 2027, and away
 from any event.

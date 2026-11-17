@@ -70,6 +70,11 @@ export interface Remote {
   signInDirector(email: string, password: string): Promise<Account>;
   /** Leaves the director's account: the phone signs in afresh, anonymously. */
   signOut(): Promise<Account>;
+  /**
+   * The signed-in session's token, for this site's own server functions
+   * (api/), which ask Supabase who is calling. Null when not signed in.
+   */
+  accessToken(): Promise<string | null>;
   /** Every row of a table this phone may read: one event's, or for `events`, every event. */
   readTable<T extends TableName>(table: T, eventId: string | null): Promise<Row<T>[]>;
   /** The rows of a table whose `column` holds one of `values`. */

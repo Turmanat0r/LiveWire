@@ -1,8 +1,10 @@
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useState, type ReactNode } from 'react';
 import type { ReviewItem } from '../../data/director';
+import { askFishI, useFishIStatus, type FishIState } from '../../data/fishI';
 import type { OutboxItem } from '../../data/local';
 import type { Row } from '../../data/tables';
 import { useSync, useSyncEngine } from '../../data/useSync';
+import { fishIFindings, fishISummary, readFishIReview, type FishIReview } from '../../domain/fishI';
 import type { FirstPass } from '../../domain/review';
 import { Card } from '../../ui/Card';
 import { CatchPhoto, PhotoViewer } from '../../ui/PhotoViewer';
@@ -59,6 +61,7 @@ export function ReviewLists({ items }: { readonly items: readonly ReviewItem[] }
     .sort((a, b) => a.review.fish.loggedAt - b.review.fish.loggedAt);
   const all = [...shown].sort((a, b) => b.review.fish.loggedAt - a.review.fish.loggedAt);
   const [viewing, setViewing] = useState<{ list: 'pending' | 'all'; id: string } | null>(null);
+  const fishI = useFishIStatus();
   const list = viewing?.list === 'pending' ? pending : all;
 
   return (
@@ -73,6 +76,7 @@ export function ReviewLists({ items }: { readonly items: readonly ReviewItem[] }
               <ReviewCard
                 key={i.row.id}
                 item={i}
+                fishI={fishI}
                 onOpen={() => {
                   setViewing({ list: 'pending', id: i.row.id });
                 }}
@@ -90,6 +94,7 @@ export function ReviewLists({ items }: { readonly items: readonly ReviewItem[] }
               <ReviewCard
                 key={i.row.id}
                 item={i}
+                fishI={fishI}
                 showStatus
                 onOpen={() => {
                   setViewing({ list: 'all', id: i.row.id });
@@ -133,12 +138,16 @@ function useRule() {
   };
 }
 
+type FishIStatus = ReturnType<typeof useFishIStatus>;
+
 function ReviewCard({
   item,
+  fishI,
   showStatus = false,
   onOpen,
 }: {
   readonly item: Shown;
+  readonly fishI: FishIStatus;
   readonly showStatus?: boolean;
   readonly onOpen: () => void;
 }) {
@@ -173,7 +182,9 @@ function ReviewCard({
           ))}
           {item.filedBy ? <span className="stamp stamp--filed">{item.filedBy}</span> : null}
         </p>
-        <FirstPassBlock pass={item.firstPass} />
+        <FirstPassBlock pass={item.firstPass}>
+          <FishIVision item={item} status={fishI} />
+        </FirstPassBlock>
         {item.sending ? <p className="catch-card__note">Waiting to send.</p> : null}
         {fixing ? (
           <FixForm
@@ -234,7 +245,13 @@ function ReviewCard({
 
 const VERDICT = { clear: 'Clear', review: 'Look closer', flag: 'Needs review' } as const;
 
-function FirstPassBlock({ pass }: { readonly pass: FirstPass }) {
+function FirstPassBlock({
+  pass,
+  children,
+}: {
+  readonly pass: FirstPass;
+  readonly children: ReactNode;
+}) {
   return (
     <div className={`fp fp--${pass.level}`}>
       <p className="fp__head">
@@ -258,7 +275,102 @@ function FirstPassBlock({ pass }: { readonly pass: FirstPass }) {
           </p>
         ))
       )}
+      {children}
     </div>
+  );
+}
+
+interface Look {
+  readonly busy: boolean;
+  /** This phone's latest answer, shown before the saved copy comes back. */
+  readonly review: FishIReview | null;
+  readonly error: string | null;
+}
+
+/**
+ * Fish-I's look at the photo: advice under the first pass, asked for one catch
+ * at a time, never on its own. The director still reads the board.
+ */
+function FishIVision({ item, status }: { readonly item: Shown; readonly status: FishIStatus }) {
+  const sync = useSyncEngine();
+  const [look, setLook] = useState<Look>({ busy: false, review: null, error: null });
+  const review = look.review ?? readFishIReview(item.evidence?.ai_review);
+  const ask = () => {
+    setLook((l) => ({ ...l, busy: true, error: null }));
+    askFishI(sync, item.row.id).then(
+      (r) => {
+        setLook({ busy: false, review: r, error: null });
+      },
+      (e: unknown) => {
+        setLook((l) => ({
+          ...l,
+          busy: false,
+          error: e instanceof Error ? e.message : 'The Fish-I vision check failed.',
+        }));
+      },
+    );
+  };
+  return (
+    <div className="fp__ai">
+      {review ? (
+        <>
+          <p className="fp__ai-note">
+            <strong>Fish-I vision:</strong> {fishISummary(review)}
+          </p>
+          {fishIFindings(review, item.species).map((f, i) => (
+            <p key={`${f.level}-${String(i)}`} className="fp__item">
+              <span className={`fp__dot fp__dot--${f.level}`} aria-hidden="true" />
+              <span>{f.text}</span>
+            </p>
+          ))}
+        </>
+      ) : null}
+      <FishIAction
+        state={status.state}
+        hasReview={review !== null}
+        busy={look.busy}
+        onAsk={ask}
+        onRetry={status.retry}
+      />
+      {look.error ? (
+        <p className="err" role="alert">
+          {look.error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function FishIAction({
+  state,
+  hasReview,
+  busy,
+  onAsk,
+  onRetry,
+}: {
+  readonly state: FishIState;
+  readonly hasReview: boolean;
+  readonly busy: boolean;
+  readonly onAsk: () => void;
+  readonly onRetry: () => void;
+}) {
+  if (state.kind === 'checking') {
+    return <p className="fp__ai-note">Checking whether Fish-I vision is ready…</p>;
+  }
+  if (state.kind === 'unavailable') {
+    return (
+      <>
+        <p className="fp__ai-note">Fish-I vision not ready: {state.why}</p>
+        <button className="button button--small" type="button" onClick={onRetry}>
+          Retry Fish-I
+        </button>
+      </>
+    );
+  }
+  return (
+    <button className="button button--small" type="button" disabled={busy} onClick={onAsk}>
+      {busy ? 'Fish-I is looking…' : hasReview ? 'Re-run' : 'Run Fish-I vision check'}
+    </button>
   );
 }
 

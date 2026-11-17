@@ -135,6 +135,11 @@ class SupabaseRemote implements Remote {
     return this.signingIn;
   }
 
+  async accessToken(): Promise<string | null> {
+    const { data } = await this.client.auth.getSession();
+    return data.session?.access_token ?? null;
+  }
+
   private async signInNow(): Promise<Account> {
     // A stored sign-in that could not be refreshed (no signal) is an error
     // here, not an empty session: signing in afresh would cut the phone off

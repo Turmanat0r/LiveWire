@@ -328,6 +328,14 @@ export class Sync {
     return remote.readTable(table, eventId);
   }
 
+  /** This phone's session, for this site's own server functions. Needs signal. */
+  async accessToken(): Promise<string | null> {
+    const remote = this.remote;
+    if (!remote) throw new RemoteError({ kind: 'offline' });
+    this.signedIn(await remote.signIn());
+    return remote.accessToken();
+  }
+
   /** Reads back a file kept with an outbox item: a catch photo still waiting to send. */
   async readFile(itemId: string, name: string): Promise<StoredFile | undefined> {
     return (await this.local).file(itemId, name);

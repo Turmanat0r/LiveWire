@@ -10,7 +10,8 @@
 //
 // Deleted at cutover, with the old app.
 import { existsSync, readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /**
  * Where the old app's build is. LEGACY_APP_JS wins when set (CI checks the old
@@ -430,6 +431,35 @@ export function loadLegacy(): LegacyApi {
   }
   cached = api;
   return api;
+}
+
+/** The old app's Fish-I server function, api/fish-i.js, for its helpers. */
+export interface LegacyFishI {
+  buildPrompt(
+    target: string,
+    water: string,
+    claimedSpecies: string,
+    claimedLength: string,
+    scoring: boolean,
+  ): string;
+  clean(v: unknown, max: number): string;
+  normalize(raw: Record<string, unknown>): Record<string, unknown>;
+  rankModels(models: unknown[]): string[];
+  pickModel(models: unknown[]): string | null;
+  isRetryableModelStatus(status: number): boolean;
+  googleRetrySeconds(raw: string): number;
+  isDailyQuota(raw: string): boolean;
+  directorClaim(user: unknown): boolean;
+  speciesPhrase(target: string): string;
+  speciesBare(target: string): string;
+}
+
+export function loadLegacyFishI(): LegacyFishI {
+  const path = fileURLToPath(new URL('../api/fish-i.js', pathToFileURL(legacyBuildPath())));
+  if (!existsSync(path)) throw new Error(`The old app's api/fish-i.js is not there: ${path}`);
+  const required = createRequire(import.meta.url)(path) as { __test?: LegacyFishI };
+  if (!required.__test) throw new Error('The old api/fish-i.js no longer hands back its helpers');
+  return required.__test;
 }
 
 /** Run with Math.random and Date.now fixed, so both apps see the same world. */
